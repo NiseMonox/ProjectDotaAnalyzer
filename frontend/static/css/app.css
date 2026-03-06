@@ -1,0 +1,431 @@
+/* Dota 2 Match Analyzer - Styles */
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #4a5568 #1a202c;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ---- Hero & Item Icons ---- */
+
+.hero-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    object-fit: cover;
+    border: 1px solid #4a5568;
+    background: #2d3748;
+    flex-shrink: 0;
+}
+
+.hero-icon-sm {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    object-fit: cover;
+    border: 1px solid #4a5568;
+    background: #2d3748;
+    flex-shrink: 0;
+}
+
+.hero-portrait {
+    width: 48px;
+    height: 27px;
+    border-radius: 4px;
+    object-fit: cover;
+    border: 1px solid #4a5568;
+    background: #2d3748;
+    flex-shrink: 0;
+}
+
+.item-icon {
+    width: 36px;
+    height: 26px;
+    border-radius: 3px;
+    object-fit: cover;
+    border: 1px solid #4a5568;
+    background: #2d3748;
+    flex-shrink: 0;
+}
+
+.item-icon-sm {
+    width: 26px;
+    height: 19px;
+    border-radius: 2px;
+    object-fit: cover;
+    border: 1px solid #4a5568;
+    background: #2d3748;
+    flex-shrink: 0;
+}
+
+.ability-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 3px;
+    object-fit: cover;
+    border: 1px solid #4a5568;
+    background: #2d3748;
+    flex-shrink: 0;
+}
+
+.ability-icon-sm {
+    width: 20px;
+    height: 20px;
+    border-radius: 2px;
+    object-fit: cover;
+    background: #2d3748;
+    flex-shrink: 0;
+}
+
+/* ---- Upload Zone ---- */
+
+.upload-zone {
+    border: 2px dashed #4a5568;
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.upload-zone:hover {
+    border-color: #ecc94b;
+    background: rgba(236, 201, 75, 0.05);
+}
+
+/* ---- Buttons ---- */
+
+.btn-primary {
+    background: #ecc94b;
+    color: #1a202c;
+    font-weight: 600;
+    padding: 0.5rem 1.5rem;
+    border-radius: 8px;
+    transition: all 0.15s;
+}
+
+.btn-primary:hover {
+    background: #d69e2e;
+    transform: translateY(-1px);
+}
+
+/* ---- Tabs ---- */
+
+.tab-btn {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    background: #2d3748;
+    color: #a0aec0;
+    white-space: nowrap;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+    font-size: 0.875rem;
+}
+
+.tab-btn:hover {
+    background: #4a5568;
+    color: #e2e8f0;
+}
+
+.tab-active {
+    background: #ecc94b !important;
+    color: #1a202c !important;
+    font-weight: 600;
+}
+
+/* ---- Panels ---- */
+
+.panel {
+    background: #1a202c;
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid #2d3748;
+}
+
+.panel-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: #ecc94b;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* ---- Skill Badges ---- */
+
+.skill-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 3rem;
+    border-radius: 4px;
+    border: 1px solid #4a5568;
+    cursor: default;
+    transition: transform 0.1s;
+    gap: 1px;
+    padding: 2px;
+}
+
+.skill-badge:hover {
+    transform: scale(1.1);
+    z-index: 1;
+}
+
+.skill-q { background: rgba(59, 130, 246, 0.25); border-color: #3b82f6; }
+.skill-w { background: rgba(16, 185, 129, 0.25); border-color: #10b981; }
+.skill-e { background: rgba(245, 158, 11, 0.25); border-color: #f59e0b; }
+.skill-r { background: rgba(239, 68, 68, 0.25); border-color: #ef4444; }
+.skill-talent { background: rgba(168, 85, 247, 0.25); border-color: #a855f7; }
+
+/* ---- Ward Map ---- */
+
+.ward-map-container {
+    width: 100%;
+    aspect-ratio: 1;
+    max-width: 512px;
+    background: #0d1117;
+    border-radius: 8px;
+    border: 1px solid #2d3748;
+    position: relative;
+    overflow: hidden;
+}
+
+.ward-map-large {
+    max-width: 640px;
+}
+
+/* ---- Ward Timeline ---- */
+
+.ward-timeline-bar {
+    background: #1a202c;
+    border: 1px solid #2d3748;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+}
+
+.ward-timeline-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: #2d3748;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+}
+
+.ward-timeline-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ecc94b;
+    cursor: pointer;
+    border: 2px solid #1a202c;
+    box-shadow: 0 0 6px rgba(236, 201, 75, 0.4);
+}
+
+.ward-timeline-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ecc94b;
+    cursor: pointer;
+    border: 2px solid #1a202c;
+    box-shadow: 0 0 6px rgba(236, 201, 75, 0.4);
+}
+
+/* Ward legend dots */
+.ward-legend {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.ward-obs {
+    background: #ecc94b;
+    box-shadow: 0 0 4px #ecc94b;
+}
+
+.ward-sent {
+    background: #63b3ed;
+    box-shadow: 0 0 4px #63b3ed;
+}
+
+/* ---- Smoke List Selection ---- */
+
+.smoke-list-item {
+    border-radius: 6px;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.smoke-list-item:hover {
+    background: rgba(74, 85, 104, 0.3);
+}
+
+.smoke-item-active {
+    background: rgba(236, 201, 75, 0.08) !important;
+    border-left: 3px solid #ecc94b;
+}
+
+/* ---- Teamfight Replay ---- */
+
+.teamfight-replay-bar {
+    background: #1a202c;
+    border: 1px solid #2d3748;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+}
+
+.replay-play-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #ecc94b;
+    color: #1a202c;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+}
+
+.replay-play-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 10px rgba(236, 201, 75, 0.5);
+}
+
+/* ---- Speed Controls ---- */
+
+.speed-btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+    border: 1px solid #4a5568;
+    background: transparent;
+    color: #a0aec0;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.speed-btn:hover {
+    border-color: #ecc94b;
+    color: #ecc94b;
+}
+
+.speed-btn-active {
+    background: #ecc94b;
+    color: #1a202c;
+    border-color: #ecc94b;
+    font-weight: bold;
+}
+
+/* ---- Kill Timeline ---- */
+
+.kill-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: #1a202c;
+    border: 1px solid #2d3748;
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+.kill-event {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.kill-radiant {
+    border-left: 3px solid #48bb78;
+    background: rgba(72, 187, 120, 0.08);
+}
+
+.kill-dire {
+    border-left: 3px solid #fc8181;
+    background: rgba(252, 129, 129, 0.08);
+}
+
+.kill-time {
+    font-family: monospace;
+    font-size: 11px;
+    color: #a0aec0;
+    min-width: 36px;
+    font-weight: bold;
+}
+
+.kill-name {
+    font-weight: bold;
+    font-size: 12px;
+}
+
+/* ---- Loading ---- */
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #2d3748;
+    border-top-color: #ecc94b;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ---- Scrollbar ---- */
+
+.custom-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scroll::-webkit-scrollbar-track {
+    background: #1a202c;
+}
+
+.custom-scroll::-webkit-scrollbar-thumb {
+    background: #4a5568;
+    border-radius: 3px;
+}
+
+/* ---- Hover ---- */
+
+.hover\:bg-gray-750:hover {
+    background: #323a4a;
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 768px) {
+    .grid-cols-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .hero-portrait {
+        width: 36px;
+        height: 20px;
+    }
+
+    .item-icon {
+        width: 28px;
+        height: 20px;
+    }
+}

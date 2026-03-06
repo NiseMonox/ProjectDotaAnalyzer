@@ -1,0 +1,7 @@
+backend/venv/
+__pycache__/
+*.pyc
+.DS_Store
+replays/*.dem
+frontend/static/assets/ward_screenshot_*.png
+frontend/static/assets/ward_section_*.png
