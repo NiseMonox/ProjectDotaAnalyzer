@@ -1,23 +1,404 @@
-/* Dota 2 Match Analyzer - Styles */
+/* Dota 2 Match Analyzer - OpenDota Design System */
+
+/* ================================================================
+   CSS Custom Properties (OpenDota Palette)
+   ================================================================ */
+
+:root {
+    --bg-page: rgb(22, 40, 62);
+    --bg-card: rgb(39, 39, 58);
+    --bg-card-alt: rgb(33, 33, 50);
+    --bg-table-header: rgb(30, 35, 50);
+    --bg-table-row-hover: rgb(45, 45, 65);
+    --bg-tab-bar: rgb(16, 30, 48);
+
+    --text-primary: rgba(255, 255, 255, 0.87);
+    --text-muted: rgba(255, 255, 255, 0.6);
+    --text-heading: rgba(255, 255, 255, 0.87);
+
+    --color-radiant: #66BB6A;
+    --color-dire: #ff4c4c;
+    --color-net-worth: #ecc94b;
+    --color-link: #66bbff;
+    --color-accent: #66bbff;
+    --color-gold: rgb(201, 175, 29);
+
+    --border-subtle: rgba(255, 255, 255, 0.12);
+    --border-table: rgba(255, 255, 255, 0.07);
+
+    --radius-sm: 2px;
+    --radius-md: 4px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+
+    --font-mono: 'Roboto Mono', 'SF Mono', 'Fira Code', monospace;
+    --font-sans: 'Roboto', sans-serif;
+}
+
+/* ================================================================
+   Base / Reset
+   ================================================================ */
 
 * {
     scrollbar-width: thin;
-    scrollbar-color: #4a5568 #1a202c;
+    scrollbar-color: rgba(255, 255, 255, 0.2) var(--bg-page);
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--font-sans);
+    background: var(--bg-page);
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-/* ---- Hero & Item Icons ---- */
+/* ================================================================
+   Match Header
+   ================================================================ */
 
+.match-header {
+    width: 100%;
+    background: linear-gradient(180deg, rgb(28, 48, 72) 0%, var(--bg-page) 100%);
+    padding: 2rem 1rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.match-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-radiant), transparent 30%, transparent 70%, var(--color-dire));
+}
+
+.match-header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.match-header .match-id {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.match-header .match-duration {
+    font-size: 1rem;
+    color: var(--text-muted);
+}
+
+.match-header .match-score {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.match-header .match-score .radiant-score {
+    color: var(--color-radiant);
+}
+
+.match-header .match-score .dire-score {
+    color: var(--color-dire);
+}
+
+.match-header .match-score .score-separator {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 1.5rem;
+}
+
+/* ================================================================
+   Victory Banner
+   ================================================================ */
+
+.victory-banner {
+    width: 100%;
+    padding: 1rem 1.5rem;
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    position: relative;
+}
+
+.victory-banner-radiant {
+    background: linear-gradient(90deg, rgba(102, 187, 106, 0.25) 0%, rgba(102, 187, 106, 0.05) 40%, transparent 100%);
+    color: var(--color-radiant);
+    border-bottom: 2px solid rgba(102, 187, 106, 0.3);
+}
+
+.victory-banner-dire {
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 76, 76, 0.05) 60%, rgba(255, 76, 76, 0.25) 100%);
+    color: var(--color-dire);
+    border-bottom: 2px solid rgba(255, 76, 76, 0.3);
+}
+
+/* ================================================================
+   Tab Bar (OpenDota-style)
+   ================================================================ */
+
+.tab-bar {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-tab-bar);
+    border-bottom: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 1rem;
+    gap: 0;
+}
+
+.tab-bar::-webkit-scrollbar {
+    height: 0;
+    display: none;
+}
+
+.tab-bar-item {
+    flex-shrink: 0;
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    text-decoration: none;
+    user-select: none;
+}
+
+.tab-bar-item:hover {
+    color: var(--text-primary);
+}
+
+.tab-bar-item.active,
+.tab-bar-item-active {
+    color: #fff;
+    border-bottom-color: var(--color-accent);
+    font-weight: 600;
+}
+
+/* ---- Sub-tab / segment buttons (within panels) ---- */
+.tab-btn {
+    padding: 0.4rem 0.85rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    line-height: 1.4;
+}
+
+.tab-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.tab-active {
+    background: rgba(102, 187, 255, 0.15) !important;
+    color: var(--color-accent) !important;
+    font-weight: 600;
+    border-color: rgba(102, 187, 255, 0.4) !important;
+    box-shadow: 0 0 8px rgba(102, 187, 255, 0.1);
+}
+
+/* ---- Sub-tab group wrapper ---- */
+.sub-tab-group {
+    display: flex;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 0.375rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border: 1px solid var(--border-table);
+}
+
+.sub-tab-group .tab-btn {
+    border: 1px solid transparent;
+    background: transparent;
+}
+
+.sub-tab-group .tab-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.sub-tab-group .tab-btn.tab-active {
+    background: rgba(102, 187, 255, 0.18) !important;
+    border-color: rgba(102, 187, 255, 0.35) !important;
+}
+
+.sub-tab-divider {
+    width: 1px;
+    height: 1.25rem;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 0 0.25rem;
+    flex-shrink: 0;
+}
+
+/* ================================================================
+   Scoreboard Table
+   ================================================================ */
+
+.scoreboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    table-layout: fixed;
+}
+
+.scoreboard-table thead th {
+    background: var(--bg-table-header);
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.5rem 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-table);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.scoreboard-table thead th.text-center {
+    text-align: center;
+}
+
+.scoreboard-table thead th.text-right {
+    text-align: right;
+}
+
+.scoreboard-table tbody td {
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid var(--border-table);
+    vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.scoreboard-table tbody tr {
+    transition: background 0.1s;
+}
+
+.scoreboard-table tbody tr:hover {
+    background: var(--bg-table-row-hover);
+}
+
+/* Column width helpers */
+.scoreboard-table .col-hero {
+    width: 200px;
+}
+
+.scoreboard-table .col-player {
+    width: 140px;
+}
+
+.scoreboard-table .col-stat {
+    width: 48px;
+    text-align: center;
+}
+
+.scoreboard-table .col-items {
+    width: 200px;
+}
+
+.scoreboard-table .col-networth {
+    width: 72px;
+    text-align: right;
+}
+
+/* Radiant / Dire section headers */
+.scoreboard-table .team-header-radiant th {
+    background: rgba(102, 187, 106, 0.12);
+    color: var(--color-radiant);
+    border-bottom: 2px solid rgba(102, 187, 106, 0.3);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+.scoreboard-table .team-header-dire th {
+    background: rgba(255, 76, 76, 0.12);
+    color: var(--color-dire);
+    border-bottom: 2px solid rgba(255, 76, 76, 0.3);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+/* Team summary row */
+.team-summary-row td {
+    background: var(--bg-table-header);
+    font-weight: 600;
+    color: var(--text-primary);
+    border-top: 2px solid var(--border-subtle);
+    padding-top: 0.6rem !important;
+    padding-bottom: 0.6rem !important;
+}
+
+.team-summary-row.radiant td {
+    border-top-color: rgba(102, 187, 106, 0.3);
+}
+
+.team-summary-row.dire td {
+    border-top-color: rgba(255, 76, 76, 0.3);
+}
+
+/* ================================================================
+   Hero Portraits (rectangular, OpenDota-style)
+   ================================================================ */
+
+.hero-portrait-rect {
+    width: 62px;
+    height: 35px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    border: 1px solid transparent;
+    background: rgb(39, 39, 58);
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+    display: block;
+}
+
+.hero-portrait-rect:hover {
+    border-color: var(--color-accent);
+}
+
+/* Existing hero icons (kept for other views) */
 .hero-icon {
     width: 32px;
     height: 32px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     object-fit: cover;
-    border: 1px solid #4a5568;
-    background: #2d3748;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgb(39, 39, 58);
     flex-shrink: 0;
 }
 
@@ -26,135 +407,454 @@ body {
     height: 20px;
     border-radius: 3px;
     object-fit: cover;
-    border: 1px solid #4a5568;
-    background: #2d3748;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgb(39, 39, 58);
     flex-shrink: 0;
 }
 
 .hero-portrait {
     width: 48px;
     height: 27px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     object-fit: cover;
-    border: 1px solid #4a5568;
-    background: #2d3748;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgb(39, 39, 58);
     flex-shrink: 0;
 }
+
+/* ================================================================
+   Item Icons & Item Cell
+   ================================================================ */
 
 .item-icon {
     width: 36px;
     height: 26px;
     border-radius: 3px;
     object-fit: cover;
-    border: 1px solid #4a5568;
-    background: #2d3748;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgb(39, 39, 58);
     flex-shrink: 0;
 }
 
 .item-icon-sm {
     width: 26px;
     height: 19px;
-    border-radius: 2px;
+    border-radius: var(--radius-sm);
     object-fit: cover;
-    border: 1px solid #4a5568;
-    background: #2d3748;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgb(39, 39, 58);
     flex-shrink: 0;
 }
+
+.item-cell {
+    display: grid;
+    grid-template-columns: repeat(3, 28px);
+    grid-template-rows: repeat(2, 20px);
+    gap: 2px;
+}
+
+.item-cell img {
+    width: 28px;
+    height: 20px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    background: rgb(39, 39, 58);
+    border: 1px solid var(--border-subtle);
+}
+
+.item-cell .item-time {
+    font-size: 0.5625rem;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1;
+    margin-top: 1px;
+}
+
+.item-cell-empty {
+    width: 28px;
+    height: 20px;
+    border-radius: var(--radius-sm);
+    background: rgba(45, 55, 72, 0.4);
+    border: 1px solid var(--border-table);
+}
+
+/* ================================================================
+   Stat Colors
+   ================================================================ */
+
+.net-worth {
+    color: var(--color-net-worth) !important;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-kills {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.stat-deaths {
+    color: var(--color-dire) !important;
+    font-weight: 600;
+}
+
+.stat-assists {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.stat-gpm {
+    color: var(--color-gold);
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-xpm {
+    color: var(--color-link);
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-lasthit {
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-damage {
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-healing {
+    color: var(--color-radiant);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================
+   Team Colors (text)
+   ================================================================ */
+
+.text-radiant {
+    color: var(--color-radiant);
+}
+
+.text-dire {
+    color: var(--color-dire);
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.text-link {
+    color: var(--color-link);
+}
+
+/* ================================================================
+   Ability Icon
+   ================================================================ */
 
 .ability-icon {
     width: 24px;
     height: 24px;
     border-radius: 3px;
     object-fit: cover;
-    border: 1px solid #4a5568;
-    background: #2d3748;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgb(39, 39, 58);
     flex-shrink: 0;
 }
 
 .ability-icon-sm {
     width: 20px;
     height: 20px;
-    border-radius: 2px;
+    border-radius: var(--radius-sm);
     object-fit: cover;
-    background: #2d3748;
+    background: rgb(39, 39, 58);
     flex-shrink: 0;
 }
 
-/* ---- Upload Zone ---- */
+/* ================================================================
+   Upload Zone
+   ================================================================ */
 
 .upload-zone {
-    border: 2px dashed #4a5568;
-    border-radius: 12px;
+    border: 2px dashed rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-xl);
     padding: 3rem 2rem;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .upload-zone:hover {
-    border-color: #ecc94b;
-    background: rgba(236, 201, 75, 0.05);
+    border-color: var(--color-accent);
+    background: rgba(102, 187, 255, 0.05);
 }
 
-/* ---- Buttons ---- */
+/* ================================================================
+   Buttons
+   ================================================================ */
 
 .btn-primary {
-    background: #ecc94b;
-    color: #1a202c;
+    background: var(--color-accent);
+    color: #fff;
     font-weight: 600;
     padding: 0.5rem 1.5rem;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     transition: all 0.15s;
-}
-
-.btn-primary:hover {
-    background: #d69e2e;
-    transform: translateY(-1px);
-}
-
-/* ---- Tabs ---- */
-
-.tab-btn {
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    background: #2d3748;
-    color: #a0aec0;
-    white-space: nowrap;
-    transition: all 0.15s;
-    border: 1px solid transparent;
+    border: none;
+    cursor: pointer;
     font-size: 0.875rem;
 }
 
-.tab-btn:hover {
-    background: #4a5568;
-    color: #e2e8f0;
+.btn-primary:hover {
+    background: #559ed9;
+    transform: translateY(-1px);
 }
 
-.tab-active {
-    background: #ecc94b !important;
-    color: #1a202c !important;
-    font-weight: 600;
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
-/* ---- Panels ---- */
+.btn-secondary {
+    background: transparent;
+    color: var(--text-muted);
+    font-weight: 500;
+    padding: 0.4rem 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    transition: all 0.15s;
+    cursor: pointer;
+    font-size: 0.8125rem;
+}
+
+.btn-secondary:hover {
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ================================================================
+   Panels / Cards
+   ================================================================ */
 
 .panel {
-    background: #1a202c;
-    border-radius: 12px;
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
     padding: 1.5rem;
-    border: 1px solid #2d3748;
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .panel-title {
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: 0.8125rem;
+    font-weight: 600;
     margin-bottom: 1rem;
-    color: #ecc94b;
+    padding-bottom: 0.75rem;
+    color: var(--text-heading);
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border-subtle);
 }
 
-/* ---- Skill Badges ---- */
+.panel-dark {
+    background: var(--bg-card-alt);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    border: 1px solid var(--border-table);
+}
+
+/* ---- Inner stat card (used inside panels) ---- */
+.stat-card {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-table);
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+    transition: border-color 0.15s;
+}
+
+.stat-card:hover {
+    border-color: var(--border-subtle);
+}
+
+.stat-card-radiant {
+    border-left: 3px solid var(--color-radiant);
+}
+
+.stat-card-dire {
+    border-left: 3px solid var(--color-dire);
+}
+
+/* ---- Player card row (for item builds, skill builds, etc.) ---- */
+.player-card {
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--border-table);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.player-card:hover {
+    border-color: var(--border-subtle);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.player-card-radiant {
+    border-left: 3px solid rgba(102, 187, 106, 0.5);
+}
+
+.player-card-dire {
+    border-left: 3px solid rgba(255, 76, 76, 0.5);
+}
+
+/* ---- Empty state ---- */
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: var(--text-muted);
+}
+
+.empty-state-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.5;
+}
+
+.empty-state-title {
+    font-size: 1rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.empty-state-desc {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    max-width: 320px;
+    margin: 0 auto;
+    line-height: 1.6;
+}
+
+/* ---- Filter / checkbox controls ---- */
+.filter-bar {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 0.625rem 0.875rem;
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--border-table);
+    border-radius: var(--radius-lg);
+    margin-bottom: 1rem;
+}
+
+.filter-bar label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    transition: color 0.15s;
+    white-space: nowrap;
+}
+
+.filter-bar label:hover {
+    color: var(--text-primary);
+}
+
+.filter-bar input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.filter-bar input[type="checkbox"]:checked {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+}
+
+.filter-bar input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 4px;
+    width: 4px;
+    height: 7px;
+    border: solid #fff;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+}
+
+.filter-divider {
+    width: 1px;
+    height: 1.25rem;
+    background: rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+}
+
+/* ---- Inline data table (cleaner style) ---- */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+}
+
+.data-table thead th {
+    padding: 0.5rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    border-bottom: 2px solid var(--border-subtle);
+    text-align: center;
+    white-space: nowrap;
+}
+
+.data-table thead th.text-left {
+    text-align: left;
+}
+
+.data-table tbody td {
+    padding: 0.5rem 0.625rem;
+    border-bottom: 1px solid var(--border-table);
+    vertical-align: middle;
+    text-align: center;
+}
+
+.data-table tbody td.text-left {
+    text-align: left;
+}
+
+.data-table tbody tr {
+    transition: background 0.1s;
+}
+
+.data-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.data-table .team-divider td {
+    padding: 0.375rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 2px solid var(--border-subtle);
+    background: rgba(0, 0, 0, 0.1);
+}
+
+/* ================================================================
+   Skill Badges
+   ================================================================ */
 
 .skill-badge {
     display: flex;
@@ -163,8 +863,8 @@ body {
     justify-content: center;
     width: 2.5rem;
     height: 3rem;
-    border-radius: 4px;
-    border: 1px solid #4a5568;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     cursor: default;
     transition: transform 0.1s;
     gap: 1px;
@@ -182,29 +882,34 @@ body {
 .skill-r { background: rgba(239, 68, 68, 0.25); border-color: #ef4444; }
 .skill-talent { background: rgba(168, 85, 247, 0.25); border-color: #a855f7; }
 
-/* ---- Ward Map ---- */
+/* ================================================================
+   Ward Map
+   ================================================================ */
 
 .ward-map-container {
     width: 100%;
     aspect-ratio: 1;
     max-width: 512px;
-    background: #0d1117;
-    border-radius: 8px;
-    border: 1px solid #2d3748;
+    background: rgb(22, 40, 62);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     position: relative;
     overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .ward-map-large {
-    max-width: 640px;
+    max-width: 700px;
 }
 
-/* ---- Ward Timeline ---- */
+/* ================================================================
+   Ward Timeline
+   ================================================================ */
 
 .ward-timeline-bar {
-    background: #1a202c;
-    border: 1px solid #2d3748;
-    border-radius: 8px;
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
     padding: 0.75rem 1rem;
 }
 
@@ -212,7 +917,7 @@ body {
     -webkit-appearance: none;
     appearance: none;
     height: 6px;
-    background: #2d3748;
+    background: var(--border-subtle);
     border-radius: 3px;
     outline: none;
     cursor: pointer;
@@ -224,20 +929,20 @@ body {
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #ecc94b;
+    background: var(--color-accent);
     cursor: pointer;
-    border: 2px solid #1a202c;
-    box-shadow: 0 0 6px rgba(236, 201, 75, 0.4);
+    border: 2px solid var(--bg-page);
+    box-shadow: 0 0 6px rgba(102, 187, 255, 0.4);
 }
 
 .ward-timeline-slider::-moz-range-thumb {
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #ecc94b;
+    background: var(--color-accent);
     cursor: pointer;
-    border: 2px solid #1a202c;
-    box-shadow: 0 0 6px rgba(236, 201, 75, 0.4);
+    border: 2px solid var(--bg-page);
+    box-shadow: 0 0 6px rgba(102, 187, 255, 0.4);
 }
 
 /* Ward legend dots */
@@ -250,16 +955,18 @@ body {
 }
 
 .ward-obs {
-    background: #ecc94b;
-    box-shadow: 0 0 4px #ecc94b;
+    background: rgb(201, 175, 29);
+    box-shadow: 0 0 4px rgb(201, 175, 29);
 }
 
 .ward-sent {
-    background: #63b3ed;
-    box-shadow: 0 0 4px #63b3ed;
+    background: #66bbff;
+    box-shadow: 0 0 4px #66bbff;
 }
 
-/* ---- Smoke List Selection ---- */
+/* ================================================================
+   Smoke List Selection
+   ================================================================ */
 
 .smoke-list-item {
     border-radius: 6px;
@@ -272,16 +979,18 @@ body {
 }
 
 .smoke-item-active {
-    background: rgba(236, 201, 75, 0.08) !important;
-    border-left: 3px solid #ecc94b;
+    background: rgba(102, 187, 255, 0.1) !important;
+    border-left: 3px solid var(--color-accent);
 }
 
-/* ---- Teamfight Replay ---- */
+/* ================================================================
+   Teamfight Replay
+   ================================================================ */
 
 .teamfight-replay-bar {
-    background: #1a202c;
-    border: 1px solid #2d3748;
-    border-radius: 8px;
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
     padding: 0.5rem 0.75rem;
 }
 
@@ -289,8 +998,8 @@ body {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: #ecc94b;
-    color: #1a202c;
+    background: var(--color-accent);
+    color: #fff;
     font-size: 14px;
     display: flex;
     align-items: center;
@@ -303,43 +1012,47 @@ body {
 
 .replay-play-btn:hover {
     transform: scale(1.1);
-    box-shadow: 0 0 10px rgba(236, 201, 75, 0.5);
+    box-shadow: 0 0 10px rgba(102, 187, 255, 0.5);
 }
 
-/* ---- Speed Controls ---- */
+/* ================================================================
+   Speed Controls
+   ================================================================ */
 
 .speed-btn {
     padding: 2px 8px;
     font-size: 11px;
-    border-radius: 4px;
-    border: 1px solid #4a5568;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     background: transparent;
-    color: #a0aec0;
+    color: var(--text-muted);
     cursor: pointer;
     transition: all 0.15s;
 }
 
 .speed-btn:hover {
-    border-color: #ecc94b;
-    color: #ecc94b;
+    border-color: var(--color-accent);
+    color: var(--color-accent);
 }
 
 .speed-btn-active {
-    background: #ecc94b;
-    color: #1a202c;
-    border-color: #ecc94b;
+    background: var(--color-accent);
+    color: #fff;
+    border-color: var(--color-accent);
     font-weight: bold;
 }
 
-/* ---- Kill Timeline ---- */
+/* ================================================================
+   Kill Timeline
+   ================================================================ */
 
 .kill-timeline {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    background: #1a202c;
-    border: 1px solid #2d3748;
-    border-radius: 8px;
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
     padding: 8px 12px;
 }
 
@@ -348,24 +1061,24 @@ body {
     align-items: center;
     gap: 8px;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     font-size: 12px;
 }
 
 .kill-radiant {
-    border-left: 3px solid #48bb78;
-    background: rgba(72, 187, 120, 0.08);
+    border-left: 3px solid var(--color-radiant);
+    background: rgba(102, 187, 106, 0.08);
 }
 
 .kill-dire {
-    border-left: 3px solid #fc8181;
-    background: rgba(252, 129, 129, 0.08);
+    border-left: 3px solid var(--color-dire);
+    background: rgba(255, 76, 76, 0.08);
 }
 
 .kill-time {
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
-    color: #a0aec0;
+    color: var(--text-muted);
     min-width: 36px;
     font-weight: bold;
 }
@@ -375,13 +1088,15 @@ body {
     font-size: 12px;
 }
 
-/* ---- Loading ---- */
+/* ================================================================
+   Loading
+   ================================================================ */
 
 .loading-spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid #2d3748;
-    border-top-color: #ecc94b;
+    border: 3px solid var(--border-subtle);
+    border-top-color: var(--color-accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     margin: 0 auto;
@@ -391,28 +1106,302 @@ body {
     to { transform: rotate(360deg); }
 }
 
-/* ---- Scrollbar ---- */
+/* ================================================================
+   Scrollbar
+   ================================================================ */
 
 .custom-scroll::-webkit-scrollbar {
     width: 6px;
 }
 
 .custom-scroll::-webkit-scrollbar-track {
-    background: #1a202c;
+    background: var(--bg-page);
 }
 
 .custom-scroll::-webkit-scrollbar-thumb {
-    background: #4a5568;
+    background: rgba(255, 255, 255, 0.2);
     border-radius: 3px;
 }
 
-/* ---- Hover ---- */
+/* ================================================================
+   Hover Utility
+   ================================================================ */
 
 .hover\:bg-gray-750:hover {
-    background: #323a4a;
+    background: rgba(255, 255, 255, 0.06);
 }
 
-/* ---- Responsive ---- */
+/* ================================================================
+   KDA Inline
+   ================================================================ */
+
+.kda-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.kda-inline .slash {
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
+/* ================================================================
+   Progress Bar (for benchmarks, etc.)
+   ================================================================ */
+
+.progress-bar-bg {
+    width: 100%;
+    height: 6px;
+    background: var(--border-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.progress-bar-fill.radiant {
+    background: var(--color-radiant);
+}
+
+.progress-bar-fill.dire {
+    background: var(--color-dire);
+}
+
+.progress-bar-fill.accent {
+    background: var(--color-accent);
+}
+
+.progress-bar-fill.gold {
+    background: var(--color-gold);
+}
+
+/* ================================================================
+   Tooltip (lightweight)
+   ================================================================ */
+
+.od-tooltip {
+    position: relative;
+}
+
+.od-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgb(22, 22, 36);
+    color: var(--text-primary);
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-md);
+    font-size: 0.6875rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.od-tooltip:hover::after {
+    opacity: 1;
+}
+
+/* ================================================================
+   Player Row Helpers
+   ================================================================ */
+
+.player-hero-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.player-hero-cell .player-name {
+    color: var(--color-link);
+    font-weight: 500;
+    font-size: 0.8125rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+}
+
+.player-hero-cell .hero-level {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    padding: 0 4px;
+    border-radius: var(--radius-sm);
+    line-height: 1.4;
+}
+
+/* ================================================================
+   Chat Messages
+   ================================================================ */
+
+.chat-message {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8125rem;
+    border-radius: var(--radius-md);
+}
+
+.chat-message:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.chat-time {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    min-width: 40px;
+    flex-shrink: 0;
+}
+
+.chat-player {
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.chat-text {
+    color: var(--text-primary);
+}
+
+/* ================================================================
+   Objective Row
+   ================================================================ */
+
+.objective-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-md);
+    font-size: 0.8125rem;
+}
+
+.objective-row:nth-child(odd) {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.objective-time {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    min-width: 44px;
+}
+
+.objective-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+/* ================================================================
+   Picks / Bans
+   ================================================================ */
+
+.pick-ban-grid {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.pick-ban-hero {
+    width: 48px;
+    height: 27px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    position: relative;
+}
+
+.pick-ban-hero.banned {
+    filter: grayscale(100%) brightness(0.4);
+    position: relative;
+}
+
+.pick-ban-hero.banned::after {
+    content: 'X';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--color-dire);
+    font-weight: 900;
+    font-size: 1.25rem;
+}
+
+/* ================================================================
+   Graph Containers (ECharts)
+   ================================================================ */
+
+.chart-container {
+    width: 100%;
+    height: 300px;
+    background: var(--bg-card-alt);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-table);
+    overflow: hidden;
+}
+
+.chart-container-lg {
+    height: 400px;
+}
+
+.chart-container-sm {
+    height: 200px;
+}
+
+/* ================================================================
+   Table Wrapper (horizontal scroll)
+   ================================================================ */
+
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-responsive::-webkit-scrollbar {
+    height: 6px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+    background: var(--bg-page);
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+/* ================================================================
+   Layout Containers
+   ================================================================ */
+
+.page-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+.section-gap {
+    margin-bottom: 1.5rem;
+}
+
+/* ================================================================
+   Responsive
+   ================================================================ */
 
 @media (max-width: 768px) {
     .grid-cols-4 {
@@ -424,8 +1413,1009 @@ body {
         height: 20px;
     }
 
+    .hero-portrait-rect {
+        width: 48px;
+        height: 27px;
+    }
+
     .item-icon {
         width: 28px;
         height: 20px;
     }
+
+    .item-cell {
+        grid-template-columns: repeat(3, 24px);
+        grid-template-rows: repeat(2, 17px);
+    }
+
+    .item-cell img {
+        width: 24px;
+        height: 17px;
+    }
+
+    .match-header {
+        padding: 1.5rem 0.75rem;
+    }
+
+    .match-header .match-score {
+        font-size: 1.5rem;
+        gap: 1rem;
+    }
+
+    .victory-banner {
+        font-size: 1.1rem;
+        padding: 0.75rem 1rem;
+    }
+
+    .tab-bar {
+        padding: 0 0.5rem;
+    }
+
+    .tab-bar-item {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.6875rem;
+    }
+
+    .tab-btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.6875rem;
+    }
+
+    .scoreboard-table {
+        font-size: 0.75rem;
+    }
+
+    .scoreboard-table thead th {
+        font-size: 0.625rem;
+        padding: 0.4rem 0.35rem;
+    }
+
+    .scoreboard-table tbody td {
+        padding: 0.3rem 0.35rem;
+    }
+
+    .player-hero-cell .player-name {
+        max-width: 80px;
+        font-size: 0.75rem;
+    }
+
+    .panel {
+        padding: 1rem;
+        border-radius: var(--radius-lg);
+    }
+
+    .chart-container {
+        height: 250px;
+    }
+}
+
+@media (max-width: 480px) {
+    .match-header .match-score {
+        font-size: 1.25rem;
+    }
+
+    .hero-portrait-rect {
+        width: 40px;
+        height: 22px;
+    }
+
+    .scoreboard-table .col-hero {
+        width: 140px;
+    }
+
+    .tab-bar-item {
+        padding: 0.5rem 0.5rem;
+        font-size: 0.625rem;
+        letter-spacing: 0.04em;
+    }
+
+    .tab-btn {
+        padding: 0.4rem 0.5rem;
+        font-size: 0.625rem;
+    }
+}
+
+/* ============================================================
+   OpenDota-style Match Header & Scoreboard
+   ============================================================ */
+
+/* ---- Match Victory Banner ---- */
+.match-header-banner {
+    position: relative;
+    overflow: hidden;
+}
+
+.banner-radiant {
+    background: linear-gradient(135deg, rgba(102, 187, 106, 0.15) 0%, rgb(22, 40, 62) 50%, rgb(22, 40, 62) 100%);
+    border-bottom: 3px solid #66BB6A;
+}
+
+.banner-dire {
+    background: linear-gradient(135deg, rgba(255, 76, 76, 0.15) 0%, rgb(22, 40, 62) 50%, rgb(22, 40, 62) 100%);
+    border-bottom: 3px solid #ff4c4c;
+}
+
+/* ---- OpenDota Tab Bar ---- */
+.od-tab-bar {
+    background: rgb(16, 30, 48);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+.od-tab {
+    padding: 0.75rem 1.25rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    background: none;
+    cursor: pointer;
+}
+
+.od-tab:hover {
+    color: rgba(255, 255, 255, 0.87);
+}
+
+.od-tab-active {
+    color: rgba(255, 255, 255, 0.87) !important;
+    border-bottom-color: #66bbff !important;
+}
+
+/* ---- Team Header ---- */
+.od-team-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px 4px 0 0;
+}
+
+.od-team-radiant {
+    background: linear-gradient(90deg, rgba(102, 187, 106, 0.2), transparent);
+    border-left: 3px solid #66BB6A;
+    color: #66BB6A;
+}
+
+.od-team-dire {
+    background: linear-gradient(90deg, rgba(255, 76, 76, 0.2), transparent);
+    border-left: 3px solid #ff4c4c;
+    color: #ff4c4c;
+}
+
+.od-winner-badge {
+    font-size: 0.625rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    padding: 0.125rem 0.5rem;
+    border-radius: 3px;
+    background: rgba(201, 175, 29, 0.15);
+    color: rgb(201, 175, 29);
+    border: 1px solid rgba(201, 175, 29, 0.3);
+}
+
+/* ---- Scoreboard Table ---- */
+.od-table {
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    background: rgb(22, 40, 62);
+}
+
+.od-th {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.6);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    text-align: center;
+    white-space: nowrap;
+}
+
+.od-th-player {
+    min-width: 180px;
+    width: 220px;
+}
+
+.od-th-stat {
+    min-width: 48px;
+    width: 64px;
+}
+
+.od-th-items {
+    min-width: 250px;
+}
+
+.od-row {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    transition: background 0.1s;
+}
+
+.od-row:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.od-td {
+    padding: 0.4rem 0.5rem;
+    vertical-align: middle;
+}
+
+.od-td-player {
+    min-width: 180px;
+}
+
+.od-td-stat {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+}
+
+.od-td-items {
+    min-width: 250px;
+}
+
+/* Deaths column red text */
+.od-deaths {
+    color: #ff4c4c !important;
+}
+
+/* Net worth gold (OpenDota-style) */
+.od-networth {
+    color: #ecc94b !important;
+}
+
+/* ---- Team Totals Row ---- */
+.od-row-totals {
+    background: rgba(255, 255, 255, 0.02);
+    border-top: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+.od-row-totals .od-td {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+/* ---- Item cells with purchase time ---- */
+.od-item-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0px;
+}
+
+.od-item-time {
+    font-size: 0.5625rem;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1;
+    margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- Picks/Bans display ---- */
+.od-picks-bans {
+    padding: 0.5rem 0.75rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 0 0 4px 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.od-draft-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.od-draft-label {
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.od-draft-pick img {
+    border: 2px solid currentColor;
+    border-radius: 4px;
+}
+
+.od-draft-ban img {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+/* ================================================================
+   OpenDota Banner Layout (3-column)
+   ================================================================ */
+
+.od-banner-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.od-banner-left {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.od-victory-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.od-victory-radiant {
+    color: #48bb78;
+}
+
+.od-victory-dire {
+    color: #fc8181;
+}
+
+.od-victory-text {
+    white-space: nowrap;
+}
+
+.od-banner-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.od-banner-score-row {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.od-score-radiant {
+    font-size: 3rem;
+    font-weight: 900;
+    color: #48bb78;
+    line-height: 1;
+    text-shadow: 0 0 20px rgba(72, 187, 120, 0.35);
+    font-variant-numeric: tabular-nums;
+}
+
+.od-score-dire {
+    font-size: 3rem;
+    font-weight: 900;
+    color: #fc8181;
+    line-height: 1;
+    text-shadow: 0 0 20px rgba(252, 129, 129, 0.35);
+    font-variant-numeric: tabular-nums;
+}
+
+.od-banner-mid-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    min-width: 100px;
+}
+
+.od-banner-mode {
+    font-size: 0.6875rem;
+    color: #8899aa;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+}
+
+.od-banner-duration {
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+}
+
+.od-banner-timeago {
+    font-size: 0.6875rem;
+    color: #6b7a8d;
+}
+
+.od-banner-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.15rem;
+}
+
+.od-banner-meta {
+    font-size: 0.6875rem;
+    color: #6b7a8d;
+    letter-spacing: 0.02em;
+}
+
+.od-banner-meta b {
+    color: #a0aec0;
+    font-weight: 600;
+}
+
+/* ================================================================
+   Scoreboard v2: Refined Column Widths & Hero Cell
+   ================================================================ */
+
+.od-team-section {
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #1e293b;
+    background: #1a2332;
+}
+
+/* Hero column (wider for portrait + player name) */
+.od-th-hero {
+    min-width: 200px;
+    width: 260px;
+}
+
+.od-td-hero {
+    min-width: 200px;
+    width: 260px;
+}
+
+.od-hero-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.od-hero-portrait {
+    width: 62px;
+    height: 35px;
+    border-radius: 2px;
+    object-fit: cover;
+    background: #2d3748;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+}
+
+.od-hero-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.od-player-name {
+    color: #e2e8f0;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.od-hero-name {
+    color: #6b7a8d;
+    font-size: 0.6875rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Narrow stat columns (K, D, A, Level) */
+.od-th-narrow {
+    width: 38px;
+    min-width: 38px;
+    text-align: center;
+}
+
+.od-td-narrow {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+    width: 38px;
+}
+
+/* LH/DN */
+.od-th-lhdn {
+    width: 70px;
+    min-width: 60px;
+    text-align: center;
+}
+
+.od-td-lhdn {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+    color: #a0aec0;
+}
+
+/* NET (gold-colored) */
+.od-th-net {
+    width: 70px;
+    min-width: 60px;
+    text-align: center;
+}
+
+.od-td-net {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+}
+
+/* GPM/XPM */
+.od-th-gxpm {
+    width: 80px;
+    min-width: 70px;
+    text-align: center;
+}
+
+.od-td-gxpm {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+}
+
+/* HD, TD, HH (damage columns) */
+.od-th-dmg {
+    width: 60px;
+    min-width: 50px;
+    text-align: center;
+}
+
+.od-td-dmg {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+    color: #a0aec0;
+}
+
+/* Items column (wider) */
+.od-th-items2 {
+    min-width: 280px;
+    text-align: left;
+}
+
+.od-td-items2 {
+    min-width: 280px;
+}
+
+/* ---- Text color helpers for scoreboard ---- */
+.od-text-lvl {
+    color: #6b7a8d;
+}
+
+.od-text-kills {
+    color: #e2e8f0;
+    font-weight: 600;
+}
+
+.od-text-deaths {
+    color: #f44336 !important;
+    font-weight: 600;
+}
+
+.od-text-assists {
+    color: #e2e8f0;
+}
+
+.od-text-gold {
+    color: #ecc94b !important;
+    font-weight: 700;
+}
+
+.od-text-gpm {
+    color: #ecc94b;
+}
+
+.od-text-xpm {
+    color: #68b8d7;
+}
+
+.od-text-sep {
+    color: #4a5568;
+    margin: 0 1px;
+}
+
+.od-text-bold {
+    font-weight: 700 !important;
+}
+
+/* ---- Totals label ---- */
+.od-totals-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7a8d;
+}
+
+/* ---- Items Row (6 + neutral) ---- */
+.od-items-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.od-item-img {
+    width: 36px;
+    height: 26px;
+    border-radius: 3px;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #2d3748;
+    display: block;
+    flex-shrink: 0;
+}
+
+.od-item-empty {
+    display: block;
+    width: 36px;
+    height: 26px;
+    border-radius: 3px;
+    background: rgba(45, 55, 72, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.od-item-neutral {
+    margin-left: 4px;
+    position: relative;
+}
+
+.od-item-img-neutral {
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    border: 1px solid rgba(255, 215, 0, 0.3);
+}
+
+.od-backpack-row {
+    display: flex;
+    gap: 2px;
+    margin-top: 2px;
+    opacity: 0.55;
+}
+
+.od-item-img-bp {
+    width: 28px;
+    height: 20px;
+    border-radius: 2px;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: #2d3748;
+    display: block;
+    flex-shrink: 0;
+}
+
+/* ================================================================
+   Draft Section (combined picks/bans)
+   ================================================================ */
+
+.od-draft-section {
+    background: #1a2332;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.od-draft-header {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7a8d;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid #1e293b;
+}
+
+.od-draft-grid {
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.od-draft-team {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.od-draft-team-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    width: 36px;
+    flex-shrink: 0;
+}
+
+.od-draft-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    align-items: center;
+}
+
+.od-draft-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: #2d3748;
+}
+
+/* ================================================================
+   Ability Build Section (collapsible)
+   ================================================================ */
+
+.od-ability-section {
+    background: #1a2332;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.od-ability-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border: none;
+    color: #a0aec0;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.od-ability-toggle:hover {
+    background: rgba(0, 0, 0, 0.3);
+    color: #e2e8f0;
+}
+
+.od-ability-toggle-text {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.od-chevron {
+    transition: transform 0.2s ease;
+}
+
+.od-chevron-open {
+    transform: rotate(180deg);
+}
+
+.od-ability-content {
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.od-ability-player {
+    padding: 0.5rem 0.625rem;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.12);
+    border: 1px solid transparent;
+}
+
+.od-ability-player-radiant {
+    border-left: 3px solid rgba(72, 187, 120, 0.4);
+}
+
+.od-ability-player-dire {
+    border-left: 3px solid rgba(252, 129, 129, 0.4);
+}
+
+.od-ability-player-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.375rem;
+}
+
+.od-ability-hero-img {
+    width: 36px;
+    height: 20px;
+    border-radius: 2px;
+    object-fit: cover;
+    background: #2d3748;
+}
+
+.od-ability-hero-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #a0aec0;
+}
+
+.od-ability-grid {
+    overflow-x: auto;
+}
+
+.od-ability-levels-header {
+    display: flex;
+    gap: 1px;
+    margin-bottom: 1px;
+}
+
+.od-ability-lvl-num {
+    width: 26px;
+    min-width: 26px;
+    text-align: center;
+    font-size: 0.5625rem;
+    color: #4a5568;
+    font-variant-numeric: tabular-nums;
+}
+
+.od-ability-levels-row {
+    display: flex;
+    gap: 1px;
+}
+
+.od-ability-cell {
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.od-ability-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 2px;
+    object-fit: cover;
+}
+
+.od-ability-talent {
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: #ecc94b;
+}
+
+.od-ability-unknown {
+    font-size: 0.625rem;
+    color: #4a5568;
+}
+
+/* ---- Responsive adjustments for OpenDota layout ---- */
+@media (max-width: 768px) {
+    .od-th-hero {
+        min-width: 140px;
+        width: 160px;
+    }
+
+    .od-th-narrow {
+        min-width: 30px;
+        width: 30px;
+    }
+
+    .od-th-items2 {
+        min-width: 200px;
+    }
+
+    .od-tab {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.6875rem;
+    }
+
+    .od-banner-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+        text-align: center;
+    }
+
+    .od-banner-left {
+        justify-content: center;
+    }
+
+    .od-banner-right {
+        align-items: center;
+    }
+
+    .od-score-radiant,
+    .od-score-dire {
+        font-size: 2.25rem;
+    }
+
+    .od-hero-portrait {
+        width: 48px;
+        height: 27px;
+    }
+}
+
+/* ================================================================
+   Pro Compare Tab
+   ================================================================ */
+
+.stat-box {
+    background: var(--bg-card-alt);
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.diff-item {
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.divergence-item {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: var(--bg-card-alt);
+    border-radius: 4px;
+}
+
+.severity-badge {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: white;
+}
+
+.select-input {
+    background: var(--bg-card-alt);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.btn {
+    background: var(--bg-card-alt);
+    color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+}
+
+.btn:hover {
+    color: var(--text-primary);
+    border-color: var(--color-accent);
+}
+
+.btn-active {
+    background: var(--color-accent);
+    color: #fff;
+    border-color: var(--color-accent);
+}
+
+.coaching-report {
+    padding: 16px;
+    background: var(--bg-card-alt);
+    border-radius: 6px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.coaching-report h3, .coaching-report h4 {
+    margin-top: 16px;
+    margin-bottom: 8px;
+}
+
+.coaching-report li {
+    margin-left: 20px;
+}
+
+.coaching-report strong {
+    color: var(--text-primary);
 }

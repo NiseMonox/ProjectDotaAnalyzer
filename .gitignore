@@ -1,3 +1,4 @@
+.env
 backend/venv/
 __pycache__/
 *.pyc
@@ -5,3 +6,15 @@ __pycache__/
 replays/*.dem
 frontend/static/assets/ward_screenshot_*.png
 frontend/static/assets/ward_section_*.png
+
+# Build artifacts & tools
+tools/jdk17/
+tools/clarity-analyzer/.gradle/
+tools/clarity-analyzer/build/
+tools/clarity-analyzer/gradle/wrapper/gradle-8.5-bin.zip
+tools/clarity-analyzer/clarity_stderr.txt
+clarity_stderr.txt
+
+# Temp files
+3110ward.png
+.claude/

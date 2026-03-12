@@ -10,6 +10,8 @@ Provides higher-level analysis on top of parsed match data:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from .models import MatchData
 
 
@@ -277,9 +279,14 @@ def analyze_teamfights(match: MatchData) -> list[dict]:
                 "y": tp.y,
                 "damage_dealt": tp.damage_dealt,
                 "damage_taken": tp.damage_taken,
+                "healing": tp.healing,
                 "kills": tp.kills,
                 "deaths": tp.deaths,
+                "gold_delta": tp.gold_delta,
+                "xp_delta": tp.xp_delta,
                 "abilities_used": tp.abilities_used,
+                "item_uses": tp.item_uses,
+                "buybacks": tp.buybacks,
                 "death_time_offset": tp.death_time_offset,
                 "kill_targets": tp.kill_targets,
                 "positions": [
@@ -325,6 +332,7 @@ def analyze_teamfights(match: MatchData) -> list[dict]:
             "radiant_deaths": tf.radiant_deaths,
             "dire_deaths": tf.dire_deaths,
             "winner": winner,
+            "gold_delta": tf.gold_delta,
             "players": players_detail,
             "kill_timeline": kill_timeline,
         })
@@ -383,6 +391,421 @@ def analyze_abilities(match: MatchData) -> dict:
     }
 
 
+def analyze_laning(match: MatchData) -> dict:
+    """Analyze laning phase data for all players."""
+    LANE_NAMES = {1: "安全路", 2: "中路", 3: "劣势路", 4: "野区"}
+
+    players = []
+    for p in match.players:
+        lane = p.lane or 0
+        lane_role = p.lane_role or 0
+        lane_name = LANE_NAMES.get(lane, "未知")
+        if p.is_roaming:
+            lane_name = "游走"
+
+        lh_ten = p.lh_t[10] if len(p.lh_t) > 10 else p.lh_t[-1] if p.lh_t else 0
+        dn_ten = 0  # denies timeline not available; use 0
+        gold_ten = p.gold_t[10] if len(p.gold_t) > 10 else p.gold_t[-1] if p.gold_t else 0
+        xp_ten = p.xp_t[10] if len(p.xp_t) > 10 else p.xp_t[-1] if p.xp_t else 0
+
+        # Computed laning stats
+        total_damage_taken_laning = sum(
+            e.damage for other_p in match.players
+            for e in other_p.laning_damage_events
+            if e.target_idx == p.player_slot
+        )
+
+        players.append({
+            "player_slot": p.player_slot,
+            "hero_name": p.hero_name,
+            "hero_slug": p.hero_slug,
+            "team": p.team,
+            "lane": lane,
+            "lane_role": lane_role,
+            "lane_name": lane_name,
+            "is_roaming": p.is_roaming,
+            "lane_efficiency": p.lane_efficiency,
+            "lane_efficiency_pct": p.lane_efficiency_pct,
+            "lh_ten": lh_ten,
+            "dn_ten": dn_ten,
+            "gold_ten": gold_ten,
+            "xp_ten": xp_ten,
+            # Enhanced laning data
+            "laning_snapshots": [s.model_dump() for s in p.laning_snapshots],
+            "creep_kills": [c.model_dump() for c in p.laning_creep_kills],
+            "denies_log": [d.model_dump() for d in p.laning_denies],
+            "damage_events": [e.model_dump() for e in p.laning_damage_events],
+            "regen_events": [r.model_dump() for r in p.laning_regen_events],
+            # Computed laning stats
+            "total_lh_laning": len(p.laning_creep_kills),
+            "total_denies_laning": len(p.laning_denies),
+            "total_damage_dealt_laning": sum(e.damage for e in p.laning_damage_events),
+            "total_damage_taken_laning": total_damage_taken_laning,
+            "regen_items_used": len(p.laning_regen_events),
+        })
+
+    return {"players": players}
+
+
+def analyze_combat(match: MatchData) -> dict:
+    """Analyze kill and damage matrices between players."""
+    heroes = [p.hero_name for p in match.players]
+    slug_to_idx = {}
+    for i, p in enumerate(match.players):
+        slug_to_idx[p.hero_slug] = i
+
+    num = len(match.players)
+
+    # Kill matrix
+    kill_matrix = [[0] * num for _ in range(num)]
+    for i, p in enumerate(match.players):
+        for unit_name, count in p.killed.items():
+            # unit_name is like "npc_dota_hero_antimage"
+            slug = unit_name.replace("npc_dota_hero_", "")
+            j = slug_to_idx.get(slug)
+            if j is not None:
+                kill_matrix[i][j] = count
+
+    # Damage matrix
+    damage_matrix = [[0] * num for _ in range(num)]
+    for i, p in enumerate(match.players):
+        for unit_name, amount in p.damage.items():
+            slug = unit_name.replace("npc_dota_hero_", "")
+            j = slug_to_idx.get(slug)
+            if j is not None:
+                damage_matrix[i][j] = amount
+
+    return {
+        "kill_matrix": {
+            "heroes": heroes,
+            "matrix": kill_matrix,
+        },
+        "damage_matrix": {
+            "heroes": heroes,
+            "matrix": damage_matrix,
+        },
+    }
+
+
+def analyze_farm(match: MatchData) -> dict:
+    """Analyze farming patterns, gold/xp sources, and last hit timelines."""
+    GOLD_REASON_NAMES = {
+        "0": "其他", "1": "死亡", "2": "买活", "6": "出售",
+        "11": "建筑", "12": "英雄", "13": "小兵", "14": "肉山", "15": "信使",
+    }
+    XP_REASON_NAMES = {
+        "1": "英雄", "2": "小兵", "3": "肉山", "5": "建筑", "4": "其他",
+    }
+
+    unit_kills = []
+    gold_reasons_list = []
+    xp_reasons_list = []
+    lh_timeline = []
+
+    for p in match.players:
+        base = {
+            "player_slot": p.player_slot,
+            "hero_name": p.hero_name,
+            "hero_slug": p.hero_slug,
+            "team": p.team,
+        }
+
+        unit_kills.append({
+            **base,
+            "hero_kills": p.kills,
+            "lane_kills": p.lane_kills,
+            "neutral_kills": p.neutral_kills,
+            "ancient_kills": p.ancient_kills,
+            "tower_kills": p.tower_kills,
+            "courier_kills": p.courier_kills,
+            "roshans_killed": p.roshans_killed,
+        })
+
+        # Map gold reason keys to Chinese names
+        reasons_mapped = {}
+        for key, amount in p.gold_reasons.items():
+            name = GOLD_REASON_NAMES.get(str(key), f"未知({key})")
+            reasons_mapped[name] = reasons_mapped.get(name, 0) + amount
+        gold_reasons_list.append({**base, "reasons": reasons_mapped})
+
+        # Map xp reason keys to Chinese names
+        xp_mapped = {}
+        for key, amount in p.xp_reasons.items():
+            name = XP_REASON_NAMES.get(str(key), f"未知({key})")
+            xp_mapped[name] = xp_mapped.get(name, 0) + amount
+        xp_reasons_list.append({**base, "reasons": xp_mapped})
+
+        lh_timeline.append({**base, "lh_t": p.lh_t})
+
+    return {
+        "unit_kills": unit_kills,
+        "gold_reasons": gold_reasons_list,
+        "xp_reasons": xp_reasons_list,
+        "lh_timeline": lh_timeline,
+    }
+
+
+def analyze_purchases(match: MatchData) -> dict:
+    """Analyze item purchase timelines grouped into 5-minute phases."""
+    players = []
+    for p in match.players:
+        base = {
+            "player_slot": p.player_slot,
+            "hero_name": p.hero_name,
+            "hero_slug": p.hero_slug,
+            "team": p.team,
+        }
+
+        # Build enriched purchase log
+        purchase_log = []
+        for entry in p.purchase_log:
+            time_val = entry.get("time", 0)
+            purchase_log.append({
+                "time": time_val,
+                "key": entry.get("key", ""),
+                "time_str": format_time(time_val),
+            })
+
+        # Group into phases: starting (-90s to 0s) + 5-minute phases
+        max_time = match.duration
+        phases: dict[str, list] = {}
+
+        # Starting items: purchased during strategy phase (-90s to 0s)
+        starting_items = [
+            item for item in purchase_log if -90 <= item["time"] <= 0
+        ]
+        if starting_items:
+            phases["starting"] = starting_items
+
+        for m_start in range(0, max_time // 60 + 5, 5):
+            phase_key = f"{m_start}-{m_start + 5}"
+            t0, t1 = m_start * 60, (m_start + 5) * 60
+            phase_items = [
+                item for item in purchase_log if t0 < item["time"] <= t1
+            ]
+            if phase_items or t0 < max_time:
+                phases[phase_key] = phase_items
+            if t0 >= max_time:
+                break
+
+        players.append({
+            **base,
+            "purchase_log": purchase_log,
+            "phases": phases,
+        })
+
+    return {"players": players}
+
+
+def analyze_graphs(match: MatchData) -> dict:
+    """Provide graph data: team advantages and per-player timelines."""
+    player_gold = []
+    player_xp = []
+    player_lh = []
+
+    for p in match.players:
+        base = {
+            "player_slot": p.player_slot,
+            "hero_name": p.hero_name,
+            "hero_slug": p.hero_slug,
+            "team": p.team,
+        }
+        player_gold.append({**base, "gold_t": p.gold_t})
+        player_xp.append({**base, "xp_t": p.xp_t})
+        player_lh.append({**base, "lh_t": p.lh_t})
+
+    return {
+        "radiant_gold_adv": match.radiant_gold_adv,
+        "radiant_xp_adv": match.radiant_xp_adv,
+        "player_gold": player_gold,
+        "player_xp": player_xp,
+        "player_lh": player_lh,
+    }
+
+
+def analyze_objectives(match: MatchData) -> dict:
+    """Analyze objectives (towers, rax, roshan) and rune pickups."""
+    RUNE_NAMES = {
+        "0": "双倍", "1": "急速", "2": "幻象", "3": "隐身",
+        "4": "恢复", "5": "奥术", "6": "赏金", "7": "圣水",
+    }
+
+    # Build slug-to-player lookup
+    slot_to_player = {p.player_slot: p for p in match.players}
+
+    objectives = []
+    for obj in match.objectives:
+        time_val = obj.get("time", 0)
+        obj_type = obj.get("type", "")
+        slot = obj.get("player_slot", obj.get("slot"))
+        unit = obj.get("unit", "")
+        key = obj.get("key", "")
+
+        # Determine team
+        team = obj.get("team")
+        if team is None and slot is not None:
+            team = "radiant" if slot < 128 else "dire"
+        elif team is None and unit:
+            if "goodguys" in unit or "radiant" in unit.lower():
+                team = "radiant"
+            elif "badguys" in unit or "dire" in unit.lower():
+                team = "dire"
+
+        # Map team int to string if needed
+        if isinstance(team, int):
+            team = "radiant" if team == 2 else "dire" if team == 3 else None
+
+        hero_name = ""
+        hero_slug = ""
+        if slot is not None:
+            player = slot_to_player.get(slot)
+            if player:
+                hero_name = player.hero_name
+                hero_slug = player.hero_slug
+
+        objectives.append({
+            "time": time_val,
+            "time_str": format_time(time_val),
+            "type": obj_type,
+            "team": team,
+            "key": key or unit,
+            "hero_name": hero_name,
+            "hero_slug": hero_slug,
+        })
+
+    objectives.sort(key=lambda o: o["time"])
+
+    # Rune analysis per player
+    runes = []
+    for p in match.players:
+        base = {
+            "player_slot": p.player_slot,
+            "hero_name": p.hero_name,
+            "hero_slug": p.hero_slug,
+            "team": p.team,
+        }
+        rune_counts = {}
+        for key, count in p.runes.items():
+            rune_name = RUNE_NAMES.get(str(key), f"未知({key})")
+            rune_counts[rune_name] = count
+        total = sum(rune_counts.values())
+        if total > 0:
+            runes.append({**base, "runes": rune_counts, "total": total})
+
+    return {
+        "objectives": objectives,
+        "runes": runes,
+    }
+
+
+def analyze_benchmarks(match: MatchData) -> dict:
+    """Return benchmark data for all players."""
+    players = []
+    for p in match.players:
+        players.append({
+            "player_slot": p.player_slot,
+            "hero_name": p.hero_name,
+            "hero_slug": p.hero_slug,
+            "team": p.team,
+            "benchmarks": p.benchmarks,
+        })
+    return {"players": players}
+
+
+def _load_hero_id_map() -> dict[int, dict]:
+    """Load hero_id -> {name, slug} from static heroes.json."""
+    import json
+    heroes_path = Path(__file__).parent.parent.parent / "frontend" / "static" / "data" / "heroes.json"
+    if not heroes_path.exists():
+        return {}
+    with open(heroes_path) as f:
+        data = json.load(f)
+    result = {}
+    for hid, info in data.get("by_id", {}).items():
+        result[int(hid)] = {"hero_name": info.get("name", ""), "hero_slug": info.get("slug", "")}
+    return result
+
+
+def analyze_draft(match: MatchData) -> dict:
+    """Analyze draft picks and bans."""
+    # Build hero_id -> hero info from static data (for bans - heroes not in match)
+    hero_id_map = _load_hero_id_map()
+
+    # Also build from match players for better slug resolution
+    hero_slug_map = {}  # slug/internal_name -> player info (for Clarity picks)
+    for p in match.players:
+        info = {"hero_name": p.hero_name, "hero_slug": p.hero_slug}
+        hero_id_map[p.hero_id] = info
+        if p.hero_slug:
+            hero_slug_map[p.hero_slug] = info
+            hero_slug_map[p.hero_slug.replace("_", "")] = info
+
+    picks_bans = []
+    for entry in match.picks_bans:
+        hero_id = entry.get("hero_id", 0)
+        team_val = entry.get("team", 0)
+        team = "radiant" if team_val == 0 else "dire"
+
+        hero_info = hero_id_map.get(hero_id, {})
+
+        # Fallback: resolve from hero_name field (Clarity outputs slug as hero_name)
+        if not hero_info and entry.get("hero_name"):
+            slug = entry["hero_name"]
+            hero_info = hero_slug_map.get(slug, hero_slug_map.get(slug.replace("_", ""), {}))
+
+        picks_bans.append({
+            "is_pick": entry.get("is_pick", False),
+            "hero_id": hero_id,
+            "hero_name": hero_info.get("hero_name", entry.get("hero_name", "")),
+            "hero_slug": hero_info.get("hero_slug", entry.get("hero_slug", "")),
+            "team": team,
+            "order": entry.get("order", 0),
+        })
+
+    return {
+        "picks_bans": picks_bans,
+        "has_draft": len(picks_bans) > 0,
+    }
+
+
+def analyze_chat(match: MatchData) -> dict:
+    """Analyze chat messages."""
+    slot_to_player = {p.player_slot: p for p in match.players}
+
+    messages = []
+    for msg in match.chat:
+        time_val = msg.get("time", 0)
+        slot = msg.get("player_slot", msg.get("slot"))
+        msg_type = msg.get("type", "chat")
+        key = msg.get("key", "")
+
+        hero_name = ""
+        hero_slug = ""
+        team = None
+        if slot is not None:
+            player = slot_to_player.get(slot)
+            if player:
+                hero_name = player.hero_name
+                hero_slug = player.hero_slug
+                team = player.team
+            else:
+                team = "radiant" if slot < 128 else "dire"
+
+        messages.append({
+            "time": time_val,
+            "time_str": format_time(time_val),
+            "type": msg_type,
+            "key": key,
+            "player_slot": slot,
+            "hero_name": hero_name,
+            "hero_slug": hero_slug,
+            "team": team,
+        })
+
+    messages.sort(key=lambda m: m["time"])
+    return {"messages": messages}
+
+
 def full_analysis(match: MatchData) -> dict:
     """Run all analysis modules and return combined results."""
     return {
@@ -394,6 +817,14 @@ def full_analysis(match: MatchData) -> dict:
             "game_mode": match.game_mode,
             "radiant_score": match.radiant_score,
             "dire_score": match.dire_score,
+            "tower_status_radiant": match.tower_status_radiant,
+            "tower_status_dire": match.tower_status_dire,
+            "barracks_status_radiant": match.barracks_status_radiant,
+            "barracks_status_dire": match.barracks_status_dire,
+            "first_blood_time": match.first_blood_time,
+            "start_time": match.start_time,
+            "region": match.region,
+            "patch": match.patch,
             "players": [
                 {
                     "player_slot": p.player_slot,
@@ -416,6 +847,14 @@ def full_analysis(match: MatchData) -> dict:
                     "net_worth": p.net_worth,
                     "final_items": p.final_items,
                     "final_item_keys": p.final_item_keys,
+                    "backpack": p.backpack,
+                    "purchase_log": [
+                        {"time": entry.get("time", 0), "key": entry.get("key", ""), "time_str": format_time(entry.get("time", 0))}
+                        for entry in p.purchase_log
+                    ] if p.purchase_log else [
+                        {"time": e.time, "key": e.item_key or e.item_name, "time_str": format_time(e.time)}
+                        for e in p.items
+                    ],
                 }
                 for p in match.players
             ],
@@ -439,4 +878,13 @@ def full_analysis(match: MatchData) -> dict:
             }
             for s in match.gold_xp_timeline
         ],
+        "laning": analyze_laning(match),
+        "combat": analyze_combat(match),
+        "farm": analyze_farm(match),
+        "purchases": analyze_purchases(match),
+        "graphs": analyze_graphs(match),
+        "objectives_analysis": analyze_objectives(match),
+        "benchmarks_analysis": analyze_benchmarks(match),
+        "draft": analyze_draft(match),
+        "chat_analysis": analyze_chat(match),
     }

@@ -7,18 +7,20 @@
     <script src="https://cdn.jsdelivr.net/npm/vue@3.4/dist/vue.global.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5/dist/echarts.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
     <div id="app">
-        <!-- Header -->
-        <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+        <!-- Header (only visible before match loaded) -->
+        <header v-if="!analysisData" class="bg-gray-800 border-b border-gray-700 px-6 py-4">
             <div class="max-w-7xl mx-auto flex items-center justify-between">
                 <h1 class="text-2xl font-bold text-yellow-400">Dota 2 对局分析器</h1>
                 <div class="flex items-center gap-4">
-                    <span v-if="parseSource" class="text-sm text-gray-400">
-                        数据来源: <span class="text-yellow-400">{{ parseSource }}</span>
-                    </span>
+                    <span v-if="parseSource === 'clarity'" class="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded">本地解析 (Clarity)</span>
+                    <span v-else-if="parseSource === 'opendota'" class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded">OpenDota API</span>
+                    <span v-else-if="parseSource === 'mock'" class="text-xs bg-yellow-900 text-yellow-300 px-2 py-1 rounded">演示数据</span>
+                    <span v-else-if="parseSource" class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">{{ parseSource }}</span>
                 </div>
             </div>
         </header>
@@ -30,7 +32,7 @@
                 <div class="upload-zone" @drop.prevent="handleDrop" @dragover.prevent
                      @click="$refs.fileInput.click()">
                     <input ref="fileInput" type="file" accept=".dem" @change="handleFileSelect" hidden>
-                    <div class="text-6xl mb-4">📂</div>
+                    <div class="text-6xl mb-4">&#x1F4C2;</div>
                     <p class="text-lg">拖拽 .dem 文件到此处，或点击选择文件</p>
                     <p class="text-gray-500 mt-2 text-sm">支持 Dota 2 录像文件 (.dem)</p>
                 </div>
@@ -56,202 +58,462 @@
             </div>
         </div>
 
-        <!-- Analysis Dashboard -->
-        <div v-if="analysisData" class="max-w-7xl mx-auto px-4 py-6">
-            <!-- Match Overview -->
-            <section class="bg-gray-800 rounded-lg p-6 mb-6 border border-gray-700">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-xl font-bold">对局概览</h2>
-                    <button @click="resetAnalysis" class="text-sm text-gray-400 hover:text-white">
-                        ← 返回上传
+        <!-- ============================================================ -->
+        <!-- MATCH LOADED: OpenDota-style Match Header + Scoreboard       -->
+        <!-- ============================================================ -->
+        <div v-if="analysisData">
+
+            <!-- ======== Match Victory Banner (OpenDota-style) ======== -->
+            <div class="match-header-banner" :class="overview.radiant_win ? 'banner-radiant' : 'banner-dire'">
+                <div class="max-w-7xl mx-auto px-4 py-4">
+                    <!-- Top row: back button + data source badge -->
+                    <div class="flex items-center justify-between mb-3">
+                        <button @click="resetAnalysis" class="text-sm text-gray-300 hover:text-white opacity-80 hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <span style="font-size:18px;">&#x2190;</span> 返回
+                        </button>
+                        <div class="flex items-center gap-2">
+                            <span v-if="parseSource === 'clarity'" class="text-xs bg-blue-900 bg-opacity-60 text-blue-300 px-2 py-1 rounded">本地解析</span>
+                            <span v-else-if="parseSource === 'opendota'" class="text-xs bg-green-900 bg-opacity-60 text-green-300 px-2 py-1 rounded">OpenDota API</span>
+                            <span v-else-if="parseSource === 'mock'" class="text-xs bg-yellow-900 bg-opacity-60 text-yellow-300 px-2 py-1 rounded">演示数据</span>
+                        </div>
+                    </div>
+
+                    <!-- Main banner: 3-column layout like OpenDota -->
+                    <div class="od-banner-grid">
+                        <!-- Left: Victory label with team color -->
+                        <div class="od-banner-left">
+                            <div class="od-victory-label" :class="overview.radiant_win ? 'od-victory-radiant' : 'od-victory-dire'">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="flex-shrink:0;">
+                                    <path v-if="overview.radiant_win" d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+                                    <path v-else d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+                                </svg>
+                                <span class="od-victory-text">{{ overview.radiant_win ? '天辉胜利' : '夜魇胜利' }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Center: Score + Duration -->
+                        <div class="od-banner-center">
+                            <div class="od-banner-score-row">
+                                <span class="od-score-radiant">{{ overview.radiant_score }}</span>
+                                <div class="od-banner-mid-info">
+                                    <span class="od-banner-mode">{{ overview.game_mode }}</span>
+                                    <span class="od-banner-duration">{{ overview.duration_str }}</span>
+                                    <span v-if="overview.start_time" class="od-banner-timeago">{{ timeAgo(overview.start_time) }}</span>
+                                </div>
+                                <span class="od-score-dire">{{ overview.dire_score }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Right: Match ID, Region -->
+                        <div class="od-banner-right">
+                            <span v-if="overview.match_id" class="od-banner-meta">Match ID: <b>{{ overview.match_id }}</b></span>
+                            <span v-if="regionName(overview.region)" class="od-banner-meta">{{ regionName(overview.region) }}</span>
+                            <span v-if="overview.patch" class="od-banner-meta">Patch {{ overview.patch }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== Tab Navigation (OpenDota-style) ======== -->
+            <div class="od-tab-bar">
+                <div class="max-w-7xl mx-auto px-4 flex overflow-x-auto custom-scroll">
+                    <button v-for="tab in tabs" :key="tab.id"
+                            @click="activeTab = tab.id"
+                            class="od-tab" :class="{ 'od-tab-active': activeTab === tab.id }">
+                        {{ tab.label }}
+                    </button>
+                    <button @click="activeTab = 'pro_compare'"
+                            class="od-tab" :class="{ 'od-tab-active': activeTab === 'pro_compare' }">
+                        职业对比
                     </button>
                 </div>
-                <div class="grid grid-cols-3 gap-4 text-center mb-6">
-                    <div>
-                        <span class="text-3xl font-bold text-green-400">{{ overview.radiant_score }}</span>
-                        <p class="text-green-400">天辉</p>
-                    </div>
-                    <div>
-                        <p class="text-lg text-gray-400">{{ overview.duration_str }}</p>
-                        <p class="text-sm text-gray-500">{{ overview.game_mode }}</p>
-                        <p class="text-sm font-bold" :class="overview.radiant_win ? 'text-green-400' : 'text-red-400'">
-                            {{ overview.radiant_win ? '天辉胜利' : '夜魇胜利' }}
-                        </p>
-                    </div>
-                    <div>
-                        <span class="text-3xl font-bold text-red-400">{{ overview.dire_score }}</span>
-                        <p class="text-red-400">夜魇</p>
-                    </div>
-                </div>
-
-                <!-- Scoreboard -->
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="text-gray-400 border-b border-gray-700">
-                                <th class="text-left py-2 px-2">英雄</th>
-                                <th class="text-left py-2 px-2">玩家</th>
-                                <th class="py-2 px-1">K/D/A</th>
-                                <th class="py-2 px-1">等级</th>
-                                <th class="py-2 px-1">补刀</th>
-                                <th class="py-2 px-1">GPM</th>
-                                <th class="py-2 px-1">XPM</th>
-                                <th class="py-2 px-1">伤害</th>
-                                <th class="py-2 px-1">塔伤</th>
-                                <th class="py-2 px-1">治疗</th>
-                                <th class="py-2 px-1">参战</th>
-                                <th class="py-2 px-1">经济</th>
-                                <th class="text-left py-2 px-2">最终装备</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Radiant -->
-                            <tr class="border-b border-gray-700">
-                                <td colspan="13" class="py-1 px-2 text-green-400 font-bold text-xs uppercase tracking-wider">天辉 Radiant</td>
-                            </tr>
-                            <tr v-for="p in radiantPlayers" :key="p.player_slot"
-                                class="border-b border-gray-800 hover:bg-gray-750">
-                                <td class="py-2 px-2">
-                                    <div class="flex items-center gap-2">
-                                        <img :src="heroIcon(p.hero_slug)" class="hero-icon" :alt="p.hero_name"
-                                             @error="e => e.target.style.display='none'">
-                                        <span class="text-yellow-300 text-xs">{{ p.hero_name }}</span>
-                                    </div>
-                                </td>
-                                <td class="py-2 px-2 text-gray-300">{{ p.player_name }}</td>
-                                <td class="py-2 px-1 text-center">
-                                    <span class="text-green-300">{{ p.kills }}</span>/<span class="text-red-300">{{ p.deaths }}</span>/<span class="text-gray-300">{{ p.assists }}</span>
-                                </td>
-                                <td class="py-2 px-1 text-center">{{ p.level }}</td>
-                                <td class="py-2 px-1 text-center">{{ p.last_hits }}/{{ p.denies }}</td>
-                                <td class="py-2 px-1 text-center text-yellow-400">{{ p.gpm }}</td>
-                                <td class="py-2 px-1 text-center">{{ p.xpm }}</td>
-                                <td class="py-2 px-1 text-center">{{ formatNumber(p.hero_damage) }}</td>
-                                <td class="py-2 px-1 text-center text-gray-400">{{ formatNumber(p.tower_damage) }}</td>
-                                <td class="py-2 px-1 text-center text-green-300">{{ p.hero_healing > 0 ? formatNumber(p.hero_healing) : '-' }}</td>
-                                <td class="py-2 px-1 text-center" :class="{'text-yellow-400': Math.round((p.kills + p.assists) / Math.max(1, overview.radiant_score) * 100) >= 70}">{{ Math.round((p.kills + p.assists) / Math.max(1, overview.radiant_score) * 100) }}%</td>
-                                <td class="py-2 px-1 text-center text-yellow-400">{{ formatNumber(p.net_worth) }}</td>
-                                <td class="py-2 px-2">
-                                    <div class="flex gap-0.5">
-                                        <img v-for="(key, idx) in (p.final_item_keys || [])" :key="idx"
-                                             :src="itemIcon(key)" class="item-icon"
-                                             :title="p.final_items[idx]"
-                                             @error="e => e.target.style.display='none'">
-                                    </div>
-                                </td>
-                            </tr>
-                            <!-- Dire -->
-                            <tr class="border-b border-gray-700">
-                                <td colspan="13" class="py-1 px-2 text-red-400 font-bold text-xs uppercase tracking-wider">夜魇 Dire</td>
-                            </tr>
-                            <tr v-for="p in direPlayers" :key="p.player_slot"
-                                class="border-b border-gray-800 hover:bg-gray-750">
-                                <td class="py-2 px-2">
-                                    <div class="flex items-center gap-2">
-                                        <img :src="heroIcon(p.hero_slug)" class="hero-icon" :alt="p.hero_name"
-                                             @error="e => e.target.style.display='none'">
-                                        <span class="text-yellow-300 text-xs">{{ p.hero_name }}</span>
-                                    </div>
-                                </td>
-                                <td class="py-2 px-2 text-gray-300">{{ p.player_name }}</td>
-                                <td class="py-2 px-1 text-center">
-                                    <span class="text-green-300">{{ p.kills }}</span>/<span class="text-red-300">{{ p.deaths }}</span>/<span class="text-gray-300">{{ p.assists }}</span>
-                                </td>
-                                <td class="py-2 px-1 text-center">{{ p.level }}</td>
-                                <td class="py-2 px-1 text-center">{{ p.last_hits }}/{{ p.denies }}</td>
-                                <td class="py-2 px-1 text-center text-yellow-400">{{ p.gpm }}</td>
-                                <td class="py-2 px-1 text-center">{{ p.xpm }}</td>
-                                <td class="py-2 px-1 text-center">{{ formatNumber(p.hero_damage) }}</td>
-                                <td class="py-2 px-1 text-center text-gray-400">{{ formatNumber(p.tower_damage) }}</td>
-                                <td class="py-2 px-1 text-center text-green-300">{{ p.hero_healing > 0 ? formatNumber(p.hero_healing) : '-' }}</td>
-                                <td class="py-2 px-1 text-center" :class="{'text-yellow-400': Math.round((p.kills + p.assists) / Math.max(1, overview.dire_score) * 100) >= 70}">{{ Math.round((p.kills + p.assists) / Math.max(1, overview.dire_score) * 100) }}%</td>
-                                <td class="py-2 px-1 text-center text-yellow-400">{{ formatNumber(p.net_worth) }}</td>
-                                <td class="py-2 px-2">
-                                    <div class="flex gap-0.5">
-                                        <img v-for="(key, idx) in (p.final_item_keys || [])" :key="idx"
-                                             :src="itemIcon(key)" class="item-icon"
-                                             :title="p.final_items[idx]"
-                                             @error="e => e.target.style.display='none'">
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Tab Navigation -->
-            <div class="flex gap-2 mb-6 overflow-x-auto pb-1">
-                <button v-for="tab in tabs" :key="tab.key"
-                        @click="activeTab = tab.key"
-                        class="tab-btn"
-                        :class="{ 'tab-active': activeTab === tab.key }">
-                    {{ tab.icon }} {{ tab.label }}
-                </button>
             </div>
+
+            <!-- Clarity parse note -->
+            <div v-if="parseSource === 'clarity'" class="max-w-7xl mx-auto px-4 mt-4">
+                <div class="p-3 bg-blue-900 bg-opacity-30 border border-blue-800 rounded-lg text-sm text-blue-300">
+                    本地解析模式：部分高级数据（技能加点、表现评估、对线热力图等）需要 OpenDota API 才能获取，相关标签页可能显示为空。
+                </div>
+            </div>
+
+            <!-- ======== Overview / Scoreboard (shown when activeTab === 'overview') ======== -->
+            <div v-if="activeTab === 'overview'" class="max-w-7xl mx-auto px-4 py-6">
+
+                <!-- ===== Radiant Table ===== -->
+                <div class="od-team-section mb-6">
+                    <div class="od-team-header od-team-radiant">
+                        <span class="font-bold text-sm tracking-wide uppercase">天辉</span>
+                        <span v-if="overview.radiant_win" class="od-winner-badge">WINNER</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="od-table w-full">
+                            <thead>
+                                <tr>
+                                    <th class="od-th od-th-hero text-left">英雄</th>
+                                    <th class="od-th od-th-narrow">等级</th>
+                                    <th class="od-th od-th-narrow">K</th>
+                                    <th class="od-th od-th-narrow">D</th>
+                                    <th class="od-th od-th-narrow">A</th>
+                                    <th class="od-th od-th-lhdn">LH/DN</th>
+                                    <th class="od-th od-th-net">NET</th>
+                                    <th class="od-th od-th-gxpm">GPM/XPM</th>
+                                    <th class="od-th od-th-dmg">HD</th>
+                                    <th class="od-th od-th-dmg">TD</th>
+                                    <th class="od-th od-th-dmg">HH</th>
+                                    <th class="od-th od-th-items2">装备</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="p in radiantPlayers" :key="p.player_slot" class="od-row">
+                                    <!-- Hero: portrait + player name + hero name stacked -->
+                                    <td class="od-td od-td-hero">
+                                        <div class="od-hero-cell">
+                                            <img :src="heroImg(p.hero_slug)" class="od-hero-portrait" :alt="p.hero_name"
+                                                 @error="e => e.target.src = PLACEHOLDER_HERO">
+                                            <div class="od-hero-info">
+                                                <span class="od-player-name">{{ p.player_name }}</span>
+                                                <span class="od-hero-name">{{ p.hero_name }}</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="od-td od-td-narrow od-text-lvl">{{ p.level }}</td>
+                                    <td class="od-td od-td-narrow od-text-kills">{{ p.kills }}</td>
+                                    <td class="od-td od-td-narrow od-text-deaths">{{ p.deaths }}</td>
+                                    <td class="od-td od-td-narrow od-text-assists">{{ p.assists }}</td>
+                                    <td class="od-td od-td-lhdn">{{ p.last_hits }}/{{ p.denies }}</td>
+                                    <td class="od-td od-td-net od-text-gold">{{ formatNetWorth(p.net_worth) }}</td>
+                                    <td class="od-td od-td-gxpm"><span class="od-text-gpm">{{ p.gpm }}</span><span class="od-text-sep">/</span><span class="od-text-xpm">{{ p.xpm }}</span></td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(p.hero_damage) }}</td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(p.tower_damage) }}</td>
+                                    <td class="od-td od-td-dmg">{{ p.hero_healing > 0 ? formatNumber(p.hero_healing) : '-' }}</td>
+                                    <td class="od-td od-td-items2">
+                                        <div class="od-items-row">
+                                            <template v-if="p.final_item_keys && p.final_item_keys.length > 0">
+                                                <div v-for="(key, idx) in p.final_item_keys.slice(0, 6)" :key="idx" class="od-item-cell">
+                                                    <img :src="itemIcon(key)" class="od-item-img"
+                                                         :title="(p.final_items || [])[idx] || ''"
+                                                         @error="e => e.target.src = PLACEHOLDER_ITEM">
+                                                    <span v-if="getItemPurchaseTime(p, key)" class="od-item-time">{{ getItemPurchaseTime(p, key) }}</span>
+                                                </div>
+                                            </template>
+                                            <template v-else>
+                                                <div v-for="i in 6" :key="i" class="od-item-cell">
+                                                    <span class="od-item-img od-item-empty"></span>
+                                                </div>
+                                            </template>
+                                            <!-- Neutral item slot (separated) -->
+                                            <template v-if="p.final_item_keys && p.final_item_keys.length > 6">
+                                                <div class="od-item-cell od-item-neutral">
+                                                    <img :src="itemIcon(p.final_item_keys[6])" class="od-item-img od-item-img-neutral"
+                                                         :title="(p.final_items || [])[6] || ''"
+                                                         @error="e => e.target.src = PLACEHOLDER_ITEM">
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <!-- Backpack row (smaller) -->
+                                        <div v-if="p.backpack && p.backpack.length > 0" class="od-backpack-row">
+                                            <div v-for="(key, idx) in p.backpack" :key="'bp'+idx" class="od-item-cell">
+                                                <img v-if="key" :src="itemIcon(key)" class="od-item-img-bp" :title="key"
+                                                     @error="e => e.target.src = PLACEHOLDER_ITEM">
+                                                <span v-else class="od-item-img-bp od-item-empty"></span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <!-- Team totals row -->
+                                <tr class="od-row-totals">
+                                    <td class="od-td od-td-hero"><span class="od-totals-label">合计</span></td>
+                                    <td class="od-td od-td-narrow"></td>
+                                    <td class="od-td od-td-narrow od-text-kills od-text-bold">{{ teamSum(radiantPlayers, 'kills') }}</td>
+                                    <td class="od-td od-td-narrow od-text-deaths od-text-bold">{{ teamSum(radiantPlayers, 'deaths') }}</td>
+                                    <td class="od-td od-td-narrow od-text-assists od-text-bold">{{ teamSum(radiantPlayers, 'assists') }}</td>
+                                    <td class="od-td od-td-lhdn">{{ teamSum(radiantPlayers, 'last_hits') }}/{{ teamSum(radiantPlayers, 'denies') }}</td>
+                                    <td class="od-td od-td-net od-text-gold od-text-bold">{{ formatNetWorth(teamSum(radiantPlayers, 'net_worth')) }}</td>
+                                    <td class="od-td od-td-gxpm"></td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(teamSum(radiantPlayers, 'hero_damage')) }}</td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(teamSum(radiantPlayers, 'tower_damage')) }}</td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(teamSum(radiantPlayers, 'hero_healing')) }}</td>
+                                    <td class="od-td od-td-items2"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ===== Dire Table ===== -->
+                <div class="od-team-section mb-6">
+                    <div class="od-team-header od-team-dire">
+                        <span class="font-bold text-sm tracking-wide uppercase">夜魇</span>
+                        <span v-if="!overview.radiant_win" class="od-winner-badge">WINNER</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="od-table w-full">
+                            <thead>
+                                <tr>
+                                    <th class="od-th od-th-hero text-left">英雄</th>
+                                    <th class="od-th od-th-narrow">等级</th>
+                                    <th class="od-th od-th-narrow">K</th>
+                                    <th class="od-th od-th-narrow">D</th>
+                                    <th class="od-th od-th-narrow">A</th>
+                                    <th class="od-th od-th-lhdn">LH/DN</th>
+                                    <th class="od-th od-th-net">NET</th>
+                                    <th class="od-th od-th-gxpm">GPM/XPM</th>
+                                    <th class="od-th od-th-dmg">HD</th>
+                                    <th class="od-th od-th-dmg">TD</th>
+                                    <th class="od-th od-th-dmg">HH</th>
+                                    <th class="od-th od-th-items2">装备</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="p in direPlayers" :key="p.player_slot" class="od-row">
+                                    <td class="od-td od-td-hero">
+                                        <div class="od-hero-cell">
+                                            <img :src="heroImg(p.hero_slug)" class="od-hero-portrait" :alt="p.hero_name"
+                                                 @error="e => e.target.src = PLACEHOLDER_HERO">
+                                            <div class="od-hero-info">
+                                                <span class="od-player-name">{{ p.player_name }}</span>
+                                                <span class="od-hero-name">{{ p.hero_name }}</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="od-td od-td-narrow od-text-lvl">{{ p.level }}</td>
+                                    <td class="od-td od-td-narrow od-text-kills">{{ p.kills }}</td>
+                                    <td class="od-td od-td-narrow od-text-deaths">{{ p.deaths }}</td>
+                                    <td class="od-td od-td-narrow od-text-assists">{{ p.assists }}</td>
+                                    <td class="od-td od-td-lhdn">{{ p.last_hits }}/{{ p.denies }}</td>
+                                    <td class="od-td od-td-net od-text-gold">{{ formatNetWorth(p.net_worth) }}</td>
+                                    <td class="od-td od-td-gxpm"><span class="od-text-gpm">{{ p.gpm }}</span><span class="od-text-sep">/</span><span class="od-text-xpm">{{ p.xpm }}</span></td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(p.hero_damage) }}</td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(p.tower_damage) }}</td>
+                                    <td class="od-td od-td-dmg">{{ p.hero_healing > 0 ? formatNumber(p.hero_healing) : '-' }}</td>
+                                    <td class="od-td od-td-items2">
+                                        <div class="od-items-row">
+                                            <template v-if="p.final_item_keys && p.final_item_keys.length > 0">
+                                                <div v-for="(key, idx) in p.final_item_keys.slice(0, 6)" :key="idx" class="od-item-cell">
+                                                    <img :src="itemIcon(key)" class="od-item-img"
+                                                         :title="(p.final_items || [])[idx] || ''"
+                                                         @error="e => e.target.src = PLACEHOLDER_ITEM">
+                                                    <span v-if="getItemPurchaseTime(p, key)" class="od-item-time">{{ getItemPurchaseTime(p, key) }}</span>
+                                                </div>
+                                            </template>
+                                            <template v-else>
+                                                <div v-for="i in 6" :key="i" class="od-item-cell">
+                                                    <span class="od-item-img od-item-empty"></span>
+                                                </div>
+                                            </template>
+                                            <template v-if="p.final_item_keys && p.final_item_keys.length > 6">
+                                                <div class="od-item-cell od-item-neutral">
+                                                    <img :src="itemIcon(p.final_item_keys[6])" class="od-item-img od-item-img-neutral"
+                                                         :title="(p.final_items || [])[6] || ''"
+                                                         @error="e => e.target.src = PLACEHOLDER_ITEM">
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <div v-if="p.backpack && p.backpack.length > 0" class="od-backpack-row">
+                                            <div v-for="(key, idx) in p.backpack" :key="'bp'+idx" class="od-item-cell">
+                                                <img v-if="key" :src="itemIcon(key)" class="od-item-img-bp" :title="key"
+                                                     @error="e => e.target.src = PLACEHOLDER_ITEM">
+                                                <span v-else class="od-item-img-bp od-item-empty"></span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <!-- Team totals row -->
+                                <tr class="od-row-totals">
+                                    <td class="od-td od-td-hero"><span class="od-totals-label">合计</span></td>
+                                    <td class="od-td od-td-narrow"></td>
+                                    <td class="od-td od-td-narrow od-text-kills od-text-bold">{{ teamSum(direPlayers, 'kills') }}</td>
+                                    <td class="od-td od-td-narrow od-text-deaths od-text-bold">{{ teamSum(direPlayers, 'deaths') }}</td>
+                                    <td class="od-td od-td-narrow od-text-assists od-text-bold">{{ teamSum(direPlayers, 'assists') }}</td>
+                                    <td class="od-td od-td-lhdn">{{ teamSum(direPlayers, 'last_hits') }}/{{ teamSum(direPlayers, 'denies') }}</td>
+                                    <td class="od-td od-td-net od-text-gold od-text-bold">{{ formatNetWorth(teamSum(direPlayers, 'net_worth')) }}</td>
+                                    <td class="od-td od-td-gxpm"></td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(teamSum(direPlayers, 'hero_damage')) }}</td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(teamSum(direPlayers, 'tower_damage')) }}</td>
+                                    <td class="od-td od-td-dmg">{{ formatNumber(teamSum(direPlayers, 'hero_healing')) }}</td>
+                                    <td class="od-td od-td-items2"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ===== Picks & Bans (combined, below both tables) ===== -->
+                <div v-if="draftData && draftData.has_draft" class="od-draft-section mb-6">
+                    <div class="od-draft-header">BP 顺序</div>
+                    <div class="od-draft-grid">
+                        <!-- Radiant drafts -->
+                        <div class="od-draft-team">
+                            <span class="od-draft-team-label" style="color:#48bb78;">天辉</span>
+                            <div class="od-draft-cards">
+                                <template v-for="(pb, idx) in draftData.picks_bans.filter(x => x.team === 'radiant')" :key="'rpb'+idx">
+                                    <div class="od-draft-card" :class="pb.is_pick ? 'od-draft-pick' : 'od-draft-ban'">
+                                        <img :src="heroIcon(pb.hero_slug)" class="od-draft-img" :title="pb.hero_name"
+                                             :class="{'grayscale opacity-50': !pb.is_pick}"
+                                             @error="e => e.target.style.display='none'">
+                                        <span class="od-draft-label" :class="pb.is_pick ? 'text-green-400' : 'text-gray-500'">
+                                            {{ pb.is_pick ? 'P' : 'B' }}{{ pb.order }}
+                                        </span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Dire drafts -->
+                        <div class="od-draft-team">
+                            <span class="od-draft-team-label" style="color:#fc8181;">夜魇</span>
+                            <div class="od-draft-cards">
+                                <template v-for="(pb, idx) in draftData.picks_bans.filter(x => x.team === 'dire')" :key="'dpb'+idx">
+                                    <div class="od-draft-card" :class="pb.is_pick ? 'od-draft-pick' : 'od-draft-ban'">
+                                        <img :src="heroIcon(pb.hero_slug)" class="od-draft-img" :title="pb.hero_name"
+                                             :class="{'grayscale opacity-50': !pb.is_pick}"
+                                             @error="e => e.target.style.display='none'">
+                                        <span class="od-draft-label" :class="pb.is_pick ? 'text-red-400' : 'text-gray-500'">
+                                            {{ pb.is_pick ? 'P' : 'B' }}{{ pb.order }}
+                                        </span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== Ability Build Section (collapsible) ===== -->
+                <div v-if="(radiantPlayers.some(p => p.skills && p.skills.length > 0) || direPlayers.some(p => p.skills && p.skills.length > 0))"
+                     class="od-ability-section mb-6">
+                    <button class="od-ability-toggle" @click="showAbilityBuilds = !showAbilityBuilds">
+                        <span class="od-ability-toggle-text">技能加点</span>
+                        <svg :class="{'od-chevron-open': showAbilityBuilds}" class="od-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                    <div v-show="showAbilityBuilds" class="od-ability-content">
+                        <!-- Per-player ability build -->
+                        <template v-for="p in [...radiantPlayers, ...direPlayers]" :key="'ab'+p.player_slot">
+                            <div v-if="p.skills && p.skills.length > 0" class="od-ability-player"
+                                 :class="p.team === 'radiant' ? 'od-ability-player-radiant' : 'od-ability-player-dire'">
+                                <div class="od-ability-player-header">
+                                    <img :src="heroImg(p.hero_slug)" class="od-ability-hero-img"
+                                         @error="e => e.target.src = PLACEHOLDER_HERO">
+                                    <span class="od-ability-hero-label">{{ p.hero_name }}</span>
+                                </div>
+                                <div class="od-ability-grid">
+                                    <div class="od-ability-levels-header">
+                                        <span v-for="lvl in Math.min(p.skills.length, 25)" :key="'lvlh'+lvl" class="od-ability-lvl-num">{{ lvl }}</span>
+                                    </div>
+                                    <div class="od-ability-levels-row">
+                                        <template v-for="(sk, idx) in p.skills.slice(0, 25)" :key="'sk'+idx">
+                                            <div class="od-ability-cell" :title="sk.ability_name + ' (Lv ' + sk.level + ')'">
+                                                <img v-if="sk.ability_key && !sk.ability_key.startsWith('talent_')"
+                                                     :src="abilityIcon(sk.ability_key)" class="od-ability-icon"
+                                                     @error="e => e.target.style.display='none'">
+                                                <span v-else-if="sk.ability_key && sk.ability_key.startsWith('talent_')" class="od-ability-talent">T</span>
+                                                <span v-else class="od-ability-unknown">?</span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ======== Other Tab Content (non-overview) ======== -->
+            <div v-if="activeTab !== 'overview'" class="max-w-7xl mx-auto px-4 py-6">
 
             <!-- Economy Chart -->
             <section v-if="activeTab === 'economy'" class="panel">
-                <h3 class="panel-title">📈 经济/经验曲线</h3>
-                <div class="flex gap-2 mb-4">
-                    <button @click="economyMode = 'gold_diff'"
-                            class="tab-btn text-xs" :class="{ 'tab-active': economyMode === 'gold_diff' }">
-                        💰 经济差
-                    </button>
-                    <button @click="economyMode = 'gold_total'"
-                            class="tab-btn text-xs" :class="{ 'tab-active': economyMode === 'gold_total' }">
-                        💰 经济总量
-                    </button>
-                    <button @click="economyMode = 'xp_diff'"
-                            class="tab-btn text-xs" :class="{ 'tab-active': economyMode === 'xp_diff' }">
-                        ⭐ 经验差
-                    </button>
-                    <button @click="economyMode = 'xp_total'"
-                            class="tab-btn text-xs" :class="{ 'tab-active': economyMode === 'xp_total' }">
-                        ⭐ 经验总量
-                    </button>
+                <h3 class="panel-title">经济/经验曲线</h3>
+                <template v-if="hasEconomyTimeline">
+                    <div class="sub-tab-group mb-4">
+                        <button @click="economyMode = 'gold_diff'"
+                                class="tab-btn" :class="{ 'tab-active': economyMode === 'gold_diff' }">
+                            经济差
+                        </button>
+                        <button @click="economyMode = 'gold_total'"
+                                class="tab-btn" :class="{ 'tab-active': economyMode === 'gold_total' }">
+                            经济总量
+                        </button>
+                        <button @click="economyMode = 'xp_diff'"
+                                class="tab-btn" :class="{ 'tab-active': economyMode === 'xp_diff' }">
+                            经验差
+                        </button>
+                        <button @click="economyMode = 'xp_total'"
+                                class="tab-btn" :class="{ 'tab-active': economyMode === 'xp_total' }">
+                            经验总量
+                        </button>
+                        <span class="sub-tab-divider"></span>
+                        <button @click="economyMode = 'player_gold'"
+                                class="tab-btn" :class="{ 'tab-active': economyMode === 'player_gold' }">
+                            个人经济
+                        </button>
+                        <button @click="economyMode = 'player_xp'"
+                                class="tab-btn" :class="{ 'tab-active': economyMode === 'player_xp' }">
+                            个人经验
+                        </button>
+                        <button @click="economyMode = 'player_lh'"
+                                class="tab-btn" :class="{ 'tab-active': economyMode === 'player_lh' }">
+                            个人补刀
+                        </button>
+                    </div>
+                    <div class="text-xs text-gray-500 mb-2" v-if="economyMode === 'gold_diff' || economyMode === 'xp_diff'">
+                        正值 = 天辉领先，负值 = 夜魇领先
+                    </div>
+                    <div ref="economyChart" style="width: 100%; height: 400px;"></div>
+                </template>
+                <div v-else class="empty-state">
+                    <div class="empty-state-icon">📈</div>
+                    <p class="empty-state-title">经济/经验曲线数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供分钟级经济经验数据，请通过 OpenDota API 获取完整数据</p>
                 </div>
-                <div class="text-xs text-gray-500 mb-2" v-if="economyMode === 'gold_diff' || economyMode === 'xp_diff'">
-                    正值 = 天辉领先，负值 = 夜魇领先
-                </div>
-                <div ref="economyChart" style="width: 100%; height: 400px;"></div>
             </section>
 
             <!-- Item Builds -->
             <section v-if="activeTab === 'items'" class="panel">
                 <h3 class="panel-title">出装分析</h3>
-                <div v-for="player in analysisData.item_builds" :key="player.player_slot"
-                     class="mb-6 p-4 bg-gray-800 rounded-lg border border-gray-700">
+                <div v-if="!hasItemBuilds" class="empty-state">
+                    <div class="empty-state-icon">🛡</div>
+                    <p class="empty-state-title">出装数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供详细出装时间线数据</p>
+                </div>
+                <div v-for="player in (analysisData.item_builds || [])" :key="player.player_slot"
+                     class="player-card" :class="player.team === 'radiant' ? 'player-card-radiant' : 'player-card-dire'">
                     <div class="flex items-center gap-3 mb-3">
-                        <img :src="heroImg(player.hero_slug)" class="hero-portrait" :alt="player.hero_name">
+                        <img :src="heroImg(player.hero_slug)" class="hero-portrait" :alt="player.hero_name"
+                             @error="e => e.target.src = PLACEHOLDER_HERO">
                         <div>
-                            <span class="font-bold" :class="player.team === 'radiant' ? 'text-green-400' : 'text-red-400'">
+                            <span class="font-bold text-sm" :class="player.team === 'radiant' ? 'text-green-400' : 'text-red-400'">
                                 {{ player.hero_name }}
                             </span>
-                            <span class="text-gray-400 text-sm ml-2">{{ player.player_name }}</span>
+                            <span class="text-gray-500 text-xs ml-2">{{ player.player_name }}</span>
                         </div>
                         <div class="ml-auto flex items-center gap-2">
-                            <span class="text-gray-500 text-sm">最终装备:</span>
                             <div class="flex gap-0.5">
-                                <img v-for="(key, idx) in (player.final_item_keys || [])" :key="idx"
-                                     :src="itemIcon(key)" class="item-icon"
-                                     :title="player.final_items[idx]"
-                                     @error="e => e.target.style.display='none'">
+                                <template v-if="player.final_item_keys && player.final_item_keys.length > 0">
+                                    <img v-for="(key, idx) in player.final_item_keys" :key="idx"
+                                         :src="itemIcon(key)" class="item-icon"
+                                         :title="(player.final_items || [])[idx] || ''"
+                                         @error="e => e.target.src = PLACEHOLDER_ITEM">
+                                </template>
+                                <template v-else>
+                                    <span v-for="i in 6" :key="i" class="item-icon" style="display:inline-block;"></span>
+                                </template>
                             </div>
-                            <span class="text-yellow-400 text-sm ml-2">{{ formatNumber(player.net_worth) }}g</span>
+                            <span class="net-worth text-sm ml-1">{{ formatNumber(player.net_worth) }}g</span>
                         </div>
                     </div>
                     <div class="grid grid-cols-4 gap-3 text-sm">
-                        <div v-for="(items, phase) in player.item_phases" :key="phase"
-                             class="bg-gray-900 rounded p-2">
-                            <p class="text-gray-400 mb-2 font-semibold text-xs uppercase">{{ phaseLabels[phase] }}</p>
+                        <div v-for="(items, phase) in (player.item_phases || {})" :key="phase"
+                             class="stat-card">
+                            <p class="text-gray-400 mb-2 font-semibold text-xs uppercase tracking-wide">{{ phaseLabels[phase] }}</p>
                             <div v-for="item in items" :key="item.time"
                                  class="flex items-center gap-1.5 py-0.5">
                                 <img :src="itemIcon(item.item_key)" class="item-icon-sm"
                                      :title="item.item"
-                                     @error="e => e.target.style.display='none'">
-                                <span class="flex-1 truncate">{{ item.item }}</span>
-                                <span class="text-gray-500 text-xs">{{ item.time_str }}</span>
+                                     @error="e => e.target.src = PLACEHOLDER_ITEM">
+                                <span class="flex-1 truncate text-xs">{{ item.item }}</span>
+                                <span class="text-gray-500 text-xs font-mono">{{ item.time_str }}</span>
                             </div>
                             <p v-if="items.length === 0" class="text-gray-600 text-xs">-</p>
                         </div>
@@ -262,19 +524,25 @@
             <!-- Skill Builds -->
             <section v-if="activeTab === 'skills'" class="panel">
                 <h3 class="panel-title">加点分析</h3>
-                <div v-for="player in analysisData.skill_builds" :key="player.player_slot"
-                     class="mb-6 p-4 bg-gray-800 rounded-lg border border-gray-700">
+                <div v-if="!hasSkillBuilds" class="empty-state">
+                    <div class="empty-state-icon">⚡</div>
+                    <p class="empty-state-title">技能加点数据暂不可用</p>
+                    <p class="empty-state-desc">本地 Clarity 解析暂不提供技能加点数据，请通过 OpenDota API 获取</p>
+                </div>
+                <div v-for="player in (analysisData.skill_builds || [])" :key="player.player_slot"
+                     class="player-card" :class="player.team === 'radiant' ? 'player-card-radiant' : 'player-card-dire'">
                     <div class="flex items-center gap-3 mb-3">
-                        <img :src="heroImg(player.hero_slug)" class="hero-portrait" :alt="player.hero_name">
+                        <img :src="heroImg(player.hero_slug)" class="hero-portrait" :alt="player.hero_name"
+                             @error="e => e.target.src = PLACEHOLDER_HERO">
                         <div>
-                            <span class="font-bold" :class="player.team === 'radiant' ? 'text-green-400' : 'text-red-400'">
+                            <span class="font-bold text-sm" :class="player.team === 'radiant' ? 'text-green-400' : 'text-red-400'">
                                 {{ player.hero_name }}
                             </span>
-                            <span class="text-gray-400 text-sm ml-2">{{ player.player_name }}</span>
+                            <span class="text-gray-500 text-xs ml-2">{{ player.player_name }}</span>
                         </div>
-                        <span class="text-gray-500 text-sm ml-auto">等级 {{ player.max_level }}</span>
+                        <span class="text-gray-500 text-xs ml-auto bg-gray-800 px-2 py-0.5 rounded">Lv {{ player.max_level }}</span>
                     </div>
-                    <div class="flex flex-wrap gap-1">
+                    <div v-if="player.skill_order && player.skill_order.length > 0" class="flex flex-wrap gap-1">
                         <div v-for="(skill, idx) in player.skill_order" :key="idx"
                              class="skill-badge"
                              :class="skill.is_talent ? 'skill-talent' : getSkillColor(skill.ability, player.hero_name)"
@@ -284,75 +552,78 @@
                             <span class="text-xs font-bold">{{ idx + 1 }}</span>
                         </div>
                     </div>
+                    <div v-else class="text-gray-600 text-sm">技能加点数据不可用</div>
                 </div>
             </section>
 
             <!-- Ward Map -->
             <section v-if="activeTab === 'wards'" class="panel">
                 <h3 class="panel-title">眼位分析</h3>
+                <div v-if="!hasWardData" class="empty-state">
+                    <div class="empty-state-icon">👁</div>
+                    <p class="empty-state-title">眼位数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供眼位数据，请通过 OpenDota API 获取完整数据</p>
+                </div>
 
                 <!-- Filter Controls -->
-                <div class="flex gap-4 mb-4 flex-wrap items-center justify-between">
-                    <div class="flex gap-4 flex-wrap">
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" v-model="wardFilters.observers" class="form-checkbox">
-                            <span class="ward-legend ward-obs"></span>
-                            <span class="text-yellow-400 text-sm">侦查守卫 ({{ wardStats.totalObs }})</span>
-                        </label>
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" v-model="wardFilters.sentries" class="form-checkbox">
-                            <span class="ward-legend ward-sent"></span>
-                            <span class="text-blue-400 text-sm">岗哨守卫 ({{ wardStats.totalSent }})</span>
-                        </label>
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" v-model="wardFilters.radiant" class="form-checkbox">
-                            <span class="text-green-400 text-sm">天辉</span>
-                        </label>
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" v-model="wardFilters.dire" class="form-checkbox">
-                            <span class="text-red-400 text-sm">夜魇</span>
-                        </label>
-                    </div>
-                    <div class="flex gap-4 items-center">
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" v-model="wardTimelineEnabled" class="form-checkbox">
-                            <span class="text-purple-400 text-sm">时间轴模式</span>
-                        </label>
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" v-model="wardShowVision" class="form-checkbox">
-                            <span class="text-blue-300 text-sm">显示视野范围</span>
-                        </label>
-                    </div>
+                <div v-if="hasWardData" class="filter-bar mb-4">
+                    <label>
+                        <input type="checkbox" v-model="wardFilters.observers">
+                        <span class="ward-legend ward-obs"></span>
+                        <span class="text-yellow-400">侦查守卫 ({{ wardStats.totalObs }})</span>
+                    </label>
+                    <label>
+                        <input type="checkbox" v-model="wardFilters.sentries">
+                        <span class="ward-legend ward-sent"></span>
+                        <span class="text-blue-400">岗哨守卫 ({{ wardStats.totalSent }})</span>
+                    </label>
+                    <label>
+                        <input type="checkbox" v-model="wardFilters.radiant">
+                        <span class="text-green-400">天辉</span>
+                    </label>
+                    <label>
+                        <input type="checkbox" v-model="wardFilters.dire">
+                        <span class="text-red-400">夜魇</span>
+                    </label>
+                    <span class="filter-divider"></span>
+                    <label>
+                        <input type="checkbox" v-model="wardTimelineEnabled">
+                        <span class="text-purple-400">时间轴</span>
+                    </label>
+                    <label>
+                        <input type="checkbox" v-model="wardShowVision">
+                        <span class="text-blue-300">视野范围</span>
+                    </label>
                 </div>
 
                 <!-- Ward Statistics -->
-                <div v-if="analysisData.wards.radiant" class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700">
-                        <p class="text-green-400 text-sm font-bold mb-2">天辉眼位统计</p>
+                <div v-if="hasWardData && analysisData.wards.radiant" class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="stat-card stat-card-radiant">
+                        <p class="text-green-400 text-xs font-bold mb-2 uppercase tracking-wider">天辉眼位</p>
                         <div class="grid grid-cols-2 gap-2 text-xs">
-                            <div>侦查: <span class="text-yellow-400">{{ analysisData.wards.radiant.total_obs }}</span></div>
-                            <div>岗哨: <span class="text-blue-400">{{ analysisData.wards.radiant.total_sent }}</span></div>
-                            <div>侦查被反: <span class="text-red-400">{{ analysisData.wards.radiant.dewarded_obs }}</span></div>
-                            <div>岗哨被反: <span class="text-red-400">{{ analysisData.wards.radiant.dewarded_sent }}</span></div>
-                            <div>侦查均活: <span class="text-gray-300">{{ analysisData.wards.radiant.avg_obs_lifetime }}s</span></div>
-                            <div>岗哨均活: <span class="text-gray-300">{{ analysisData.wards.radiant.avg_sent_lifetime }}s</span></div>
+                            <div class="text-gray-400">侦查: <span class="text-yellow-400 font-semibold">{{ analysisData.wards.radiant.total_obs }}</span></div>
+                            <div class="text-gray-400">岗哨: <span class="text-blue-400 font-semibold">{{ analysisData.wards.radiant.total_sent }}</span></div>
+                            <div class="text-gray-400">被反(侦查): <span class="text-red-400">{{ analysisData.wards.radiant.dewarded_obs }}</span></div>
+                            <div class="text-gray-400">被反(岗哨): <span class="text-red-400">{{ analysisData.wards.radiant.dewarded_sent }}</span></div>
+                            <div class="text-gray-400">侦查均活: <span class="text-gray-300">{{ analysisData.wards.radiant.avg_obs_lifetime }}s</span></div>
+                            <div class="text-gray-400">岗哨均活: <span class="text-gray-300">{{ analysisData.wards.radiant.avg_sent_lifetime }}s</span></div>
                         </div>
                     </div>
-                    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700">
-                        <p class="text-red-400 text-sm font-bold mb-2">夜魇眼位统计</p>
+                    <div class="stat-card stat-card-dire">
+                        <p class="text-red-400 text-xs font-bold mb-2 uppercase tracking-wider">夜魇眼位</p>
                         <div class="grid grid-cols-2 gap-2 text-xs">
-                            <div>侦查: <span class="text-yellow-400">{{ analysisData.wards.dire.total_obs }}</span></div>
-                            <div>岗哨: <span class="text-blue-400">{{ analysisData.wards.dire.total_sent }}</span></div>
-                            <div>侦查被反: <span class="text-red-400">{{ analysisData.wards.dire.dewarded_obs }}</span></div>
-                            <div>岗哨被反: <span class="text-red-400">{{ analysisData.wards.dire.dewarded_sent }}</span></div>
-                            <div>侦查均活: <span class="text-gray-300">{{ analysisData.wards.dire.avg_obs_lifetime }}s</span></div>
-                            <div>岗哨均活: <span class="text-gray-300">{{ analysisData.wards.dire.avg_sent_lifetime }}s</span></div>
+                            <div class="text-gray-400">侦查: <span class="text-yellow-400 font-semibold">{{ analysisData.wards.dire.total_obs }}</span></div>
+                            <div class="text-gray-400">岗哨: <span class="text-blue-400 font-semibold">{{ analysisData.wards.dire.total_sent }}</span></div>
+                            <div class="text-gray-400">被反(侦查): <span class="text-red-400">{{ analysisData.wards.dire.dewarded_obs }}</span></div>
+                            <div class="text-gray-400">被反(岗哨): <span class="text-red-400">{{ analysisData.wards.dire.dewarded_sent }}</span></div>
+                            <div class="text-gray-400">侦查均活: <span class="text-gray-300">{{ analysisData.wards.dire.avg_obs_lifetime }}s</span></div>
+                            <div class="text-gray-400">岗哨均活: <span class="text-gray-300">{{ analysisData.wards.dire.avg_sent_lifetime }}s</span></div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Timeline Slider -->
-                <div v-if="wardTimelineEnabled" class="ward-timeline-bar mb-4">
+                <div v-if="hasWardData && wardTimelineEnabled" class="ward-timeline-bar mb-4">
                     <div class="flex items-center gap-4">
                         <span class="text-yellow-400 text-sm w-14 font-mono font-bold">{{ formatGameTime(wardTimelineTime) }}</span>
                         <input type="range"
@@ -369,12 +640,12 @@
                 </div>
 
                 <!-- Centered Map -->
-                <div class="flex flex-col items-center">
+                <div v-if="hasWardData" class="flex flex-col items-center">
                     <div ref="wardMap" class="ward-map-container ward-map-large"></div>
                 </div>
 
                 <!-- Ward List -->
-                <div class="mt-6">
+                <div v-if="hasWardData" class="mt-6">
                     <h4 class="text-lg font-semibold mb-3">眼位时间线</h4>
                     <div class="max-h-96 overflow-y-auto custom-scroll">
                         <div v-for="ward in filteredWards" :key="ward.time + '' + ward.x"
@@ -401,47 +672,52 @@
             <!-- Smoke Analysis -->
             <section v-if="activeTab === 'smokes'" class="panel">
                 <h3 class="panel-title">开雾分析</h3>
+                <div v-if="!hasSmokeData" class="empty-state">
+                    <div class="empty-state-icon">💨</div>
+                    <p class="empty-state-title">开雾数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供开雾事件数据，请通过 OpenDota API 获取完整数据</p>
+                </div>
 
                 <!-- Stats Summary with Success Rate -->
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="bg-gray-800 p-4 rounded-lg border border-gray-700 text-center">
+                <div v-if="hasSmokeData" class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="stat-card stat-card-radiant text-center">
                         <p class="text-green-400 text-3xl font-bold">{{ smokeData.radiant.total }}</p>
-                        <p class="text-green-400 text-sm">天辉用雾</p>
+                        <p class="text-green-400 text-xs uppercase tracking-wider font-semibold mt-1">天辉用雾</p>
                         <div class="mt-2 text-xs text-gray-400">
                             <span class="text-green-300 font-bold">{{ smokeData.radiant.success_rate }}%</span> 成功率
-                            <span class="mx-1">·</span>
+                            <span class="mx-1 opacity-30">|</span>
                             击杀 <span class="text-green-300">{{ smokeData.radiant.kills }}</span>
-                            <span class="mx-1">·</span>
+                            <span class="mx-1 opacity-30">|</span>
                             目标 <span class="text-blue-300">{{ smokeData.radiant.objectives }}</span>
-                            <span class="mx-1">·</span>
+                            <span class="mx-1 opacity-30">|</span>
                             无效 <span class="text-gray-500">{{ smokeData.radiant.no_contact }}</span>
                         </div>
                     </div>
-                    <div class="bg-gray-800 p-4 rounded-lg border border-gray-700 text-center">
+                    <div class="stat-card stat-card-dire text-center">
                         <p class="text-red-400 text-3xl font-bold">{{ smokeData.dire.total }}</p>
-                        <p class="text-red-400 text-sm">夜魇用雾</p>
+                        <p class="text-red-400 text-xs uppercase tracking-wider font-semibold mt-1">夜魇用雾</p>
                         <div class="mt-2 text-xs text-gray-400">
                             <span class="text-red-300 font-bold">{{ smokeData.dire.success_rate }}%</span> 成功率
-                            <span class="mx-1">·</span>
+                            <span class="mx-1 opacity-30">|</span>
                             击杀 <span class="text-red-300">{{ smokeData.dire.kills }}</span>
-                            <span class="mx-1">·</span>
+                            <span class="mx-1 opacity-30">|</span>
                             目标 <span class="text-blue-300">{{ smokeData.dire.objectives }}</span>
-                            <span class="mx-1">·</span>
+                            <span class="mx-1 opacity-30">|</span>
                             无效 <span class="text-gray-500">{{ smokeData.dire.no_contact }}</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- Timeline Toggle -->
-                <div class="flex items-center gap-4 mb-4">
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" v-model="smokeTimelineEnabled" class="form-checkbox">
-                        <span class="text-purple-400 text-sm">时间轴模式</span>
+                <div v-if="hasSmokeData" class="filter-bar mb-4">
+                    <label>
+                        <input type="checkbox" v-model="smokeTimelineEnabled">
+                        <span class="text-purple-400">时间轴模式</span>
                     </label>
                 </div>
 
                 <!-- Timeline Slider -->
-                <div v-if="smokeTimelineEnabled" class="ward-timeline-bar mb-4">
+                <div v-if="hasSmokeData && smokeTimelineEnabled" class="ward-timeline-bar mb-4">
                     <div class="flex items-center gap-4">
                         <span class="text-yellow-400 text-sm w-14 font-mono font-bold">{{ formatGameTime(smokeTimelineTime) }}</span>
                         <input type="range"
@@ -455,7 +731,7 @@
                 </div>
 
                 <!-- Centered Smoke Minimap -->
-                <div class="flex flex-col items-center mb-4">
+                <div v-if="hasSmokeData" class="flex flex-col items-center mb-4">
                     <div ref="smokeMapRef" class="ward-map-container ward-map-large"></div>
                     <div class="flex gap-6 mt-2 text-xs text-gray-400">
                         <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-green-400"></span> 天辉开雾</span>
@@ -466,10 +742,10 @@
                 </div>
 
                 <!-- Timeline scatter chart -->
-                <div ref="smokeChart" style="height: 200px;" class="mb-4"></div>
+                <div v-if="hasSmokeData" ref="smokeChart" style="height: 200px;" class="mb-4"></div>
 
                 <!-- Detail list -->
-                <div class="mt-4">
+                <div v-if="hasSmokeData" class="mt-4">
                     <div class="flex items-center justify-between mb-3">
                         <h4 class="text-lg font-semibold">详细记录</h4>
                         <div class="flex items-center gap-3">
@@ -519,14 +795,22 @@
             <!-- Teamfights -->
             <section v-if="activeTab === 'teamfights'" class="panel">
                 <h3 class="panel-title">团战分析</h3>
-                <div class="flex gap-2 mb-4 overflow-x-auto pb-1">
+                <div v-if="!hasTeamfightData" class="empty-state">
+                    <div class="empty-state-icon">⚔</div>
+                    <p class="empty-state-title">团战数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供团战详情数据，请通过 OpenDota API 获取完整数据</p>
+                </div>
+                <div v-if="hasTeamfightData" class="sub-tab-group mb-4" style="overflow-x:auto;">
                     <button v-for="tf in teamfightData" :key="tf.index"
                             @click="selectedTeamfight = tf.index"
-                            class="tab-btn text-sm"
+                            class="tab-btn"
                             :class="{ 'tab-active': selectedTeamfight === tf.index }">
                         #{{ tf.index }} {{ tf.start_time_str }}
                         <span :class="tf.winner === 'radiant' ? 'text-green-400' : tf.winner === 'dire' ? 'text-red-400' : 'text-gray-400'">
                             ({{ tf.radiant_deaths }}-{{ tf.dire_deaths }})
+                        </span>
+                        <span v-if="tf.gold_delta" class="text-xs" :class="tf.gold_delta >= 0 ? 'text-yellow-400' : 'text-yellow-600'">
+                            {{ tf.gold_delta >= 0 ? '+' : '' }}{{ Math.round(tf.gold_delta/1000) }}k
                         </span>
                     </button>
                 </div>
@@ -576,6 +860,12 @@
                             <span class="font-bold" :class="currentTeamfight.winner === 'radiant' ? 'text-green-400' : 'text-red-400'">
                                 {{ currentTeamfight.winner === 'radiant' ? '天辉胜' : currentTeamfight.winner === 'dire' ? '夜魇胜' : '平局' }}
                             </span>
+                            <template v-if="currentTeamfight.gold_delta">
+                                &nbsp;|&nbsp; 经济变化:
+                                <span class="font-bold" :class="currentTeamfight.gold_delta >= 0 ? 'text-yellow-400' : 'text-yellow-600'">
+                                    {{ currentTeamfight.gold_delta >= 0 ? '+' : '' }}{{ formatNumber(currentTeamfight.gold_delta) }}
+                                </span>
+                            </template>
                         </div>
 
                         <!-- Kill Timeline -->
@@ -605,6 +895,8 @@
                                     <th class="py-1">K/D</th>
                                     <th class="py-1">输出</th>
                                     <th class="py-1">承受</th>
+                                    <th class="py-1">治疗</th>
+                                    <th class="py-1">经济</th>
                                     <th class="text-left py-1">技能</th>
                                 </tr>
                             </thead>
@@ -624,6 +916,10 @@
                                     <td class="py-1 text-center">{{ p.kills }}/{{ p.deaths }}</td>
                                     <td class="py-1 text-center text-yellow-400">{{ formatNumber(p.damage_dealt) }}</td>
                                     <td class="py-1 text-center text-orange-400">{{ formatNumber(p.damage_taken) }}</td>
+                                    <td class="py-1 text-center text-green-300">{{ p.healing ? formatNumber(p.healing) : '-' }}</td>
+                                    <td class="py-1 text-center text-xs" :class="(p.gold_delta||0) >= 0 ? 'text-yellow-400' : 'text-yellow-700'">
+                                        {{ p.gold_delta ? (p.gold_delta >= 0 ? '+' : '') + formatNumber(p.gold_delta) : '-' }}
+                                    </td>
                                     <td class="py-1 text-xs text-gray-400">{{ p.abilities_used.join(', ') }}</td>
                                 </tr>
                             </tbody>
@@ -632,8 +928,592 @@
                 </div>
             </section>
 
-        </div>
-    </div>
+            <!-- Laning -->
+            <section v-if="activeTab === 'laning'" class="panel">
+                <h3 class="panel-title">对线分析</h3>
+                <div v-if="!hasLaningData" class="empty-state">
+                    <div class="empty-state-icon">🗺</div>
+                    <p class="empty-state-title">对线数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供对线期详细数据，请通过 OpenDota API 获取完整数据</p>
+                </div>
+                <div v-if="hasLaningData">
+                    <!-- Laning Stats Table (enhanced) -->
+                    <div class="overflow-x-auto mb-6">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-gray-400 border-b border-gray-700">
+                                    <th class="text-left py-2 px-2">英雄</th>
+                                    <th class="py-2 px-1">路线</th>
+                                    <th class="py-2 px-1">效率</th>
+                                    <th class="py-2 px-1">LH@10</th>
+                                    <th class="py-2 px-1">DN@10</th>
+                                    <th class="py-2 px-1">10分经济</th>
+                                    <th class="py-2 px-1">10分经验</th>
+                                    <th class="py-2 px-1">伤害输出</th>
+                                    <th class="py-2 px-1">伤害承受</th>
+                                    <th class="py-2 px-1">回复道具</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="border-b border-gray-700">
+                                    <td colspan="10" class="py-1 px-2 text-green-400 font-bold text-xs uppercase tracking-wider">天辉</td>
+                                </tr>
+                                <tr v-for="p in laningRadiant" :key="p.player_slot"
+                                    class="border-b border-gray-800 hover:bg-gray-750 cursor-pointer"
+                                    :class="{ 'bg-gray-750': selectedLaningPlayer === p.player_slot }"
+                                    @click="selectedLaningPlayer = p.player_slot">
+                                    <td class="py-2 px-2">
+                                        <div class="flex items-center gap-2">
+                                            <img :src="heroIcon(p.hero_slug)" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                                            <span class="text-yellow-300 text-xs">{{ p.hero_name }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2 px-1 text-center text-xs">{{ p.lane_name }}</td>
+                                    <td class="py-2 px-1 text-center">
+                                        <span :class="p.lane_efficiency_pct >= 60 ? 'text-green-400' : p.lane_efficiency_pct >= 40 ? 'text-yellow-400' : 'text-red-400'">
+                                            {{ p.lane_efficiency_pct.toFixed(0) }}%
+                                        </span>
+                                    </td>
+                                    <td class="py-2 px-1 text-center">{{ p.lh_ten }}</td>
+                                    <td class="py-2 px-1 text-center">{{ p.dn_ten }}</td>
+                                    <td class="py-2 px-1 text-center text-yellow-400">{{ formatNumber(p.gold_ten) }}</td>
+                                    <td class="py-2 px-1 text-center">{{ formatNumber(p.xp_ten) }}</td>
+                                    <td class="py-2 px-1 text-center text-orange-400">{{ formatNumber(p.total_damage_dealt_laning || 0) }}</td>
+                                    <td class="py-2 px-1 text-center text-red-400">{{ formatNumber(p.total_damage_taken_laning || 0) }}</td>
+                                    <td class="py-2 px-1 text-center text-blue-400">{{ p.regen_items_used || 0 }}</td>
+                                </tr>
+                                <tr class="border-b border-gray-700">
+                                    <td colspan="10" class="py-1 px-2 text-red-400 font-bold text-xs uppercase tracking-wider">夜魇</td>
+                                </tr>
+                                <tr v-for="p in laningDire" :key="p.player_slot"
+                                    class="border-b border-gray-800 hover:bg-gray-750 cursor-pointer"
+                                    :class="{ 'bg-gray-750': selectedLaningPlayer === p.player_slot }"
+                                    @click="selectedLaningPlayer = p.player_slot">
+                                    <td class="py-2 px-2">
+                                        <div class="flex items-center gap-2">
+                                            <img :src="heroIcon(p.hero_slug)" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                                            <span class="text-yellow-300 text-xs">{{ p.hero_name }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="py-2 px-1 text-center text-xs">{{ p.lane_name }}</td>
+                                    <td class="py-2 px-1 text-center">
+                                        <span :class="p.lane_efficiency_pct >= 60 ? 'text-green-400' : p.lane_efficiency_pct >= 40 ? 'text-yellow-400' : 'text-red-400'">
+                                            {{ p.lane_efficiency_pct.toFixed(0) }}%
+                                        </span>
+                                    </td>
+                                    <td class="py-2 px-1 text-center">{{ p.lh_ten }}</td>
+                                    <td class="py-2 px-1 text-center">{{ p.dn_ten }}</td>
+                                    <td class="py-2 px-1 text-center text-yellow-400">{{ formatNumber(p.gold_ten) }}</td>
+                                    <td class="py-2 px-1 text-center">{{ formatNumber(p.xp_ten) }}</td>
+                                    <td class="py-2 px-1 text-center text-orange-400">{{ formatNumber(p.total_damage_dealt_laning || 0) }}</td>
+                                    <td class="py-2 px-1 text-center text-red-400">{{ formatNumber(p.total_damage_taken_laning || 0) }}</td>
+                                    <td class="py-2 px-1 text-center text-blue-400">{{ p.regen_items_used || 0 }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Laning Charts Grid -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <!-- CS Timeline Chart -->
+                        <div>
+                            <div ref="laningCsTimeline" style="height: 350px;"></div>
+                        </div>
+                        <!-- HP% Timeline Chart -->
+                        <div>
+                            <div ref="laningHpTimeline" style="height: 350px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Heatmap Section -->
+                    <div class="flex flex-col items-center">
+                        <div ref="laningHeatmap" class="ward-map-container" style="max-width:400px;"></div>
+                        <p class="text-xs text-gray-500 mt-2">点击上方英雄查看对线期位置热力图</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Combat -->
+            <section v-if="activeTab === 'combat'" class="panel">
+                <h3 class="panel-title">战斗分析</h3>
+                <div v-if="!hasCombatData" class="empty-state">
+                    <div class="empty-state-icon">⚔</div>
+                    <p class="empty-state-title">战斗数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供击杀/伤害矩阵数据，请通过 OpenDota API 获取完整数据</p>
+                </div>
+                <template v-if="hasCombatData">
+                <div class="sub-tab-group mb-4">
+                    <button @click="combatMode = 'kills'" class="tab-btn" :class="{ 'tab-active': combatMode === 'kills' }">击杀矩阵</button>
+                    <button @click="combatMode = 'damage'" class="tab-btn" :class="{ 'tab-active': combatMode === 'damage' }">伤害矩阵</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="text-xs" v-if="combatMatrix">
+                        <thead>
+                            <tr>
+                                <th class="p-1 text-gray-500 text-left">{{ combatMode === 'kills' ? '击杀 →' : '伤害 →' }}</th>
+                                <th v-for="h in combatMatrix.heroes" :key="h" class="p-1 text-center" style="min-width:50px;">
+                                    <img :src="heroIcon(heroSlugByName(h))" class="hero-icon-sm mx-auto" :title="h" @error="e => e.target.style.display='none'">
+                                </th>
+                                <th class="p-1 text-yellow-400 text-center">合计</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, i) in combatMatrix.matrix" :key="i" class="border-b border-gray-800">
+                                <td class="p-1">
+                                    <div class="flex items-center gap-1">
+                                        <img :src="heroIcon(heroSlugByName(combatMatrix.heroes[i]))" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                                        <span class="text-xs" :class="i < 5 ? 'text-green-400' : 'text-red-400'">{{ combatMatrix.heroes[i] }}</span>
+                                    </div>
+                                </td>
+                                <td v-for="(val, j) in row" :key="j" class="p-1 text-center"
+                                    :class="val > 0 ? 'text-white' : 'text-gray-700'"
+                                    :style="val > 0 ? 'background:rgba(236,201,75,' + Math.min(val / (combatMode === 'kills' ? 5 : 10000), 1) * 0.3 + ')' : ''">
+                                    {{ combatMode === 'kills' ? (val || '-') : (val > 0 ? formatNumber(val) : '-') }}
+                                </td>
+                                <td class="p-1 text-center text-yellow-400 font-bold">
+                                    {{ combatMode === 'kills' ? row.reduce((a,b) => a+b, 0) : formatNumber(row.reduce((a,b) => a+b, 0)) }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                </template>
+            </section>
+
+            <!-- Farm -->
+            <section v-if="activeTab === 'farm'" class="panel">
+                <h3 class="panel-title">经济来源</h3>
+                <div v-if="!hasFarmData" class="empty-state">
+                    <div class="empty-state-icon">💰</div>
+                    <p class="empty-state-title">经济来源数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供经济来源详情，请通过 OpenDota API 获取完整数据</p>
+                </div>
+                <div v-if="hasFarmData" class="sub-tab-group mb-4">
+                    <button @click="farmMode = 'gold'" class="tab-btn" :class="{ 'tab-active': farmMode === 'gold' }">经济来源</button>
+                    <button @click="farmMode = 'xp'" class="tab-btn" :class="{ 'tab-active': farmMode === 'xp' }">经验来源</button>
+                    <button @click="farmMode = 'units'" class="tab-btn" :class="{ 'tab-active': farmMode === 'units' }">击杀单位</button>
+                    <button @click="farmMode = 'lh'" class="tab-btn" :class="{ 'tab-active': farmMode === 'lh' }">补刀曲线</button>
+                </div>
+                <div v-if="hasFarmData && (farmMode === 'gold' || farmMode === 'xp')" ref="farmReasonChart" style="width:100%;height:400px;"></div>
+                <div v-if="hasFarmData && farmMode === 'units'">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-gray-400 border-b border-gray-700">
+                                <th class="text-left py-2 px-2">英雄</th>
+                                <th class="py-2 px-1">英雄</th>
+                                <th class="py-2 px-1">小兵</th>
+                                <th class="py-2 px-1">中立</th>
+                                <th class="py-2 px-1">远古</th>
+                                <th class="py-2 px-1">塔</th>
+                                <th class="py-2 px-1">肉山</th>
+                                <th class="py-2 px-1">信使</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="p in farmData.unit_kills" :key="p.player_slot" class="border-b border-gray-800">
+                                <td class="py-2 px-2">
+                                    <div class="flex items-center gap-2">
+                                        <img :src="heroIcon(p.hero_slug)" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                                        <span class="text-xs" :class="p.team === 'radiant' ? 'text-green-400' : 'text-red-400'">{{ p.hero_name }}</span>
+                                    </div>
+                                </td>
+                                <td class="py-2 px-1 text-center">{{ p.hero_kills }}</td>
+                                <td class="py-2 px-1 text-center">{{ p.lane_kills }}</td>
+                                <td class="py-2 px-1 text-center">{{ p.neutral_kills }}</td>
+                                <td class="py-2 px-1 text-center">{{ p.ancient_kills }}</td>
+                                <td class="py-2 px-1 text-center">{{ p.tower_kills }}</td>
+                                <td class="py-2 px-1 text-center">{{ p.roshans_killed }}</td>
+                                <td class="py-2 px-1 text-center">{{ p.courier_kills }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div v-if="hasFarmData && farmMode === 'lh'" ref="farmLhChart" style="width:100%;height:400px;"></div>
+            </section>
+
+            <!-- Purchases -->
+            <section v-if="activeTab === 'purchases'" class="panel">
+                <h3 class="panel-title">物品购买时间线</h3>
+                <div v-if="!hasPurchaseData" class="empty-state">
+                    <div class="empty-state-icon">🛒</div>
+                    <p class="empty-state-title">物品购买数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供购买时间线数据，请通过 OpenDota API 获取完整数据</p>
+                </div>
+                <div v-for="player in purchaseData" :key="player.player_slot"
+                     class="player-card" :class="player.team === 'radiant' ? 'player-card-radiant' : 'player-card-dire'">
+                    <div class="flex items-center gap-3 mb-2">
+                        <img :src="heroIcon(player.hero_slug)" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                        <span class="font-bold text-sm" :class="player.team === 'radiant' ? 'text-green-400' : 'text-red-400'">{{ player.hero_name }}</span>
+                    </div>
+                    <div class="flex gap-2 overflow-x-auto pb-1">
+                        <div v-for="(items, phase) in player.phases" :key="phase" class="stat-card min-w-0 flex-shrink-0" style="min-width:120px;">
+                            <p class="text-gray-500 text-xs mb-1 font-mono font-semibold">{{ phaseLabels[phase] || phase + 'min' }}</p>
+                            <div v-for="item in items" :key="item.time" class="flex items-center gap-1 py-0.5">
+                                <img :src="itemIcon(item.key)" class="item-icon-sm" :title="item.key" @error="e => e.target.style.display='none'">
+                                <span class="text-gray-500 text-xs font-mono">{{ item.time_str }}</span>
+                            </div>
+                            <p v-if="items.length === 0" class="text-gray-700 text-xs">-</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Benchmarks -->
+            <section v-if="activeTab === 'benchmarks'" class="panel">
+                <h3 class="panel-title">表现评估</h3>
+                <div v-if="!hasBenchmarkData" class="empty-state">
+                    <div class="empty-state-icon">📊</div>
+                    <p class="empty-state-title">表现评估数据暂不可用</p>
+                    <p class="empty-state-desc">表现评估需要 OpenDota API 的百分位数据，本地解析无法提供</p>
+                </div>
+                <div v-if="hasBenchmarkData" class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-gray-400 border-b border-gray-700">
+                                <th class="text-left py-2 px-2">英雄</th>
+                                <th class="py-2 px-1" v-for="col in benchmarkColumns" :key="col.key">{{ col.label }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="p in benchmarkPlayers" :key="p.player_slot" class="border-b border-gray-800">
+                                <td class="py-2 px-2">
+                                    <div class="flex items-center gap-2">
+                                        <img :src="heroIcon(p.hero_slug)" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                                        <span class="text-xs" :class="p.team === 'radiant' ? 'text-green-400' : 'text-red-400'">{{ p.hero_name }}</span>
+                                    </div>
+                                </td>
+                                <td v-for="col in benchmarkColumns" :key="col.key" class="py-2 px-1 text-center text-xs">
+                                    <template v-if="p.benchmarks[col.key]">
+                                        <div>{{ col.format ? col.format(p.benchmarks[col.key].raw) : Math.round(p.benchmarks[col.key].raw) }}</div>
+                                        <div class="text-xs mt-0.5 font-bold" :class="benchmarkColor(p.benchmarks[col.key].pct)">
+                                            {{ (p.benchmarks[col.key].pct * 100).toFixed(0) }}%
+                                        </div>
+                                    </template>
+                                    <span v-else class="text-gray-700">-</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Objectives -->
+            <section v-if="activeTab === 'objectives'" class="panel">
+                <h3 class="panel-title">目标与事件</h3>
+                <div v-if="!hasObjectivesData" class="empty-state">
+                    <div class="empty-state-icon">🏰</div>
+                    <p class="empty-state-title">目标事件数据暂不可用</p>
+                    <p class="empty-state-desc">本地解析暂不提供目标事件数据，请通过 OpenDota API 获取完整数据</p>
+                </div>
+                <template v-if="hasObjectivesData">
+                <div class="sub-tab-group mb-4">
+                    <button @click="objMode = 'timeline'" class="tab-btn" :class="{ 'tab-active': objMode === 'timeline' }">事件时间线</button>
+                    <button @click="objMode = 'runes'" class="tab-btn" :class="{ 'tab-active': objMode === 'runes' }">符文统计</button>
+                </div>
+                <div v-if="objMode === 'timeline'" class="max-h-96 overflow-y-auto custom-scroll">
+                    <div v-for="obj in objectivesData.objectives" :key="obj.time + obj.type"
+                         class="flex items-center gap-3 py-2 border-b border-gray-800 text-sm">
+                        <span class="text-gray-500 w-14 font-mono text-xs">{{ obj.time_str }}</span>
+                        <span class="w-6 text-center">
+                            {{ obj.type.includes('TOWER') || obj.type.includes('building') ? '🏰' : obj.type.includes('ROSHAN') ? '🐉' : obj.type.includes('COURIER') ? '📦' : obj.type.includes('AEGIS') ? '🛡' : obj.type.includes('FIRSTBLOOD') ? '🩸' : '⚡' }}
+                        </span>
+                        <div class="flex items-center gap-1.5 flex-1">
+                            <img v-if="obj.hero_slug" :src="heroIcon(obj.hero_slug)" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                            <span :class="obj.team === 'radiant' ? 'text-green-400' : obj.team === 'dire' ? 'text-red-400' : 'text-gray-400'">
+                                {{ obj.hero_name || '' }}
+                            </span>
+                            <span class="text-gray-400">{{ obj.key || obj.type }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="objMode === 'runes'">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-gray-400 border-b border-gray-700">
+                                <th class="text-left py-2 px-2">英雄</th>
+                                <th class="py-2 px-1">双倍</th>
+                                <th class="py-2 px-1">急速</th>
+                                <th class="py-2 px-1">幻象</th>
+                                <th class="py-2 px-1">隐身</th>
+                                <th class="py-2 px-1">恢复</th>
+                                <th class="py-2 px-1">奥术</th>
+                                <th class="py-2 px-1">赏金</th>
+                                <th class="py-2 px-1">圣水</th>
+                                <th class="py-2 px-1 text-yellow-400">合计</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="r in objectivesData.runes" :key="r.player_slot" class="border-b border-gray-800">
+                                <td class="py-2 px-2">
+                                    <div class="flex items-center gap-2">
+                                        <img :src="heroIcon(r.hero_slug)" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                                        <span class="text-xs" :class="r.team === 'radiant' ? 'text-green-400' : 'text-red-400'">{{ r.hero_name }}</span>
+                                    </div>
+                                </td>
+                                <td v-for="rt in ['双倍','急速','幻象','隐身','恢复','奥术','赏金','圣水']" :key="rt" class="py-2 px-1 text-center" :class="(r.runes[rt]||0) > 0 ? 'text-white' : 'text-gray-700'">
+                                    {{ r.runes[rt] || '-' }}
+                                </td>
+                                <td class="py-2 px-1 text-center text-yellow-400 font-bold">{{ r.total }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                </template>
+            </section>
+
+            <!-- Chat -->
+            <section v-if="activeTab === 'chat'" class="panel">
+                <h3 class="panel-title">聊天记录</h3>
+                <div v-if="chatMessages.length === 0" class="empty-state">
+                    <div class="empty-state-icon">💬</div>
+                    <p class="empty-state-title">暂无聊天记录</p>
+                </div>
+                <div v-else class="max-h-96 overflow-y-auto custom-scroll">
+                    <div v-for="(msg, idx) in chatMessages" :key="idx"
+                         class="flex items-center gap-3 py-1.5 border-b border-gray-800 text-sm">
+                        <span class="text-gray-500 w-12 font-mono text-xs">{{ msg.time_str }}</span>
+                        <img v-if="msg.hero_slug" :src="heroIcon(msg.hero_slug)" class="hero-icon-sm" @error="e => e.target.style.display='none'">
+                        <span class="font-bold text-xs" :class="msg.team === 'radiant' ? 'text-green-400' : 'text-red-400'">
+                            {{ msg.hero_name }}
+                        </span>
+                        <span class="text-gray-300 flex-1">{{ msg.key }}</span>
+                        <span v-if="msg.type === 'chatwheel'" class="text-xs text-gray-600">[语音]</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ======== Pro Compare Tab ======== -->
+            <div v-if="activeTab === 'pro_compare'" class="tab-content">
+                <div class="card" style="margin-bottom: 16px;">
+                    <h3 style="color: var(--text-primary); margin-bottom: 12px;">对线对比分析</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 16px;">选择两个玩家进行对线阶段对比，可以是同一场比赛的对位选手，或上传参考录像进行对比。</p>
+
+                    <!-- Mode Selection -->
+                    <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                        <button @click="compareMode = 'self'"
+                                :class="['btn', compareMode === 'self' ? 'btn-active' : '']">
+                            同场对比
+                        </button>
+                        <button @click="compareMode = 'upload'"
+                                :class="['btn', compareMode === 'upload' ? 'btn-active' : '']">
+                            上传参考录像
+                        </button>
+                    </div>
+
+                    <!-- Self Compare Mode -->
+                    <div v-if="compareMode === 'self'" style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
+                        <div>
+                            <label style="color: var(--text-muted); display: block; margin-bottom: 4px;">玩家A</label>
+                            <select v-model="comparePlayerA" class="select-input">
+                                <option v-for="p in analysisData?.overview?.players || []" :value="p.player_slot">
+                                    {{ p.hero_name }} ({{ p.team === 'radiant' ? '天辉' : '夜魇' }})
+                                </option>
+                            </select>
+                        </div>
+                        <div style="color: var(--text-muted); font-size: 20px; padding-bottom: 4px;">VS</div>
+                        <div>
+                            <label style="color: var(--text-muted); display: block; margin-bottom: 4px;">玩家B (参考)</label>
+                            <select v-model="comparePlayerB" class="select-input">
+                                <option v-for="p in analysisData?.overview?.players || []" :value="p.player_slot">
+                                    {{ p.hero_name }} ({{ p.team === 'radiant' ? '天辉' : '夜魇' }})
+                                </option>
+                            </select>
+                        </div>
+                        <button @click="runSelfCompare" class="btn btn-primary" :disabled="compareLoading">
+                            {{ compareLoading ? '分析中...' : '开始对比' }}
+                        </button>
+                    </div>
+
+                    <!-- Upload Reference Mode -->
+                    <div v-if="compareMode === 'upload'" style="margin-top: 12px;">
+                        <p style="color: var(--text-muted); margin-bottom: 8px;">上传职业选手或高分段玩家的录像文件作为参考：</p>
+                        <input type="file" @change="uploadRefReplay" accept=".dem" class="file-input" />
+                        <div v-if="refMatchData" style="margin-top: 12px;">
+                            <p style="color: var(--accent);">参考录像已加载</p>
+                            <div style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-top: 8px;">
+                                <div>
+                                    <label style="color: var(--text-muted); display: block; margin-bottom: 4px;">你的英雄</label>
+                                    <select v-model="comparePlayerA" class="select-input">
+                                        <option v-for="p in analysisData?.overview?.players || []" :value="p.player_slot">
+                                            {{ p.hero_name }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: var(--text-muted); display: block; margin-bottom: 4px;">参考英雄</label>
+                                    <select v-model="compareRefSlot" class="select-input">
+                                        <option v-for="p in refMatchData.players" :value="p.player_slot">
+                                            {{ p.hero_name }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <button @click="runRefCompare" class="btn btn-primary" :disabled="compareLoading">
+                                    {{ compareLoading ? '分析中...' : '开始对比' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comparison Results -->
+                <div v-if="compareResult" class="comparison-results">
+                    <!-- Summary Card -->
+                    <div class="card" style="margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h3 style="color: var(--text-primary);">对比结果</h3>
+                            <div style="font-size: 32px; font-weight: bold;"
+                                 :style="{ color: compareResult.summary?.grade === 'S' ? '#ffd700' : compareResult.summary?.grade === 'A' ? '#66bb6a' : compareResult.summary?.grade === 'B' ? '#42a5f5' : compareResult.summary?.grade === 'C' ? '#ffa726' : '#ef5350' }">
+                                {{ compareResult.summary?.grade || '-' }}
+                            </div>
+                        </div>
+
+                        <!-- Key Stats Grid -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+                            <div class="stat-box">
+                                <div style="color: var(--text-muted); font-size: 12px;">补刀 (10分钟)</div>
+                                <div style="color: var(--text-primary); font-size: 18px;">
+                                    {{ compareResult.summary?.cs_10min?.player || 0 }}
+                                    <span style="color: var(--text-muted);">vs</span>
+                                    {{ compareResult.summary?.cs_10min?.ref || 0 }}
+                                </div>
+                            </div>
+                            <div class="stat-box">
+                                <div style="color: var(--text-muted); font-size: 12px;">经济 (10分钟)</div>
+                                <div style="color: var(--text-primary); font-size: 18px;">
+                                    {{ compareResult.summary?.gold_10min?.player || 0 }}
+                                    <span style="color: var(--text-muted);">vs</span>
+                                    {{ compareResult.summary?.gold_10min?.ref || 0 }}
+                                </div>
+                            </div>
+                            <div class="stat-box">
+                                <div style="color: var(--text-muted); font-size: 12px;">对线伤害</div>
+                                <div style="color: var(--text-primary); font-size: 18px;">
+                                    {{ compareResult.summary?.damage_laning?.player || 0 }}
+                                    <span style="color: var(--text-muted);">vs</span>
+                                    {{ compareResult.summary?.damage_laning?.ref || 0 }}
+                                </div>
+                            </div>
+                            <div class="stat-box">
+                                <div style="color: var(--text-muted); font-size: 12px;">恢复品使用</div>
+                                <div style="color: var(--text-primary); font-size: 18px;">
+                                    {{ compareResult.summary?.regen_used?.player || 0 }}
+                                    <span style="color: var(--text-muted);">vs</span>
+                                    {{ compareResult.summary?.regen_used?.ref || 0 }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Top Differences -->
+                        <div v-if="compareResult.summary?.top_differences?.length" style="margin-top: 16px;">
+                            <h4 style="color: var(--text-primary); margin-bottom: 8px;">主要差距</h4>
+                            <div v-for="diff in compareResult.summary.top_differences" class="diff-item">
+                                <span style="color: var(--accent);">{{ diff.area }}</span>
+                                <span style="color: #ef5350; margin: 0 8px;">{{ diff.gap }}</span>
+                                <span style="color: var(--text-muted);">{{ diff.impact }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts -->
+                    <div class="card" style="margin-bottom: 16px;">
+                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">补刀对比曲线</h4>
+                        <div id="compare-cs-chart" style="height: 300px;"></div>
+                    </div>
+                    <div class="card" style="margin-bottom: 16px;">
+                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">经济对比曲线</h4>
+                        <div id="compare-gold-chart" style="height: 300px;"></div>
+                    </div>
+                    <div class="card" style="margin-bottom: 16px;">
+                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">血量对比曲线</h4>
+                        <div id="compare-hp-chart" style="height: 300px;"></div>
+                    </div>
+                    <div class="card" style="margin-bottom: 16px;">
+                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">每分钟伤害对比</h4>
+                        <div id="compare-dmg-chart" style="height: 300px;"></div>
+                    </div>
+
+                    <!-- Dual Map Replay -->
+                    <div class="card" style="margin-bottom: 16px;">
+                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">对线走位回放</h4>
+
+                        <!-- Timeline Controls -->
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                            <button @click="toggleComparePlay" class="btn" style="min-width: 60px;">
+                                {{ comparePlaying ? '暂停' : '播放' }}
+                            </button>
+                            <select v-model.number="comparePlaySpeed" class="select-input" style="width: 70px;">
+                                <option :value="0.5">0.5x</option>
+                                <option :value="1">1x</option>
+                                <option :value="2">2x</option>
+                                <option :value="5">5x</option>
+                            </select>
+                            <input type="range" v-model.number="compareTimelineSlider" min="0" max="595" step="5"
+                                   style="flex: 1; accent-color: var(--accent);" />
+                            <span style="color: var(--text-muted); min-width: 50px; text-align: right;">
+                                {{ Math.floor(compareTimelineSlider / 60) }}:{{ String(compareTimelineSlider % 60).padStart(2, '0') }}
+                            </span>
+                        </div>
+
+                        <!-- Side-by-side maps -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div ref="compareMapPlayerRef" style="height: 400px; background: var(--bg-card-alt); border-radius: 6px;"></div>
+                            <div ref="compareMapRefRef" style="height: 400px; background: var(--bg-card-alt); border-radius: 6px;"></div>
+                        </div>
+
+                        <!-- Snapshot info -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
+                            <div style="background: var(--bg-card-alt); padding: 10px; border-radius: 6px;">
+                                <div style="color: #42a5f5; font-weight: bold; margin-bottom: 4px;">玩家</div>
+                                <div style="color: var(--text-muted); font-size: 13px;" id="compare-snap-player"></div>
+                            </div>
+                            <div style="background: var(--bg-card-alt); padding: 10px; border-radius: 6px;">
+                                <div style="color: #66bb6a; font-weight: bold; margin-bottom: 4px;">参考</div>
+                                <div style="color: var(--text-muted); font-size: 13px;" id="compare-snap-ref"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Divergence Timeline -->
+                    <div v-if="compareResult.divergences?.length" class="card">
+                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">差异点时间线</h4>
+                        <div v-for="(div, idx) in compareResult.divergences" :key="idx" class="divergence-item"
+                             :style="{ borderLeft: '3px solid ' + (div.severity > 0.7 ? '#ef5350' : div.severity > 0.4 ? '#ffa726' : '#42a5f5') }">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--accent);">{{ Math.floor(div.time / 60) }}:{{ String(div.time % 60).padStart(2, '0') }}</span>
+                                <span class="severity-badge" :style="{ background: div.severity > 0.7 ? '#ef5350' : div.severity > 0.4 ? '#ffa726' : '#42a5f5' }">
+                                    {{ div.div_type === 'cs' ? '补刀' : div.div_type === 'trade' ? '换血' : div.div_type === 'positioning' ? '走位' : div.div_type === 'regen' ? '续航' : div.div_type }}
+                                </span>
+                            </div>
+                            <p style="color: var(--text-muted); margin-top: 4px;">{{ div.description_zh }}</p>
+                        </div>
+                    </div>
+
+                    <!-- AI Coaching Report -->
+                    <div class="card" style="margin-top: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h4 style="color: var(--text-primary);">AI 教练分析</h4>
+                            <button @click="requestCoaching" class="btn btn-primary" :disabled="coachingLoading || !compareResult">
+                                {{ coachingLoading ? '分析中...' : coachingReport ? '重新分析' : '获取AI建议' }}
+                            </button>
+                        </div>
+                        <div v-if="coachingLoading" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                            AI正在分析你的对线数据...
+                        </div>
+                        <div v-if="coachingReport" class="coaching-report" v-html="renderMarkdown(coachingReport.report)">
+                        </div>
+                        <div v-if="coachingReport?.is_fallback" style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">
+                            (规则生成的建议 · 设置ANTHROPIC_API_KEY启用AI分析)
+                        </div>
+                        <div v-if="coachingError" style="color: #ef5350; margin-top: 8px;">
+                            {{ coachingError }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            </div><!-- /non-overview tab content wrapper -->
+        </div><!-- /v-if="analysisData" -->
+    </div><!-- /#app -->
 
     <script src="/static/js/app.js"></script>
 </body>
