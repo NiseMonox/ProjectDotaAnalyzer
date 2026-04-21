@@ -72,6 +72,9 @@ public class ReplayAnalyzer {
     private int lastMinuteRecorded = -1;
     private int lastLaneSnapshotSecond = -5;
 
+    // ---- Starting items snapshot ----
+    private boolean startingItemsCollected = false;
+
     // ---- Ward dedup ----
     private final Set<String> seenWards = new HashSet<>();
 
@@ -82,6 +85,8 @@ public class ReplayAnalyzer {
     // ---- Smoke tracking ----
     // Track active smokes: playerIdx -> start time (combat log time)
     private final Map<Integer, Float> activeSmokeStartTime = new HashMap<>();
+    // Track active smoke start position: playerIdx -> [x, y]
+    private final Map<Integer, float[]> activeSmokeStartPosition = new HashMap<>();
     // Track active smoke: playerIdx -> players involved (same team, smoked at same time window)
     private final Map<Integer, List<Integer>> activeSmokeGroup = new HashMap<>();
 
@@ -213,6 +218,8 @@ public class ReplayAnalyzer {
                 gameStarted = true;
                 gameStartTime = time;
                 System.err.println("Game started at combat log time " + time);
+                // Snapshot starting items from hero entity inventory
+                snapshotStartingItems();
             }
 
             // State 6 = DOTA_GAMERULES_STATE_POST_GAME
@@ -223,6 +230,100 @@ public class ReplayAnalyzer {
         } catch (Exception e) {
             // skip
         }
+    }
+
+    /**
+     * Snapshot each hero's inventory at game start to capture starting items.
+     * Reads m_hItems.NNNN handles from hero entities and resolves them to item names.
+     * Slots 0-5 = main inventory, 6-8 = backpack, 9-15 = stash.
+     * We read slots 0-8 (inventory + backpack) as starting items.
+     */
+    private void snapshotStartingItems() {
+        if (startingItemsCollected || lastCtx == null) return;
+        startingItemsCollected = true;
+
+        Entities entities = lastCtx.getProcessor(Entities.class);
+
+        for (int i = 0; i < 10; i++) {
+            PlayerState ps = playerStates[i];
+            if (ps == null || ps.heroEntity == null) continue;
+
+            Entity hero = ps.heroEntity;
+            for (int slot = 0; slot <= 8; slot++) {
+                String prop = "m_hItems." + String.format("%04d", slot);
+                try {
+                    Integer handle = tryGetInt(hero, prop);
+                    if (handle == null || handle == 16777215) continue; // 0xFFFFFF = no item
+
+                    Entity itemEntity = entities.getByHandle(handle);
+                    if (itemEntity == null) continue;
+
+                    // Extract item name from entity class: "CDOTA_Item_Tango" -> "tango"
+                    String dtName = itemEntity.getDtClass().getDtName();
+                    String itemName = entityClassToItemName(dtName);
+                    if (itemName != null && !itemName.isEmpty()) {
+                        ps.startingItems.add(itemName);
+                    }
+                } catch (Exception ex) {
+                    // skip unreadable slots
+                }
+            }
+            if (!ps.startingItems.isEmpty()) {
+                System.err.println("Starting items for player " + i + " (" + ps.heroName + "): " + ps.startingItems);
+            }
+        }
+    }
+
+    // Entity class suffix -> CDN/API item key mapping for names that don't follow
+    // simple CamelCase-to-snake_case conversion
+    private static final Map<String, String> ITEM_NAME_ALIASES = new HashMap<>();
+    static {
+        ITEM_NAME_ALIASES.put("IronwoodBranch", "branches");
+        ITEM_NAME_ALIASES.put("Ward_Dispenser", "ward_observer");
+        ITEM_NAME_ALIASES.put("Ward_Sentry", "ward_sentry");
+        ITEM_NAME_ALIASES.put("Flask", "flask");
+        ITEM_NAME_ALIASES.put("Clarity", "clarity");
+        ITEM_NAME_ALIASES.put("Dust", "dust");
+        ITEM_NAME_ALIASES.put("BootsOfSpeed", "boots");
+        ITEM_NAME_ALIASES.put("StoutShield", "stout_shield");
+        ITEM_NAME_ALIASES.put("RingOfProtection", "ring_of_protection");
+        ITEM_NAME_ALIASES.put("RingOfRegeneration", "ring_of_regen");
+        ITEM_NAME_ALIASES.put("InfusedRaindrop", "infused_raindrop");
+        ITEM_NAME_ALIASES.put("MagicWand", "magic_wand");
+        ITEM_NAME_ALIASES.put("MagicStick", "magic_stick");
+        ITEM_NAME_ALIASES.put("ObserverWard", "ward_observer");
+        ITEM_NAME_ALIASES.put("SentryWard", "ward_sentry");
+    }
+
+    /**
+     * Convert item entity class name to CDN-compatible item key.
+     * "CDOTA_Item_Tango" -> "tango"
+     * "CDOTA_Item_MagicStick" -> "magic_stick"
+     * "CDOTA_Item_Faerie_Fire" -> "faerie_fire"
+     * "CDOTA_Item_IronwoodBranch" -> "branches"
+     */
+    private static String entityClassToItemName(String dtClassName) {
+        if (dtClassName == null) return null;
+        String prefix = "CDOTA_Item_";
+        if (!dtClassName.startsWith(prefix)) return null;
+        String suffix = dtClassName.substring(prefix.length());
+        if (suffix.isEmpty()) return null;
+
+        // Check alias table first
+        String alias = ITEM_NAME_ALIASES.get(suffix);
+        if (alias != null) return alias;
+
+        // Convert CamelCase to snake_case, but handle existing underscores
+        // e.g. "Faerie_Fire" -> "faerie_fire", not "faerie__fire"
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < suffix.length(); i++) {
+            char c = suffix.charAt(i);
+            if (Character.isUpperCase(c) && i > 0 && suffix.charAt(i - 1) != '_') {
+                sb.append('_');
+            }
+            sb.append(Character.toLowerCase(c));
+        }
+        return sb.toString();
     }
 
     private void handleDeath(CombatLogEntry cle, float time) {
@@ -374,6 +475,10 @@ public class ReplayAnalyzer {
                 playerStates[attackerIdx].damageInflictor.merge(inflictor, value, Integer::sum);
             }
 
+            // Log for teamfight damage computation
+            playerStates[attackerIdx].heroDamageDealtLog.add(new float[]{time, value});
+            playerStates[targetIdx].heroDamageTakenLog.add(new float[]{time, value});
+
             // Track individual hero damage events during laning phase
             if (gameStarted) {
                 float gameTime = time - gameStartTime;
@@ -410,6 +515,8 @@ public class ReplayAnalyzer {
 
         if (srcIdx >= 0 && targetIsHero) {
             playerStates[srcIdx].heroHealing += value;
+            // Log for teamfight healing computation
+            playerStates[srcIdx].heroHealLog.add(new float[]{time, value});
         }
     }
 
@@ -565,7 +672,11 @@ public class ReplayAnalyzer {
                 int targetIdx = heroNameToPlayerIdx(target);
                 if (targetIdx >= 0) {
                     activeSmokeStartTime.put(targetIdx, time);
-                    System.err.println("Smoke applied to " + target + " (idx=" + targetIdx + ") at time " + time);
+                    activeSmokeStartPosition.put(targetIdx, new float[]{
+                        playerStates[targetIdx].lastX, playerStates[targetIdx].lastY
+                    });
+                    System.err.println("Smoke applied to " + target + " (idx=" + targetIdx + ") at time " + time +
+                        " pos=(" + playerStates[targetIdx].lastX + "," + playerStates[targetIdx].lastY + ")");
                 }
             }
         } catch (Exception e) {
@@ -588,8 +699,15 @@ public class ReplayAnalyzer {
                 int targetIdx = heroNameToPlayerIdx(target);
                 if (targetIdx >= 0 && activeSmokeStartTime.containsKey(targetIdx)) {
                     float smokeStartCombatTime = activeSmokeStartTime.remove(targetIdx);
+                    float[] startPos = activeSmokeStartPosition.remove(targetIdx);
                     int smokeStartGameTime = gameStarted ? (int)(smokeStartCombatTime - gameStartTime) : (int)smokeStartCombatTime;
                     int smokeEndGameTime = gameStarted ? (int)(time - gameStartTime) : (int)time;
+
+                    // Start and end positions
+                    float startX = startPos != null ? startPos[0] : 0;
+                    float startY = startPos != null ? startPos[1] : 0;
+                    float endX = playerStates[targetIdx].lastX;
+                    float endY = playerStates[targetIdx].lastY;
 
                     // Determine team
                     String team = targetIdx < 5 ? "radiant" : "dire";
@@ -614,10 +732,53 @@ public class ReplayAnalyzer {
                     }
 
                     if (!merged) {
+                        // Build path from position history during smoke duration
+                        List<List<Float>> path = new ArrayList<>();
+                        for (float[] pos : playerStates[targetIdx].positionHistory) {
+                            if (pos[0] >= smokeStartCombatTime && pos[0] <= time) {
+                                List<Float> waypoint = new ArrayList<>();
+                                waypoint.add(pos[1]);
+                                waypoint.add(pos[2]);
+                                path.add(waypoint);
+                            }
+                        }
+                        // Add end position as final waypoint
+                        List<Float> endWaypoint = new ArrayList<>();
+                        endWaypoint.add(endX);
+                        endWaypoint.add(endY);
+                        path.add(endWaypoint);
+
+                        // Determine smoke result by checking kills within 30s after break
+                        String result = "no_contact";
+                        int killsGained = 0, deathsSuffered = 0;
+                        boolean smokeTeamIsRadiant = team.equals("radiant");
+                        for (KillEvent k : killLog) {
+                            float killGameTime = gameStarted ? k.time - gameStartTime : k.time;
+                            if (killGameTime >= smokeEndGameTime - 5 && killGameTime <= smokeEndGameTime + 30) {
+                                boolean attackerIsRadiant = k.attackerIdx < 5;
+                                if (attackerIsRadiant == smokeTeamIsRadiant) {
+                                    killsGained++;
+                                } else {
+                                    deathsSuffered++;
+                                }
+                            }
+                        }
+                        if (killsGained > 0 && deathsSuffered > 0) {
+                            result = "traded";
+                        } else if (killsGained > 0) {
+                            result = "kill";
+                        }
+
                         Map<String, Object> smoke = new LinkedHashMap<>();
                         smoke.put("time", smokeStartGameTime);
                         smoke.put("end_time", smokeEndGameTime);
                         smoke.put("team", team);
+                        smoke.put("x", (double) startX);
+                        smoke.put("y", (double) startY);
+                        smoke.put("path", path);
+                        smoke.put("result", result);
+                        smoke.put("kills_gained", killsGained);
+                        smoke.put("deaths_suffered", deathsSuffered);
                         smoke.put("player_slot", playerSlot);
                         List<Integer> slots = new ArrayList<>();
                         slots.add(playerSlot);
@@ -626,7 +787,8 @@ public class ReplayAnalyzer {
                     }
 
                     System.err.println("Smoke ended for " + target + " (idx=" + targetIdx +
-                        ") start=" + smokeStartGameTime + " end=" + smokeEndGameTime);
+                        ") start=" + smokeStartGameTime + " end=" + smokeEndGameTime +
+                        " startPos=(" + startX + "," + startY + ") endPos=(" + endX + "," + endY + ")");
                 }
             }
         } catch (Exception e) {
@@ -784,6 +946,12 @@ public class ReplayAnalyzer {
                     float y = ((Number) cellY).floatValue() * 62.5f - 8000.0f;
                     ps.lastX = x;
                     ps.lastY = y;
+
+                    // Record position history (throttled to ~2 second intervals)
+                    if (lastCombatLogTime - ps.lastPositionRecordTime >= 2.0f) {
+                        ps.positionHistory.add(new float[]{lastCombatLogTime, x, y});
+                        ps.lastPositionRecordTime = lastCombatLogTime;
+                    }
                 }
             } catch (Exception ex) {}
 
@@ -1037,11 +1205,17 @@ public class ReplayAnalyzer {
         float start = kills.stream().map(k -> k.time).min(Float::compare).orElse(0f);
         float end = kills.stream().map(k -> k.time).max(Float::compare).orElse(0f);
 
+        // Expand window slightly to capture pre-fight positioning and post-fight cleanup
+        float windowStart = start - 5.0f;
+        float windowEnd = end + 5.0f;
+
         // Convert to game time
         int startGame = gameStarted ? (int)(start - gameStartTime) : (int)start;
         int endGame = gameStarted ? (int)(end - gameStartTime) : (int)end;
+        int fightDuration = Math.max(1, endGame - startGame);
 
         int radiantDeaths = 0, direDeaths = 0;
+        int radiantGoldDelta = 0;
         for (KillEvent k : kills) {
             if (k.targetIdx < 5) radiantDeaths++;
             else direDeaths++;
@@ -1049,23 +1223,119 @@ public class ReplayAnalyzer {
 
         List<Map<String, Object>> tfPlayers = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
+            PlayerState ps = playerStates[i];
             Map<String, Object> tp = new LinkedHashMap<>();
             int slot = i < 5 ? i : 128 + (i - 5);
             tp.put("player_slot", slot);
-            tp.put("hero_name", playerStates[i].heroName != null ? playerStates[i].heroName : "");
+            tp.put("hero_name", ps.heroName != null ? ps.heroName : "");
 
             int killsInFight = 0, deathsInFight = 0;
+            float deathTime = -1;
             for (KillEvent k : kills) {
                 if (k.attackerIdx == i) killsInFight++;
-                if (k.targetIdx == i) deathsInFight++;
+                if (k.targetIdx == i) {
+                    deathsInFight++;
+                    deathTime = k.time;
+                }
             }
+
+            // Extract position snapshots during the fight from positionHistory
+            List<Map<String, Object>> positions = new ArrayList<>();
+            float firstX = 0, firstY = 0;
+            boolean foundFirst = false;
+            for (float[] pos : ps.positionHistory) {
+                if (pos[0] >= windowStart && pos[0] <= windowEnd) {
+                    float timeOffset = pos[0] - start;
+                    Map<String, Object> posSnap = new LinkedHashMap<>();
+                    posSnap.put("x", (double) pos[1]);
+                    posSnap.put("y", (double) pos[2]);
+                    posSnap.put("time_offset", Math.round(timeOffset * 10.0) / 10.0);
+                    positions.add(posSnap);
+                    if (!foundFirst) {
+                        firstX = pos[1];
+                        firstY = pos[2];
+                        foundFirst = true;
+                    }
+                }
+            }
+            // If no positions from history, use lastX/lastY as fallback
+            if (!foundFirst) {
+                firstX = ps.lastX;
+                firstY = ps.lastY;
+                Map<String, Object> posSnap = new LinkedHashMap<>();
+                posSnap.put("x", (double) firstX);
+                posSnap.put("y", (double) firstY);
+                posSnap.put("time_offset", 0.0);
+                positions.add(posSnap);
+            }
+
+            // Extract ability casts during fight window
+            List<Map<String, Object>> abilityCasts = new ArrayList<>();
+            for (Map<String, Object> cast : ps.abilityCasts) {
+                int castTime = (int) cast.get("time");
+                if (castTime >= startGame - 3 && castTime <= endGame + 5) {
+                    float castOffset = castTime - startGame;
+                    // Find position at cast time
+                    float castX = firstX, castY = firstY;
+                    float castRawTime = gameStarted ? castTime + gameStartTime : castTime;
+                    float[] castPos = findPositionAtTime(ps, castRawTime);
+                    if (castPos != null) {
+                        castX = castPos[0];
+                        castY = castPos[1];
+                    }
+                    Map<String, Object> ac = new LinkedHashMap<>();
+                    ac.put("name", cast.get("name"));
+                    ac.put("key", cast.get("name"));
+                    ac.put("time_offset", Math.round(castOffset * 10.0) / 10.0);
+                    ac.put("x", (double) castX);
+                    ac.put("y", (double) castY);
+                    abilityCasts.add(ac);
+                }
+            }
+
+            // Sum damage dealt/taken/healing during fight window
+            int damageDealt = 0, damageTaken = 0, healing = 0;
+            for (float[] dmg : ps.heroDamageDealtLog) {
+                if (dmg[0] >= windowStart && dmg[0] <= windowEnd) {
+                    damageDealt += (int) dmg[1];
+                }
+            }
+            for (float[] dmg : ps.heroDamageTakenLog) {
+                if (dmg[0] >= windowStart && dmg[0] <= windowEnd) {
+                    damageTaken += (int) dmg[1];
+                }
+            }
+            for (float[] heal : ps.heroHealLog) {
+                if (heal[0] >= windowStart && heal[0] <= windowEnd) {
+                    healing += (int) heal[1];
+                }
+            }
+
+            // Death time offset relative to fight start
+            Double deathTimeOffset = null;
+            if (deathsInFight > 0 && deathTime >= 0) {
+                float dtGameTime = gameStarted ? deathTime - gameStartTime : deathTime;
+                deathTimeOffset = Math.round((dtGameTime - startGame) * 10.0) / 10.0;
+            }
+
+            tp.put("x", (double) firstX);
+            tp.put("y", (double) firstY);
             tp.put("kills", killsInFight);
             tp.put("deaths", deathsInFight);
-            tp.put("damage_dealt", 0);
-            tp.put("damage_taken", 0);
-            tp.put("healing", 0);
+            tp.put("damage_dealt", damageDealt);
+            tp.put("damage_taken", damageTaken);
+            tp.put("healing", healing);
             tp.put("gold_delta", 0);
             tp.put("xp_delta", 0);
+            tp.put("positions", positions);
+            tp.put("ability_casts", abilityCasts);
+            if (deathTimeOffset != null) {
+                tp.put("death_time_offset", deathTimeOffset);
+            }
+            tp.put("abilities_used", abilityCasts.stream()
+                .map(a -> (String) a.get("name"))
+                .distinct()
+                .collect(Collectors.toList()));
             tfPlayers.add(tp);
         }
 
@@ -1077,6 +1347,28 @@ public class ReplayAnalyzer {
         tf.put("gold_delta", 0);
         tf.put("players", tfPlayers);
         return tf;
+    }
+
+    /**
+     * Find the closest position for a player at a given raw combat log time.
+     * Returns [x, y] or null if no position data available.
+     */
+    private float[] findPositionAtTime(PlayerState ps, float rawTime) {
+        float[] best = null;
+        float bestDiff = Float.MAX_VALUE;
+        for (float[] pos : ps.positionHistory) {
+            float diff = Math.abs(pos[0] - rawTime);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                best = pos;
+            }
+            // positionHistory is chronological, stop if we've passed the target time
+            if (pos[0] > rawTime + 5.0f) break;
+        }
+        if (best != null) {
+            return new float[]{best[1], best[2]};
+        }
+        return null;
     }
 
     // ======== Final Items (from purchase log) ========
@@ -1372,6 +1664,9 @@ public class ReplayAnalyzer {
             p.put("ability_casts", ps.abilityCasts);
             p.put("wards_placed", new ArrayList<>());
 
+            // Starting items from entity inventory snapshot at game start
+            p.put("starting_items", ps.startingItems);
+
             // Fix #5: Final items from purchase log
             p.put("final_items", computeFinalItems(ps));
             p.put("backpack", new ArrayList<>());
@@ -1641,6 +1936,15 @@ public class ReplayAnalyzer {
         float lastX = 0, lastY = 0;
         Entity heroEntity = null;  // Reference to hero entity for final item reading
 
+        // Position history for smoke paths and teamfight positions: [rawCombatLogTime, gameX, gameY]
+        List<float[]> positionHistory = new ArrayList<>();
+        float lastPositionRecordTime = -999;
+
+        // Damage/heal logs for teamfight damage computation: [rawCombatLogTime, value]
+        List<float[]> heroDamageDealtLog = new ArrayList<>();
+        List<float[]> heroDamageTakenLog = new ArrayList<>();
+        List<float[]> heroHealLog = new ArrayList<>();
+
         Map<String, Integer> killed = new LinkedHashMap<>();
         Map<String, Integer> killedBy = new LinkedHashMap<>();
         Map<String, Integer> damageDealt = new LinkedHashMap<>();
@@ -1659,6 +1963,7 @@ public class ReplayAnalyzer {
         List<Map<String, Object>> laningRegenEvents = new ArrayList<>(); // regen item/ability uses during laning
         List<Map<String, Object>> laningCreepKills = new ArrayList<>(); // last hits with timestamps
         List<Map<String, Object>> laningDenies = new ArrayList<>();     // denies with timestamps
+        List<String> startingItems = new ArrayList<>();  // inventory snapshot at game start
 
         PlayerState(int idx) {
             this.playerIdx = idx;

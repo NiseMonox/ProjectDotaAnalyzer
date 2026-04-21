@@ -4,8 +4,44 @@ const CDN = 'https://cdn.akamai.steamstatic.com/apps/dota2/images/dota_react';
 
 createApp({
     setup() {
+        // ===== i18n =====
+        const locale = ref(localStorage.getItem('dota_analyzer_locale') || 'zh');
+        function t(key) {
+            const msgs = window.I18N_MESSAGES || {};
+            const langMsgs = msgs[locale.value] || msgs['zh'] || {};
+            return langMsgs[key] || key;
+        }
+        function onLocaleChange() {
+            localStorage.setItem('dota_analyzer_locale', locale.value);
+            document.title = t('app_title');
+        }
+
+        // Map backend-provided Chinese lane_name strings to i18n keys so they
+        // render in the active locale. Falls back to lane_role/lane ids when
+        // the string doesn't match a known label.
+        const LANE_NAME_I18N = {
+            '安全路': 'lane_safe',
+            '中路': 'lane_mid',
+            '劣势路': 'lane_off',
+            '野区': 'lane_jungle',
+            '游走': 'lane_roaming',
+            '未知': 'lane_unknown',
+        };
+        function translateLaneName(player) {
+            if (!player) return '';
+            if (player.is_roaming) return t('lane_roaming');
+            const raw = player.lane_name;
+            if (raw && LANE_NAME_I18N[raw]) return t(LANE_NAME_I18N[raw]);
+            // Derive from numeric lane id when lane_name is missing/unknown
+            const laneMap = { 1: 'lane_safe', 2: 'lane_mid', 3: 'lane_off', 4: 'lane_jungle' };
+            const key = laneMap[player.lane];
+            if (key) return t(key);
+            return t('lane_unknown');
+        }
+
         // State
         const analysisData = ref(null);
+        const matchKey = ref('');
         const parseSource = ref('');
         const uploading = ref(false);
         const uploadError = ref('');
@@ -43,30 +79,12 @@ createApp({
         const teamfightPlaySpeed = ref(1); // 0.25, 0.5, 1, 2
         let teamfightPlayInterval = null;
 
-        // Pro compare state
-        const compareMode = ref('self');
-        const comparePlayerA = ref(null);
-        const comparePlayerB = ref(null);
-        const compareRefSlot = ref(null);
-        const compareLoading = ref(false);
-        const compareResult = ref(null);
-        const refMatchData = ref(null);
-        let refMatchKey = null;
-        let compareCsChartInstance = null;
-        let compareGoldChartInstance = null;
-        let compareHpChartInstance = null;
-        let compareDmgChartInstance = null;
-        const coachingReport = ref(null);
-        const coachingLoading = ref(false);
-        const coachingError = ref('');
-        const compareMapPlayerRef = ref(null);
-        const compareMapRefRef = ref(null);
-        const compareTimelineSlider = ref(0); // 0-595 seconds
-        const comparePlaying = ref(false);
-        const comparePlaySpeed = ref(1);
-        let comparePlayInterval = null;
-        let compareMapPlayerInstance = null;
-        let compareMapRefInstance = null;
+
+        // AI Coach state
+        const aiCoachData = ref(null);
+        const aiCoachLoading = ref(false);
+        const aiCoachError = ref('');
+        const aiCoachPlayerSlot = ref(null);
 
         // New tab state
         const selectedLaningPlayer = ref(0);
@@ -102,30 +120,30 @@ createApp({
         let smokeChartInstance = null;
         let teamfightChartInstance = null;
 
-        const tabs = [
-            { id: 'overview', label: '总览' },
-            { id: 'benchmarks', label: '表现评估' },
-            { id: 'laning', label: '对线' },
-            { id: 'combat', label: '战斗' },
-            { id: 'farm', label: '经济来源' },
-            { id: 'items', label: '出装' },
-            { id: 'purchases', label: '物品时间线' },
-            { id: 'economy', label: '经济曲线' },
-            { id: 'skills', label: '加点' },
-            { id: 'objectives', label: '目标' },
-            { id: 'wards', label: '视野' },
-            { id: 'smokes', label: '开雾' },
-            { id: 'teamfights', label: '团战' },
-            { id: 'chat', label: '聊天' },
-            { id: 'pro_compare', label: '职业对比' },
-        ];
+        const tabs = computed(() => [
+            { id: 'overview', label: t('tab_overview') },
+            { id: 'benchmarks', label: t('tab_benchmarks') },
+            { id: 'laning', label: t('tab_laning') },
+            { id: 'combat', label: t('tab_combat') },
+            { id: 'farm', label: t('tab_farm') },
+            { id: 'items', label: t('tab_items') },
+            { id: 'purchases', label: t('tab_purchases') },
+            { id: 'economy', label: t('tab_economy') },
+            { id: 'skills', label: t('tab_skills') },
+            { id: 'objectives', label: t('tab_objectives') },
+            { id: 'wards', label: t('tab_wards') },
+            { id: 'smokes', label: t('tab_smokes') },
+            { id: 'teamfights', label: t('tab_teamfights') },
+            { id: 'chat', label: t('tab_chat') },
+            { id: 'ai_coach', label: t('tab_ai_coach') },
+        ]);
 
-        const phaseLabels = {
-            starting: '出门装',
-            early: '前期 (0-10min)',
-            mid: '中期 (10-25min)',
-            late: '后期 (25min+)',
-        };
+        const phaseLabels = computed(() => ({
+            starting: t('phase_starting'),
+            early: t('phase_early'),
+            mid: t('phase_mid'),
+            late: t('phase_late'),
+        }));
 
         // Placeholder SVG data URIs for missing icons
         const PLACEHOLDER_HERO = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="#2d3748"/><text x="16" y="20" text-anchor="middle" fill="#4a5568" font-size="14" font-family="sans-serif">?</text></svg>');
@@ -224,11 +242,11 @@ createApp({
             const cols = [
                 { key: 'gold_per_min', label: 'GPM' },
                 { key: 'xp_per_min', label: 'XPM' },
-                { key: 'kills_per_min', label: '击杀/分' },
-                { key: 'last_hits_per_min', label: '补刀/分' },
-                { key: 'hero_damage_per_min', label: '伤害/分' },
-                { key: 'hero_healing_per_min', label: '治疗/分' },
-                { key: 'tower_damage', label: '塔伤' },
+                { key: 'kills_per_min', label: t('benchmarks_kills_per_min') },
+                { key: 'last_hits_per_min', label: t('benchmarks_lh_per_min') },
+                { key: 'hero_damage_per_min', label: t('benchmarks_dmg_per_min') },
+                { key: 'hero_healing_per_min', label: t('benchmarks_healing_per_min') },
+                { key: 'tower_damage', label: t('benchmarks_tower_dmg') },
             ];
             // Only show columns that have data
             if (benchmarkPlayers.value.length === 0) return cols;
@@ -405,9 +423,9 @@ createApp({
         // --- Data availability checks for graceful degradation ---
         const parseSourceLabel = computed(() => {
             const src = parseSource.value;
-            if (src === 'clarity') return '本地解析';
-            if (src === 'opendota') return 'OpenDota API';
-            if (src === 'mock') return '演示数据';
+            if (src === 'clarity') return t('source_clarity_short');
+            if (src === 'opendota') return t('source_opendota');
+            if (src === 'mock') return t('source_mock');
             return src || '';
         });
 
@@ -497,14 +515,14 @@ createApp({
 
         const timelineWards = computed(() => {
             if (!wardTimelineEnabled.value) return filteredWards.value;
-            const t = wardTimelineTime.value;
+            const curTime = wardTimelineTime.value;
             return filteredWards.value.filter(w => {
-                if (w.time > t) return false;
+                if (w.time > curTime) return false;
                 if (w.destroyed_time != null) {
-                    if (w.destroyed_time <= t) return false;
+                    if (w.destroyed_time <= curTime) return false;
                 } else {
                     const expiry = w.time + (DEFAULT_WARD_LIFETIME[w.ward_type] || 360);
-                    if (expiry <= t) return false;
+                    if (expiry <= curTime) return false;
                 }
                 return true;
             });
@@ -579,13 +597,13 @@ createApp({
             if (!unixTs) return '';
             const now = Date.now() / 1000;
             const diff = Math.floor(now - unixTs);
-            if (diff < 60) return diff + ' 秒前';
-            if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
-            if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+            if (diff < 60) return diff + ' ' + t('time_seconds_ago');
+            if (diff < 3600) return Math.floor(diff / 60) + ' ' + t('time_minutes_ago');
+            if (diff < 86400) return Math.floor(diff / 3600) + ' ' + t('time_hours_ago');
             const days = Math.floor(diff / 86400);
-            if (days < 30) return days + ' 天前';
+            if (days < 30) return days + ' ' + t('time_days_ago');
             const months = Math.floor(days / 30);
-            return months + ' 个月前';
+            return months + ' ' + t('time_months_ago');
         }
 
         function teamSum(players, field) {
@@ -630,7 +648,7 @@ createApp({
 
         async function uploadFile(file) {
             if (!file.name.endsWith('.dem')) {
-                uploadError.value = '请上传 .dem 格式的录像文件';
+                uploadError.value = t('error_invalid_format');
                 return;
             }
             uploading.value = true;
@@ -639,11 +657,14 @@ createApp({
             formData.append('file', file);
             try {
                 const res = await fetch('/api/upload', { method: 'POST', body: formData });
-                if (!res.ok) throw new Error((await res.json()).detail || '上传失败');
+                if (!res.ok) throw new Error((await res.json()).detail || t('error_upload_failed'));
                 const data = await res.json();
                 parseSource.value = data.parse_source;
+                matchKey.value = data._match_key || data.file_key || '';
                 const aRes = await fetch(`/api/match/${data.file_key}`);
-                analysisData.value = (await aRes.json()).analysis;
+                const aData = await aRes.json();
+                analysisData.value = aData.analysis;
+                if (aData._match_key) matchKey.value = aData._match_key;
             } catch (e) {
                 uploadError.value = e.message;
             } finally {
@@ -667,13 +688,14 @@ createApp({
                 const data = await res.json();
                 analysisData.value = data.analysis;
                 parseSource.value = data.parse_source;
+                matchKey.value = data._match_key || mid;
                 if (!data.has_parsed_data) {
                     // Request parse for detailed data
                     fetch(`/api/request-parse/${mid}`, { method: 'POST' }).catch(() => {});
-                    uploadError.value = '已获取基础数据。详细数据（眼位/团战/经济曲线）需要等待 OpenDota 解析完成后重新获取。已自动请求解析。';
+                    uploadError.value = t('error_basic_data_fetched');
                 }
             } catch (e) {
-                uploadError.value = '获取比赛数据失败: ' + e.message;
+                uploadError.value = t('error_fetch_failed') + ': ' + e.message;
             } finally {
                 uploading.value = false;
             }
@@ -687,16 +709,37 @@ createApp({
                 const data = await res.json();
                 analysisData.value = data.analysis;
                 parseSource.value = data.parse_source;
+                matchKey.value = data._match_key || 'demo';
             } catch (e) {
-                uploadError.value = '加载演示数据失败: ' + e.message;
+                uploadError.value = t('error_demo_failed') + ': ' + e.message;
             } finally {
                 uploading.value = false;
+            }
+        }
+
+        async function requestAiCoach(playerSlot) {
+            aiCoachLoading.value = true;
+            aiCoachError.value = '';
+            aiCoachPlayerSlot.value = playerSlot;
+            try {
+                const mk = matchKey.value || 'demo';
+                const resp = await fetch(`/api/match/${mk}/ai-coach/${playerSlot}?lang=${locale.value}`);
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || t('ai_coach_failed'));
+                }
+                aiCoachData.value = await resp.json();
+            } catch (e) {
+                aiCoachError.value = e.message;
+            } finally {
+                aiCoachLoading.value = false;
             }
         }
 
         function resetAnalysis() {
             analysisData.value = null;
             parseSource.value = '';
+            matchKey.value = '';
             wardTimelineEnabled.value = false;
             wardTimelineTime.value = 0;
             wardShowVision.value = false;
@@ -712,320 +755,10 @@ createApp({
                 .forEach(c => c?.dispose());
             wardChartInstance = smokeMapInstance = smokeChartInstance = teamfightChartInstance = economyChartInstance = null;
             laningHeatmapInstance = laningCsTimelineInstance = laningHpTimelineInstance = farmReasonChartInstance = farmLhChartInstance = null;
-            compareResult.value = null;
-            refMatchData.value = null;
-            refMatchKey = null;
-            compareCsChartInstance?.dispose();
-            compareGoldChartInstance?.dispose();
-            compareHpChartInstance?.dispose();
-            compareDmgChartInstance?.dispose();
-            compareCsChartInstance = compareGoldChartInstance = compareHpChartInstance = compareDmgChartInstance = null;
-            clearInterval(comparePlayInterval);
-            comparePlayInterval = null;
-            comparePlaying.value = false;
-            compareMapPlayerInstance?.dispose();
-            compareMapRefInstance?.dispose();
-            compareMapPlayerInstance = compareMapRefInstance = null;
-        }
-
-        // --- Pro Compare Methods ---
-        async function runSelfCompare() {
-            if (comparePlayerA.value == null || comparePlayerB.value == null) return;
-            compareLoading.value = true;
-            compareResult.value = null;
-            try {
-                const matchKey = analysisData.value?._match_key;
-                if (!matchKey) { compareLoading.value = false; return; }
-                const resp = await fetch('/api/compare/self', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        match_key: matchKey,
-                        player_slot: comparePlayerA.value,
-                        ref_slot: comparePlayerB.value,
-                    }),
-                });
-                if (!resp.ok) throw new Error(await resp.text());
-                compareResult.value = await resp.json();
-                await nextTick();
-                renderCompareCharts();
-                renderCompareMaps();
-            } catch (e) {
-                console.error('Compare error:', e);
-            }
-            compareLoading.value = false;
-        }
-
-        async function uploadRefReplay(event) {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            const formData = new FormData();
-            formData.append('replay', file);
-            try {
-                const resp = await fetch('/api/compare/upload-ref', { method: 'POST', body: formData });
-                if (!resp.ok) throw new Error(await resp.text());
-                const data = await resp.json();
-                refMatchData.value = data;
-                refMatchKey = data.match_key;
-            } catch (e) {
-                console.error('Upload ref error:', e);
-            }
-        }
-
-        async function runRefCompare() {
-            if (comparePlayerA.value == null || compareRefSlot.value == null || !refMatchKey) return;
-            compareLoading.value = true;
-            compareResult.value = null;
-            try {
-                const matchKey = analysisData.value?._match_key;
-                if (!matchKey) { compareLoading.value = false; return; }
-                const resp = await fetch('/api/compare/laning', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        player_match_key: matchKey,
-                        player_slot: comparePlayerA.value,
-                        ref_match_key: refMatchKey,
-                        ref_slot: compareRefSlot.value,
-                    }),
-                });
-                if (!resp.ok) throw new Error(await resp.text());
-                compareResult.value = await resp.json();
-                await nextTick();
-                renderCompareCharts();
-                renderCompareMaps();
-            } catch (e) {
-                console.error('Ref compare error:', e);
-            }
-            compareLoading.value = false;
-        }
-
-        function renderCompareCharts() {
-            const result = compareResult.value;
-            if (!result?.per_minute_comparison) return;
-            const pmc = result.per_minute_comparison;
-            const minutes = Array.from({length: 11}, (_, i) => i);
-
-            // CS comparison chart
-            const csEl = document.getElementById('compare-cs-chart');
-            if (csEl) {
-                compareCsChartInstance?.dispose();
-                compareCsChartInstance = echarts.init(csEl);
-                compareCsChartInstance.setOption({
-                    tooltip: { trigger: 'axis' },
-                    legend: { data: ['你', '参考'], textStyle: { color: '#aaa' } },
-                    xAxis: { type: 'category', data: minutes, name: '分钟', axisLabel: { color: '#aaa' } },
-                    yAxis: { type: 'value', name: '补刀', axisLabel: { color: '#aaa' } },
-                    series: [
-                        { name: '你', type: 'line', data: pmc.cs?.player || [], smooth: true, itemStyle: { color: '#42a5f5' } },
-                        { name: '参考', type: 'line', data: pmc.cs?.ref || [], smooth: true, itemStyle: { color: '#66bb6a' } },
-                    ],
-                    backgroundColor: 'transparent',
-                    grid: { left: 50, right: 20, top: 40, bottom: 40 },
-                });
-            }
-
-            // Gold comparison chart
-            const goldEl = document.getElementById('compare-gold-chart');
-            if (goldEl) {
-                compareGoldChartInstance?.dispose();
-                compareGoldChartInstance = echarts.init(goldEl);
-                compareGoldChartInstance.setOption({
-                    tooltip: { trigger: 'axis' },
-                    legend: { data: ['你', '参考'], textStyle: { color: '#aaa' } },
-                    xAxis: { type: 'category', data: minutes, name: '分钟', axisLabel: { color: '#aaa' } },
-                    yAxis: { type: 'value', name: '经济', axisLabel: { color: '#aaa' } },
-                    series: [
-                        { name: '你', type: 'line', data: pmc.gold?.player || [], smooth: true, itemStyle: { color: '#42a5f5' } },
-                        { name: '参考', type: 'line', data: pmc.gold?.ref || [], smooth: true, itemStyle: { color: '#66bb6a' } },
-                    ],
-                    backgroundColor: 'transparent',
-                    grid: { left: 50, right: 20, top: 40, bottom: 40 },
-                });
-            }
-
-            // HP% comparison chart
-            const hpEl = document.getElementById('compare-hp-chart');
-            if (hpEl && pmc.hp_pct) {
-                compareHpChartInstance?.dispose();
-                compareHpChartInstance = echarts.init(hpEl);
-                compareHpChartInstance.setOption({
-                    tooltip: { trigger: 'axis', formatter: params => {
-                        return `${params[0].name}分钟<br/>` +
-                            params.map(p => `${p.marker} ${p.seriesName}: ${p.value}%`).join('<br/>');
-                    }},
-                    legend: { data: ['你', '参考'], textStyle: { color: '#aaa' } },
-                    xAxis: { type: 'category', data: minutes, name: '分钟', axisLabel: { color: '#aaa' } },
-                    yAxis: { type: 'value', name: 'HP%', max: 100, axisLabel: { color: '#aaa' } },
-                    series: [
-                        { name: '你', type: 'line', data: pmc.hp_pct?.player || [], smooth: true,
-                          areaStyle: { opacity: 0.1 }, itemStyle: { color: '#42a5f5' } },
-                        { name: '参考', type: 'line', data: pmc.hp_pct?.ref || [], smooth: true,
-                          areaStyle: { opacity: 0.1 }, itemStyle: { color: '#66bb6a' } },
-                    ],
-                    backgroundColor: 'transparent',
-                    grid: { left: 50, right: 20, top: 40, bottom: 40 },
-                });
-            }
-
-            // Cumulative damage dealt comparison chart
-            const dmgEl = document.getElementById('compare-dmg-chart');
-            if (dmgEl && pmc.damage) {
-                compareDmgChartInstance?.dispose();
-                compareDmgChartInstance = echarts.init(dmgEl);
-                compareDmgChartInstance.setOption({
-                    tooltip: { trigger: 'axis', formatter: params => {
-                        return `${params[0].name}分钟<br/>` +
-                            params.map(p => `${p.marker} ${p.seriesName}: ${p.value}`).join('<br/>');
-                    }},
-                    legend: { data: ['你', '参考'], textStyle: { color: '#aaa' } },
-                    xAxis: { type: 'category', data: minutes, name: '分钟', axisLabel: { color: '#aaa' } },
-                    yAxis: { type: 'value', name: '伤害', axisLabel: { color: '#aaa' } },
-                    series: [
-                        { name: '你', type: 'bar', data: pmc.damage?.player || [], itemStyle: { color: '#42a5f5' } },
-                        { name: '参考', type: 'bar', data: pmc.damage?.ref || [], itemStyle: { color: '#66bb6a' } },
-                    ],
-                    backgroundColor: 'transparent',
-                    grid: { left: 50, right: 20, top: 40, bottom: 40 },
-                });
-            }
-        }
-
-        function renderCompareMaps() {
-            const result = compareResult.value;
-            if (!result?.per_minute_comparison) return;
-
-            // We need snapshot data from laning section
-            const laning = analysisData.value?.laning;
-            if (!laning?.players) return;
-
-            const playerA = laning.players.find(p => p.player_slot === comparePlayerA.value);
-            const playerB = laning.players.find(p => p.player_slot === comparePlayerB.value);
-            if (!playerA?.laning_snapshots?.length || !playerB?.laning_snapshots?.length) return;
-
-            updateCompareMapPositions(playerA, playerB);
-        }
-
-        function updateCompareMapPositions(playerA, playerB) {
-            const time = compareTimelineSlider.value;
-
-            // Find closest snapshot
-            function findSnap(snaps, t) {
-                let best = snaps[0];
-                for (const s of snaps) {
-                    if (Math.abs(s.time - t) < Math.abs(best.time - t)) best = s;
-                }
-                return best;
-            }
-
-            const snapA = findSnap(playerA.laning_snapshots, time);
-            const snapB = findSnap(playerB.laning_snapshots, time);
-
-            function renderMap(container, snap, heroName, label) {
-                if (!container) return null;
-                const mapSize = container.clientWidth || 350;
-                const instance = echarts.init(container);
-                const [mx, my] = gameToMap(snap.x, snap.y);
-
-                instance.setOption({
-                    graphic: mapGraphic(mapSize),
-                    ...mapAxes(),
-                    title: {
-                        text: `${label}: ${heroName}`,
-                        textStyle: { color: '#ddd', fontSize: 13 },
-                        left: 'center', top: 5,
-                    },
-                    series: [{
-                        type: 'scatter',
-                        coordinateSystem: 'cartesian2d',
-                        data: [[mx, my]],
-                        symbolSize: 20,
-                        itemStyle: { color: '#42a5f5', borderColor: '#fff', borderWidth: 2 },
-                        z: 10,
-                    }],
-                    tooltip: {
-                        formatter: () => `HP: ${snap.hp}/${snap.max_hp} (${Math.round(snap.hp / Math.max(snap.max_hp, 1) * 100)}%)<br>` +
-                            `Mana: ${snap.mana}/${snap.max_mana}<br>` +
-                            `LH: ${snap.last_hits} DN: ${snap.denies}<br>` +
-                            `Gold: ${snap.net_worth}`,
-                    },
-                }, true);
-                return instance;
-            }
-
-            const elA = compareMapPlayerRef.value;
-            const elB = compareMapRefRef.value;
-
-            compareMapPlayerInstance?.dispose();
-            compareMapRefInstance?.dispose();
-            compareMapPlayerInstance = renderMap(elA, snapA, playerA.hero_name, '玩家');
-            compareMapRefInstance = renderMap(elB, snapB, playerB.hero_name, '参考');
-        }
-
-        function toggleComparePlay() {
-            if (comparePlaying.value) {
-                clearInterval(comparePlayInterval);
-                comparePlayInterval = null;
-                comparePlaying.value = false;
-            } else {
-                comparePlaying.value = true;
-                comparePlayInterval = setInterval(() => {
-                    let next = compareTimelineSlider.value + 5 * comparePlaySpeed.value;
-                    if (next > 595) {
-                        next = 0;
-                    }
-                    compareTimelineSlider.value = next;
-                }, 1000);
-            }
-        }
-
-        watch(compareTimelineSlider, () => {
-            if (!compareResult.value) return;
-            const laning = analysisData.value?.laning;
-            if (!laning?.players) return;
-            const playerA = laning.players.find(p => p.player_slot === comparePlayerA.value);
-            const playerB = laning.players.find(p => p.player_slot === comparePlayerB.value);
-            if (playerA?.laning_snapshots?.length && playerB?.laning_snapshots?.length) {
-                updateCompareMapPositions(playerA, playerB);
-            }
-        });
-
-        async function requestCoaching() {
-            if (!compareResult.value) return;
-            coachingLoading.value = true;
-            coachingError.value = '';
-            coachingReport.value = null;
-            try {
-                const matchKey = analysisData.value?._match_key;
-                const endpoint = compareMode.value === 'self' ? '/api/compare/coaching' : '/api/compare/coaching-cross';
-
-                let body;
-                if (compareMode.value === 'self') {
-                    body = {
-                        match_key: matchKey,
-                        player_slot: comparePlayerA.value,
-                        ref_slot: comparePlayerB.value,
-                    };
-                } else {
-                    body = {
-                        player_match_key: matchKey,
-                        player_slot: comparePlayerA.value,
-                        ref_match_key: refMatchKey,
-                        ref_slot: compareRefSlot.value,
-                    };
-                }
-
-                const resp = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                });
-                if (!resp.ok) throw new Error(await resp.text());
-                coachingReport.value = await resp.json();
-            } catch (e) {
-                coachingError.value = e.message;
-            }
-            coachingLoading.value = false;
+            aiCoachData.value = null;
+            aiCoachLoading.value = false;
+            aiCoachError.value = '';
+            aiCoachPlayerSlot.value = null;
         }
 
         function renderMarkdown(text) {
@@ -1120,7 +853,7 @@ createApp({
             // Vision circles (behind wards)
             if (wardShowVision.value && visionData.length > 0) {
                 series.push({
-                    name: '视野范围', type: 'custom', data: visionData,
+                    name: t('wards_vision_series'), type: 'custom', data: visionData,
                     z: 5, silent: true,
                     renderItem(params, api) {
                         const center = api.coord([api.value(0), api.value(1)]);
@@ -1138,13 +871,13 @@ createApp({
 
             // Observer wards - circles (OpenDota style: yellow with team border)
             series.push({
-                name: '侦查守卫', type: 'scatter', data: obsData,
+                name: t('wards_observer'), type: 'scatter', data: obsData,
                 symbolSize: 16, symbol: 'circle', z: 10,
             });
 
             // Sentry wards - diamonds
             series.push({
-                name: '岗哨守卫', type: 'scatter', data: sentData,
+                name: t('wards_sentry'), type: 'scatter', data: sentData,
                 symbolSize: 12, symbol: 'diamond', z: 10,
             });
 
@@ -1155,13 +888,13 @@ createApp({
                     const [mx, my] = gameToMap(w.x, w.y);
                     return {
                         value: [mx, my],
-                        name: `被反 ${formatGameTime(w.destroyed_time)}`,
+                        name: `${t('wards_dewarded')} ${formatGameTime(w.destroyed_time)}`,
                         itemStyle: { color: 'rgba(239,68,68,0.7)', borderColor: '#ef4444', borderWidth: 1 },
                     };
                 });
             if (destroyedData.length > 0) {
                 series.push({
-                    name: '被反眼', type: 'scatter', data: destroyedData,
+                    name: t('wards_destroyed'), type: 'scatter', data: destroyedData,
                     symbolSize: 8, symbol: 'path://M-1,-1L1,1M1,-1L-1,1', z: 12,
                     silent: true,
                 });
@@ -1178,12 +911,12 @@ createApp({
                     formatter: p => {
                         if (!p.data?._ward) return p.name;
                         const w = p.data._ward;
-                        const type = w.ward_type === 'observer' ? '侦查守卫' : '岗哨守卫';
-                        const team = w.team === 'radiant' ? '天辉' : '夜魇';
-                        let html = `<b>${w.hero_name}</b><br/>${type} (${team})<br/>放置: ${w.time_str}`;
+                        const type = w.ward_type === 'observer' ? t('wards_observer') : t('wards_sentry');
+                        const team = w.team === 'radiant' ? t('radiant') : t('dire');
+                        let html = `<b>${w.hero_name}</b><br/>${type} (${team})<br/>${t('wards_placed')}: ${w.time_str}`;
                         if (w.destroyed_time != null) {
                             const life = w.destroyed_time - w.time;
-                            html += `<br/><span style="color:#fc8181">被反 ${formatGameTime(w.destroyed_time)} (存活${life}s)</span>`;
+                            html += `<br/><span style="color:#fc8181">${t('wards_dewarded')} ${formatGameTime(w.destroyed_time)} (${t('wards_alive')} ${life}s)</span>`;
                         }
                         return html;
                     },
@@ -1204,8 +937,8 @@ createApp({
             const timeline = smokeData.value.timeline || [];
             let smokes = timeline;
             if (smokeTimelineEnabled.value) {
-                const t = smokeTimelineTime.value;
-                smokes = timeline.filter(s => s.time <= t);
+                const curTime = smokeTimelineTime.value;
+                smokes = timeline.filter(s => s.time <= curTime);
             }
             if (smokeSelected.value.length > 0) {
                 smokes = smokes.filter(s => smokeSelected.value.includes(timeline.indexOf(s)));
@@ -1244,7 +977,7 @@ createApp({
                     const [ex, ey] = gameToMap(last[0], last[1]);
                     endData.push({
                         value: [ex, ey],
-                        name: `烟破 ${s.end_time_str || ''}${resultIcon}`,
+                        name: `${t('smokes_smoke_break')} ${s.end_time_str || ''}${resultIcon}`,
                         itemStyle: {
                             color,
                             borderColor: 'rgba(255,255,255,0.6)',
@@ -1265,7 +998,7 @@ createApp({
             // Movement paths with dashed lines
             if (pathsData.length > 0) {
                 series.push({
-                    name: '移动路径', type: 'custom',
+                    name: t('smokes_movement_path'), type: 'custom',
                     data: pathsData.map((_, i) => ({ value: [i] })),
                     z: 3, silent: true,
                     renderItem(params, api) {
@@ -1283,7 +1016,7 @@ createApp({
             // Arrows at path ends
             if (arrowData.length > 0) {
                 series.push({
-                    name: '方向', type: 'custom',
+                    name: t('smokes_direction'), type: 'custom',
                     data: arrowData.map((_, i) => ({ value: [i] })),
                     z: 4, silent: true,
                     renderItem(params, api) {
@@ -1309,14 +1042,14 @@ createApp({
 
             // Smoke start points
             series.push({
-                name: '开雾位置', type: 'scatter', data: startData,
+                name: t('smokes_start_pos'), type: 'scatter', data: startData,
                 symbolSize: 16, symbol: 'circle', z: 10,
             });
 
             // Smoke break points (triangles)
             if (endData.length > 0) {
                 series.push({
-                    name: '烟破位置', type: 'scatter', data: endData,
+                    name: t('smokes_break_point'), type: 'scatter', data: endData,
                     symbolSize: 12, symbol: 'triangle', z: 10,
                 });
             }
@@ -1332,11 +1065,11 @@ createApp({
                     formatter: p => {
                         if (!p.data?._smoke) return p.name;
                         const s = p.data._smoke;
-                        const team = s.team === 'radiant' ? '天辉' : '夜魇';
-                        let html = `<b>${team}开雾</b> ${s.time_str}<br/>${s.num_players}人: ${s.participants.map(pp => pp.hero_name).join(', ')}`;
-                        if (s.duration) html += `<br/>持续: ${s.duration}秒`;
-                        if (s.result) html += `<br/>结果: ${smokeResultLabel(s.result)}`;
-                        if (s.kills_gained > 0) html += ` (${s.kills_gained}杀)`;
+                        const team = s.team === 'radiant' ? t('radiant') : t('dire');
+                        let html = `<b>${team} ${t('tab_smokes')}</b> ${s.time_str}<br/>${s.num_players} ${t('smokes_persons')}: ${s.participants.map(pp => pp.hero_name).join(', ')}`;
+                        if (s.duration) html += `<br/>${t('smokes_duration_label')}: ${s.duration}${t('smokes_seconds_suffix')}`;
+                        if (s.result) html += `<br/>${t('smokes_result_label')}: ${smokeResultLabel(s.result)}`;
+                        if (s.kills_gained > 0) html += ` (${s.kills_gained} ${t('smokes_kills_suffix')})`;
                         return html;
                     },
                 },
@@ -1361,28 +1094,29 @@ createApp({
                     formatter: p => {
                         const d = timeline[p.dataIndex];
                         if (!d) return '';
-                        return `${d.time_str} - ${d.team === 'radiant' ? '天辉' : '夜魇'}<br>${d.num_players}人: ${d.participants.map(pp => pp.hero_name).join(', ')}${d.duration ? '<br>持续: ' + d.duration + '秒' : ''}`;
+                        return `${d.time_str} - ${d.team === 'radiant' ? t('radiant') : t('dire')}<br>${d.num_players} ${t('smokes_persons')}: ${d.participants.map(pp => pp.hero_name).join(', ')}${d.duration ? '<br>' + t('smokes_duration_label') + ': ' + d.duration + t('smokes_seconds_suffix') : ''}`;
                     },
                 },
                 grid: { left: 60, right: 20, top: 30, bottom: 40 },
                 xAxis: {
-                    type: 'value', name: '游戏时间 (分钟)',
+                    type: 'value', name: t('chart_game_time'),
                     min: 0, max: Math.ceil(duration / 60),
                     nameTextStyle: { color: '#a0aec0' },
                     axisLabel: { color: '#a0aec0' },
                     splitLine: { lineStyle: { color: '#2d3748' } },
                 },
-                yAxis: { type: 'category', data: ['天辉', '夜魇'], axisLabel: { color: '#a0aec0' }, splitLine: { show: false } },
+                yAxis: { type: 'category', data: [t('radiant'), t('dire')], axisLabel: { color: '#a0aec0' }, splitLine: { show: false } },
                 series: [{
                     type: 'scatter',
                     data: timeline.map(s => ({
-                        value: [Math.round(s.time / 60 * 10) / 10, s.team === 'radiant' ? '天辉' : '夜魇'],
+                        value: [Math.round(s.time / 60 * 10) / 10, s.team === 'radiant' ? t('radiant') : t('dire')],
                         itemStyle: { color: s.team === 'radiant' ? '#48bb78' : '#fc8181' },
                     })),
                     symbolSize: (d) => {
-                        const s = timeline.find(t =>
-                            Math.round(t.time / 60 * 10) / 10 === d[0] &&
-                            (d[1] === '天辉' ? 'radiant' : 'dire') === t.team);
+                        const _radiantLabel = t('radiant');
+                        const s = timeline.find(tt =>
+                            Math.round(tt.time / 60 * 10) / 10 === d[0] &&
+                            (d[1] === _radiantLabel ? 'radiant' : 'dire') === tt.team);
                         return s ? s.num_players * 5 + 5 : 10;
                     },
                 }],
@@ -1397,7 +1131,7 @@ createApp({
             const mapSize = teamfightMap.value.clientWidth;
 
             const tf = currentTeamfight.value;
-            const t = teamfightReplayTime.value;
+            const replayT = teamfightReplayTime.value;
 
             const heroPositions = [];
             const pathsData = [];
@@ -1415,7 +1149,7 @@ createApp({
                 let isDead = false;
 
                 if (p.positions && p.positions.length > 0) {
-                    const pos = interpolatePosition(p.positions, t);
+                    const pos = interpolatePosition(p.positions, replayT);
                     if (pos) {
                         [mx, my] = gameToMap(pos.x, pos.y);
                     } else {
@@ -1424,14 +1158,14 @@ createApp({
 
                     // Build trail path up to current time
                     const trailPoints = p.positions
-                        .filter(pp => pp.time_offset <= t)
+                        .filter(pp => pp.time_offset <= replayT)
                         .map(pp => gameToMap(pp.x, pp.y));
                     trailPoints.push([mx, my]);
                     if (trailPoints.length >= 2) {
                         pathsData.push({ points: trailPoints, color: pathColor });
                     }
 
-                    isDead = p.deaths > 0 && p.death_time_offset != null && t >= p.death_time_offset;
+                    isDead = p.deaths > 0 && p.death_time_offset != null && replayT >= p.death_time_offset;
                 } else {
                     [mx, my] = gameToMap(p.x, p.y);
                     isDead = p.deaths > 0 && p.death_time_offset != null;
@@ -1465,7 +1199,7 @@ createApp({
                 if (isDead) {
                     deathMarkers.push({
                         value: [mx, my],
-                        name: `${p.hero_name} 阵亡`,
+                        name: `${p.hero_name} ${t('teamfights_died')}`,
                         itemStyle: { color: '#ef4444', borderColor: 'rgba(239,68,68,0.5)', borderWidth: 1 },
                     });
                 }
@@ -1473,7 +1207,7 @@ createApp({
                 // Ability casts up to current time
                 if (p.ability_casts) {
                     p.ability_casts.forEach(ac => {
-                        if (ac.time_offset <= t) {
+                        if (ac.time_offset <= replayT) {
                             const [ax, ay] = gameToMap(ac.x, ac.y);
                             castData.push({
                                 value: [ax, ay],
@@ -1496,7 +1230,7 @@ createApp({
             // Movement trail paths
             if (pathsData.length > 0) {
                 series.push({
-                    name: '移动路径', type: 'custom',
+                    name: t('smokes_movement_path'), type: 'custom',
                     data: pathsData.map((_, i) => ({ value: [i] })),
                     z: 3, silent: true,
                     renderItem(params, api) {
@@ -1514,14 +1248,14 @@ createApp({
             // Ability cast markers (diamonds)
             if (castData.length > 0) {
                 series.push({
-                    name: '技能释放', type: 'scatter', data: castData,
+                    name: t('teamfights_ability_cast'), type: 'scatter', data: castData,
                     symbolSize: 10, symbol: 'diamond', z: 8,
                 });
             }
 
             // Hero positions (with hero icons)
             series.push({
-                name: '英雄位置', type: 'scatter', data: heroPositions,
+                name: t('teamfights_hero_pos'), type: 'scatter', data: heroPositions,
                 z: 10,
             });
 
@@ -1536,9 +1270,9 @@ createApp({
                     formatter: p => {
                         const pl = p.data?._player || tf.players.find(pp => pp.hero_name === p.name);
                         if (!pl) return p.name;
-                        const team = (pl.team || (pl.player_slot < 128 ? 'radiant' : 'dire')) === 'radiant' ? '天辉' : '夜魇';
+                        const team = (pl.team || (pl.player_slot < 128 ? 'radiant' : 'dire')) === 'radiant' ? t('radiant') : t('dire');
                         const isDead = pl.deaths > 0;
-                        return `<b>${pl.hero_name}</b> (${team})${isDead ? ' ☠' : ''}<br/>K/D: ${pl.kills}/${pl.deaths}<br/>输出: ${formatNumber(pl.damage_dealt)}<br/>承受: ${formatNumber(pl.damage_taken)}<br/>技能: ${pl.abilities_used.join(', ') || '-'}`;
+                        return `<b>${pl.hero_name}</b> (${team})${isDead ? ' ☠' : ''}<br/>K/D: ${pl.kills}/${pl.deaths}<br/>${t('teamfights_damage')}: ${formatNumber(pl.damage_dealt)}<br/>${t('teamfights_taken')}: ${formatNumber(pl.damage_taken)}<br/>${t('teamfights_abilities')}: ${pl.abilities_used.join(', ') || '-'}`;
                     },
                 },
                 graphic: mapGraphic(mapSize),
@@ -1589,7 +1323,7 @@ createApp({
             if (mode === 'gold_diff') {
                 const diffData = timeline.map(s => s.gold_diff);
                 series = [{
-                    name: '经济差',
+                    name: t('economy_gold_diff'),
                     type: 'line',
                     data: diffData,
                     smooth: true,
@@ -1623,7 +1357,7 @@ createApp({
             } else if (mode === 'xp_diff') {
                 const diffData = timeline.map(s => s.xp_diff);
                 series = [{
-                    name: '经验差',
+                    name: t('economy_xp_diff'),
                     type: 'line',
                     data: diffData,
                     smooth: true,
@@ -1661,7 +1395,7 @@ createApp({
                 const dKey = isGold ? 'dire_gold' : 'dire_xp';
                 series = [
                     {
-                        name: '天辉',
+                        name: t('radiant'),
                         type: 'line',
                         data: timeline.map(s => s[rKey]),
                         smooth: true,
@@ -1669,7 +1403,7 @@ createApp({
                         itemStyle: { color: '#48bb78' },
                     },
                     {
-                        name: '夜魇',
+                        name: t('dire'),
                         type: 'line',
                         data: timeline.map(s => s[dKey]),
                         smooth: true,
@@ -1749,12 +1483,12 @@ createApp({
                             let html = `<b>${s.time_str}</b><br/>`;
                             if (mode === 'gold_diff') {
                                 const d = s.gold_diff;
-                                const label = d >= 0 ? '天辉领先' : '夜魇领先';
-                                html += `经济差: <span style="color:${d >= 0 ? '#48bb78' : '#fc8181'}">${d >= 0 ? '+' : ''}${(d/1000).toFixed(1)}k</span> (${label})`;
+                                const label = d >= 0 ? t('economy_radiant_lead') : t('economy_dire_lead');
+                                html += `${t('economy_gold_diff')}: <span style="color:${d >= 0 ? '#48bb78' : '#fc8181'}">${d >= 0 ? '+' : ''}${(d/1000).toFixed(1)}k</span> (${label})`;
                             } else {
                                 const d = s.xp_diff;
-                                const label = d >= 0 ? '天辉领先' : '夜魇领先';
-                                html += `经验差: <span style="color:${d >= 0 ? '#48bb78' : '#fc8181'}">${d >= 0 ? '+' : ''}${(d/1000).toFixed(1)}k</span> (${label})`;
+                                const label = d >= 0 ? t('economy_radiant_lead') : t('economy_dire_lead');
+                                html += `${t('economy_xp_diff')}: <span style="color:${d >= 0 ? '#48bb78' : '#fc8181'}">${d >= 0 ? '+' : ''}${(d/1000).toFixed(1)}k</span> (${label})`;
                             }
                             return html;
                         } else {
@@ -1809,7 +1543,7 @@ createApp({
                 backgroundColor: MAP_BG,
                 grid: { left: 0, right: 0, top: 0, bottom: 0 },
                 title: {
-                    text: laningPlayer ? laningPlayer.hero_name + ' - ' + laningPlayer.lane_name : '',
+                    text: laningPlayer ? laningPlayer.hero_name + ' - ' + translateLaneName(laningPlayer) : '',
                     left: 'center', top: 5,
                     textStyle: { color: '#a0aec0', fontSize: 12 },
                 },
@@ -1827,14 +1561,14 @@ createApp({
             }
             const laning = analysisData.value?.laning;
             if (!laning?.players || laning.players.length === 0) {
-                laningCsTimelineInstance.setOption({ title: { text: '暂无补刀曲线数据', left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
+                laningCsTimelineInstance.setOption({ title: { text: t('laning_no_cs_data'), left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
                 return;
             }
 
             // Check if any player has snapshot data
             const hasSnapshots = laning.players.some(p => p.laning_snapshots && p.laning_snapshots.length > 0);
             if (!hasSnapshots) {
-                laningCsTimelineInstance.setOption({ title: { text: '暂无补刀曲线数据', left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
+                laningCsTimelineInstance.setOption({ title: { text: t('laning_no_cs_data'), left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
                 return;
             }
 
@@ -1858,7 +1592,7 @@ createApp({
             });
 
             laningCsTimelineInstance.setOption({
-                title: { text: '对线期补刀曲线', textStyle: { color: '#ddd', fontSize: 14 }, left: 10, top: 5 },
+                title: { text: t('laning_cs_title'), textStyle: { color: '#ddd', fontSize: 14 }, left: 10, top: 5 },
                 tooltip: {
                     trigger: 'axis',
                     backgroundColor: 'rgba(26,32,44,0.95)',
@@ -1867,10 +1601,10 @@ createApp({
                     formatter: params => {
                         if (!params || params.length === 0) return '';
                         const min = params[0].value[0].toFixed(1);
-                        let html = `<b>${min} 分钟</b>`;
+                        let html = `<b>${min} ${t('laning_minutes')}</b>`;
                         const sorted = [...params].sort((a, b) => (b.value[1] || 0) - (a.value[1] || 0));
                         sorted.forEach(p => {
-                            html += `<div style="margin-top:2px;">${p.marker} ${p.seriesName}: ${p.value[1]} 补刀</div>`;
+                            html += `<div style="margin-top:2px;">${p.marker} ${p.seriesName}: ${p.value[1]} ${t('laning_lh')}</div>`;
                         });
                         return html;
                     },
@@ -1880,8 +1614,8 @@ createApp({
                     textStyle: { color: '#aaa', fontSize: 10 },
                     top: 5, right: 10, type: 'scroll',
                 },
-                xAxis: { type: 'value', name: '分钟', min: 0, max: 10, axisLabel: { color: '#aaa' }, nameTextStyle: { color: '#a0aec0' }, splitLine: { lineStyle: { color: '#2d3748' } } },
-                yAxis: { type: 'value', name: '补刀数', axisLabel: { color: '#aaa' }, nameTextStyle: { color: '#a0aec0' }, splitLine: { lineStyle: { color: '#2d3748' } } },
+                xAxis: { type: 'value', name: t('laning_minutes'), min: 0, max: 10, axisLabel: { color: '#aaa' }, nameTextStyle: { color: '#a0aec0' }, splitLine: { lineStyle: { color: '#2d3748' } } },
+                yAxis: { type: 'value', name: t('laning_last_hits'), axisLabel: { color: '#aaa' }, nameTextStyle: { color: '#a0aec0' }, splitLine: { lineStyle: { color: '#2d3748' } } },
                 series: series,
                 backgroundColor: 'transparent',
                 grid: { left: 60, right: 20, top: 60, bottom: 40 },
@@ -1896,13 +1630,13 @@ createApp({
             }
             const laning = analysisData.value?.laning;
             if (!laning?.players || laning.players.length === 0) {
-                laningHpTimelineInstance.setOption({ title: { text: '暂无血量曲线数据', left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
+                laningHpTimelineInstance.setOption({ title: { text: t('laning_no_hp_data'), left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
                 return;
             }
 
             const hasSnapshots = laning.players.some(p => p.laning_snapshots && p.laning_snapshots.length > 0);
             if (!hasSnapshots) {
-                laningHpTimelineInstance.setOption({ title: { text: '暂无血量曲线数据', left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
+                laningHpTimelineInstance.setOption({ title: { text: t('laning_no_hp_data'), left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
                 return;
             }
 
@@ -1930,7 +1664,7 @@ createApp({
             });
 
             laningHpTimelineInstance.setOption({
-                title: { text: '对线期血量百分比', textStyle: { color: '#ddd', fontSize: 14 }, left: 10, top: 5 },
+                title: { text: t('laning_hp_title'), textStyle: { color: '#ddd', fontSize: 14 }, left: 10, top: 5 },
                 tooltip: {
                     trigger: 'axis',
                     backgroundColor: 'rgba(26,32,44,0.95)',
@@ -1939,7 +1673,7 @@ createApp({
                     formatter: params => {
                         if (!params || params.length === 0) return '';
                         const min = params[0].value[0].toFixed(1);
-                        let html = `<b>${min} 分钟</b>`;
+                        let html = `<b>${min} ${t('laning_minutes')}</b>`;
                         const sorted = [...params].sort((a, b) => (b.value[1] || 0) - (a.value[1] || 0));
                         sorted.forEach(p => {
                             const pctColor = p.value[1] >= 70 ? '#48bb78' : p.value[1] >= 30 ? '#ecc94b' : '#fc8181';
@@ -1953,8 +1687,8 @@ createApp({
                     textStyle: { color: '#aaa', fontSize: 10 },
                     top: 5, right: 10, type: 'scroll',
                 },
-                xAxis: { type: 'value', name: '分钟', min: 0, max: 10, axisLabel: { color: '#aaa' }, nameTextStyle: { color: '#a0aec0' }, splitLine: { lineStyle: { color: '#2d3748' } } },
-                yAxis: { type: 'value', name: 'HP%', min: 0, max: 100, axisLabel: { color: '#aaa', formatter: v => v + '%' }, nameTextStyle: { color: '#a0aec0' }, splitLine: { lineStyle: { color: '#2d3748' } } },
+                xAxis: { type: 'value', name: t('laning_minutes'), min: 0, max: 10, axisLabel: { color: '#aaa' }, nameTextStyle: { color: '#a0aec0' }, splitLine: { lineStyle: { color: '#2d3748' } } },
+                yAxis: { type: 'value', name: t('laning_hp_percent'), min: 0, max: 100, axisLabel: { color: '#aaa', formatter: v => v + '%' }, nameTextStyle: { color: '#a0aec0' }, splitLine: { lineStyle: { color: '#2d3748' } } },
                 series: series,
                 backgroundColor: 'transparent',
                 grid: { left: 60, right: 20, top: 60, bottom: 40 },
@@ -1971,7 +1705,7 @@ createApp({
             const isGold = farmMode.value === 'gold';
             const data = isGold ? farmData.value.gold_reasons : farmData.value.xp_reasons;
             if (!data || data.length === 0) {
-                farmReasonChartInstance.setOption({ title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
+                farmReasonChartInstance.setOption({ title: { text: t('farm_no_data'), left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
                 return;
             }
 
@@ -1980,6 +1714,21 @@ createApp({
             data.forEach(p => Object.keys(p.reasons || {}).forEach(k => allReasons.add(k)));
             const reasons = [...allReasons];
 
+            // Map backend Chinese keys to i18n keys for translation
+            const reasonI18nMap = {
+                '小兵': 'farm_reason_creeps', '英雄': 'farm_reason_heroes',
+                '建筑': 'farm_reason_buildings', '肉山': 'farm_reason_roshan',
+                '信使': 'farm_reason_courier', '其他': 'farm_reason_other',
+                '出售': 'farm_reason_sell', '死亡': 'farm_reason_death',
+                '买活': 'farm_reason_buyback',
+            };
+            const translateReason = (key) => {
+                if (reasonI18nMap[key]) return t(reasonI18nMap[key]);
+                const unknownMatch = key.match(/^未知\((\d+)\)$/);
+                if (unknownMatch) return `${t('farm_reason_unknown')}(${unknownMatch[1]})`;
+                return key;
+            };
+
             const reasonColors = {
                 '小兵': '#48bb78', '英雄': '#fc8181', '建筑': '#63b3ed',
                 '肉山': '#ecc94b', '信使': '#f687b3', '其他': '#a0aec0',
@@ -1987,8 +1736,9 @@ createApp({
             };
 
             const heroes = data.map(p => p.hero_name);
-            const series = reasons.map(reason => ({
-                name: reason,
+            const translatedReasons = reasons.map(translateReason);
+            const series = reasons.map((reason, i) => ({
+                name: translatedReasons[i],
                 type: 'bar',
                 stack: 'total',
                 data: data.map(p => (p.reasons || {})[reason] || 0),
@@ -2001,7 +1751,7 @@ createApp({
                     backgroundColor: 'rgba(26,32,44,0.95)', borderColor: '#4a5568',
                     textStyle: { color: '#e2e8f0', fontSize: 12 },
                 },
-                legend: { data: reasons, textStyle: { color: '#a0aec0', fontSize: 11 }, top: 5 },
+                legend: { data: translatedReasons, textStyle: { color: '#a0aec0', fontSize: 11 }, top: 5 },
                 grid: { left: 60, right: 20, top: 40, bottom: 60 },
                 xAxis: {
                     type: 'category', data: heroes,
@@ -2025,7 +1775,7 @@ createApp({
 
             const data = farmData.value.lh_timeline || [];
             if (data.length === 0) {
-                farmLhChartInstance.setOption({ title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
+                farmLhChartInstance.setOption({ title: { text: t('farm_no_data'), left: 'center', top: 'center', textStyle: { color: '#a0aec0' } } }, true);
                 return;
             }
 
@@ -2211,14 +1961,21 @@ createApp({
                 laningHpTimelineInstance?.resize();
                 farmReasonChartInstance?.resize();
                 farmLhChartInstance?.resize();
-                compareMapPlayerInstance?.resize();
-                compareMapRefInstance?.resize();
+                proLaningCsChart?.resize();
+                proLaningGoldChart?.resize();
+                proMidgameFarmChart?.resize();
+                proLategameRadarChart?.resize();
             });
         });
 
         // Smoke result label helper
         function smokeResultLabel(result) {
-            const labels = { kill: '击杀', no_contact: '无接触', traded: '交换', objective: '目标' };
+            const labels = {
+                kill: t('smoke_result_kill'),
+                no_contact: t('smoke_result_no_contact'),
+                traded: t('smoke_result_traded'),
+                objective: t('smoke_result_objective'),
+            };
             return labels[result] || result;
         }
         function smokeResultColor(result) {
@@ -2234,7 +1991,28 @@ createApp({
             return 'text-red-400';
         }
 
+        // Update document title and re-render charts on locale change
+        watch(locale, async () => {
+            document.title = t('app_title');
+            // Re-render active charts with new locale strings
+            await nextTick();
+            const tab = activeTab.value;
+            if (tab === 'economy') renderEconomyChart();
+            if (tab === 'wards') renderWardMap();
+            if (tab === 'smokes') { renderSmokeMap(); renderSmokeTimeline(); }
+            if (tab === 'teamfights') renderTeamfightMap();
+            if (tab === 'laning') { renderLaningHeatmap(); renderLaningCsTimeline(); renderLaningHpTimeline(); }
+            if (tab === 'farm') {
+                if (farmMode.value === 'gold' || farmMode.value === 'xp') renderFarmReasonChart();
+                if (farmMode.value === 'lh') renderFarmLhChart();
+            }
+        });
+
+        // Set initial document title
+        document.title = t('app_title');
+
         return {
+            locale, t, onLocaleChange, translateLaneName,
             analysisData, parseSource, parseSourceLabel, uploading, uploadError,
             activeTab, showAbilityBuilds, selectedTeamfight, wardFilters,
             wardTimelineEnabled, wardTimelineTime, wardShowVision,
@@ -2263,15 +2041,8 @@ createApp({
             hasLaningData, hasTeamfightData, hasEconomyTimeline,
             hasItemBuilds, hasCombatData, hasFarmData, hasPurchaseData, hasObjectivesData,
             PLACEHOLDER_HERO, PLACEHOLDER_ITEM,
-            // Pro compare
-            compareMode, comparePlayerA, comparePlayerB, compareRefSlot,
-            compareLoading, compareResult, refMatchData,
-            runSelfCompare, runRefCompare, uploadRefReplay,
-            coachingReport, coachingLoading, coachingError,
-            requestCoaching, renderMarkdown,
-            compareMapPlayerRef, compareMapRefRef, compareTimelineSlider,
-            comparePlaying, comparePlaySpeed,
-            toggleComparePlay, renderCompareMaps,
+            renderMarkdown,
+            aiCoachData, aiCoachLoading, aiCoachError, aiCoachPlayerSlot, requestAiCoach,
             // New overview/header properties
             matchHeader, overviewRadiant, overviewDire, teamTotals,
             timeAgo, regionName, formatNetWorth, teamSum, getItemPurchaseTime,

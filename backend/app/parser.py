@@ -212,6 +212,20 @@ class ClarityParser(ReplayParser):
                 for i in p.get("purchase_log", []) or p.get("item_purchases", []) or []
             ]
 
+            # Use starting_items snapshot (from entity inventory at game start)
+            # to replace unreliable purchase_log starting items
+            starting_items_snapshot = p.get("starting_items") or []
+            if starting_items_snapshot:
+                # Remove purchase_log items with time <= 0 (unreliable)
+                items = [it for it in items if it.time > 0]
+                # Add snapshot items as starting items
+                for skey in starting_items_snapshot:
+                    items.insert(0, ItemEvent(
+                        item_name=skey.replace("_", " ").title(),
+                        time=-1,
+                        item_key=skey,
+                    ))
+
             # Skill build — filter out non-skill-upgrade entries
             _SKIP_ABILITIES = {
                 "ability_lamp_use", "ability_capture", "plus_high_five",
@@ -366,11 +380,14 @@ class ClarityParser(ReplayParser):
             SmokeEvent(
                 time=s["time"],
                 team=s.get("team", "radiant"),
-                player_slots=s.get("players", []),
+                player_slots=s.get("player_slots", s.get("players", [])),
                 x=s.get("x", 0.0),
                 y=s.get("y", 0.0),
                 end_time=s.get("end_time", s["time"]),
                 path=s.get("path", []),
+                result=s.get("result", "unknown"),
+                kills_gained=s.get("kills_gained", 0),
+                deaths_suffered=s.get("deaths_suffered", 0),
             )
             for s in raw.get("smokes", []) or []
         ]
@@ -400,14 +417,15 @@ class ClarityParser(ReplayParser):
                     xp_delta=tp.get("xp_delta", 0),
                     item_uses=tp.get("item_uses") or {},
                     buybacks=tp.get("buybacks", 0),
+                    death_time_offset=tp.get("death_time_offset"),
                     positions=[
                         PositionSnapshot(x=ps["x"], y=ps["y"], time_offset=ps["time_offset"])
                         for ps in tp.get("positions", []) or []
                     ],
                     ability_casts=[
                         AbilityCast(
-                            ability_name=a["name"], ability_key=a.get("key", ""),
-                            time_offset=a["time_offset"], x=a["x"], y=a["y"],
+                            ability_name=a.get("name", ""), ability_key=a.get("key", ""),
+                            time_offset=a.get("time_offset", 0), x=a.get("x", 0), y=a.get("y", 0),
                         )
                         for a in tp.get("ability_casts", []) or []
                     ],
@@ -553,6 +571,55 @@ class OpenDotaParser(ReplayParser):
         item_map = self._load_item_map()
         return self._transform(raw, hero_map, item_map)
 
+    # Typical starting items and their gold costs
+    _STARTING_ITEM_COSTS: dict[str, int] = {
+        "tango": 90, "flask": 110, "faerie_fire": 70, "enchanted_mango": 65,
+        "clarity": 50, "branches": 50, "circlet": 150, "slippers": 135,
+        "gauntlets": 135, "mantle": 135, "quelling_blade": 100, "magic_stick": 200,
+        "ring_of_protection": 175, "orb_of_venom": 275, "blight_stone": 300,
+        "wind_lace": 250, "blood_grenade": 65,
+        "ward_observer": 0, "ward_sentry": 50, "smoke_of_deceit": 50,
+    }
+    _STARTING_GOLD = 600
+    _STARTING_INFER_WINDOW = 90  # seconds after game start
+
+    def _infer_starting_items(self, items: list[ItemEvent]) -> list[ItemEvent]:
+        """Reclassify early purchases as starting items when purchase_log is incomplete.
+
+        OpenDota's purchase_log often drops pre-game purchases. This method
+        checks if the recorded starting gold is too low, and promotes early-game
+        typical starting items into the starting phase (time = -1).
+        """
+        starting_cost = sum(
+            self._STARTING_ITEM_COSTS.get(it.item_key, 0)
+            for it in items if it.time <= 0
+        )
+        if starting_cost >= self._STARTING_GOLD - 50:
+            return items  # already accounted for, no fix needed
+
+        budget = self._STARTING_GOLD - starting_cost
+        result = list(items)
+        for i, it in enumerate(result):
+            if it.time <= 0:
+                continue  # already a starting item
+            if it.time > self._STARTING_INFER_WINDOW:
+                break  # past the inference window
+            cost = self._STARTING_ITEM_COSTS.get(it.item_key, 0)
+            if cost == 0 and it.item_key not in self._STARTING_ITEM_COSTS:
+                continue  # not a typical starting item
+            if cost <= budget:
+                result[i] = ItemEvent(
+                    item_name=it.item_name,
+                    time=-1,
+                    item_key=it.item_key,
+                )
+                budget -= cost
+                if budget < 50:
+                    break
+        # Re-sort so starting items come first
+        result.sort(key=lambda x: x.time)
+        return result
+
     def _transform(self, raw: dict, hero_map: dict, item_map: dict) -> MatchData:
         players = []
         all_wards: list[WardEvent] = []
@@ -578,6 +645,11 @@ class OpenDotaParser(ReplayParser):
                     time=itime,
                     item_key=iname,
                 ))
+
+            # Infer missing starting items: OpenDota purchase_log often drops
+            # pre-game purchases. If recorded starting cost < 600g, reclassify
+            # early typical starting items into starting phase.
+            items = self._infer_starting_items(items)
 
             # Final items from item_0..item_5
             final_items = []

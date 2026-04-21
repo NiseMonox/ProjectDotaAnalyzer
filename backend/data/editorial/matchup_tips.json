@@ -1,0 +1,1144 @@
+{
+  "Drow Ranger:Viper": {
+    "heroes": ["Drow Ranger", "Viper"],
+    "tip": "Viper dominates this lane with Poison Attack easily out-trading your Frost Arrows. Stay at maximum range to last hit and never attempt a straight manfight. Once you hit level 6 and Marksmanship comes online, you can contribute to teamfights, but still avoid getting caught by Viper Strike."
+  },
+  "Drow Ranger:Bristleback": {
+    "heroes": ["Drow Ranger", "Bristleback"],
+    "tip": "Bristleback will constantly run at you with Quill Spray and Viscous Nasal Goo, making it nearly impossible to farm safely. Gust can push him away but has a long cooldown. Keep your distance and rely on your support to deal with him in lane."
+  },
+  "Drow Ranger:Axe": {
+    "heroes": ["Drow Ranger", "Axe"],
+    "tip": "Axe with Blink Dagger into Berserker's Call is almost certain death for you. Maintaining distance is everything. Gust can interrupt his Blink initiation if you react quickly. In teamfights, position behind your frontline and let them absorb Axe's Call first."
+  },
+  "Drow Ranger:Lion": {
+    "heroes": ["Drow Ranger", "Lion"],
+    "tip": "Lion's full control chain of Earth Spike, Hex, and Finger of Death can instantly delete you. Maintain good vision and avoid walking into fog. BKB or Linken's Sphere are essential defensive pickups against his lockdown."
+  },
+  "Drow Ranger:Dragon Knight": {
+    "heroes": ["Drow Ranger", "Dragon Knight"],
+    "tip": "Dragon Knight in Elder Dragon Form can pressure towers with ranged attacks, but your raw DPS output is higher. The key is maintaining distance to avoid Dragon Tail stun. Marksmanship and Multishot deal heavy damage to DK in teamfights."
+  },
+  "Axe:Dragon Knight": {
+    "heroes": ["Axe", "Dragon Knight"],
+    "tip": "Dragon Blood's regeneration makes Battle Hunger less impactful. However, Berserker's Call with Counter Helix can still win trades before level 6. After Blink Dagger, DK becomes one of your priority initiation targets since he tends to stand in the frontline."
+  },
+  "Axe:Viper": {
+    "heroes": ["Axe", "Viper"],
+    "tip": "Viper's Poison Attack provides relentless harass that makes laning nearly unwinnable for you. Focus on survival and reaching your Blink Dagger timing. Corrosive Skin's slow when you turn to retreat is especially punishing."
+  },
+  "Axe:Bristleback": {
+    "heroes": ["Axe", "Bristleback"],
+    "tip": "Two tanky heroes trading blows leads to a drawn-out lane. Battle Hunger drains Bristleback's regen, but Quill Spray stacks hurt you badly over extended fights. The level 6 race matters most, as Culling Blade can execute a low-HP Bristleback through his passive."
+  },
+  "Razor:Viper": {
+    "heroes": ["Razor", "Viper"],
+    "tip": "Two lane dominators clashing head-on. Static Link drains Viper's damage and gives you the upper hand, but Poison Attack's sustained harass makes it hard to maintain Link distance. The key is to complete the full Link drain and then aggressively trade while your stolen damage is high."
+  },
+  "Razor:Dragon Knight": {
+    "heroes": ["Razor", "Dragon Knight"],
+    "tip": "Static Link is devastating against DK because he does not want to leave the creep wave. After draining his attack damage, DK struggles to last hit at all. Eye of the Storm also provides strong sustained damage that wears through Dragon Blood's armor."
+  },
+
+  "Anti-Mage:Axe": {
+    "heroes": ["Anti-Mage", "Axe"],
+    "tip": "Axe is your worst nightmare in lane. Berserker's Call locks you down through Blink, and Counter Helix shreds your low HP pool. Do not try to trade; focus purely on getting last hits safely and ask your support to zone Axe. Rush Battle Fury and avoid fights until you have Manta Style."
+  },
+  "Anti-Mage:Legion Commander": {
+    "heroes": ["Anti-Mage", "Legion Commander"],
+    "tip": "Duel pierces BKB and prevents you from Blinking away, making it one of the most dangerous spells against you. In lane, Overwhelming Odds hurts when you stand near creeps. After Battle Fury, split-push lanes Legion Commander is not in and always carry a Linken's Sphere to block Duel."
+  },
+  "Anti-Mage:Mars": {
+    "heroes": ["Anti-Mage", "Mars"],
+    "tip": "Mars's Spear into Arena of Blood is a deadly combo that can lock you down. In lane, God's Rebuke deals heavy burst damage. Your Blink can escape Arena of Blood since it is not a leash. Focus on dodging Spear and Blink out of Arena immediately when caught."
+  },
+  "Anti-Mage:Doom": {
+    "heroes": ["Anti-Mage", "Doom"],
+    "tip": "Doom disables all your abilities including Blink and Spell Shield, making you a sitting duck. In lane, Doom's Scorched Earth sustain is hard to deal with. Build Linken's Sphere to block Doom and always keep a Blink escape ready. Split-push when Doom is on cooldown."
+  },
+  "Anti-Mage:Centaur Warrunner": {
+    "heroes": ["Anti-Mage", "Centaur Warrunner"],
+    "tip": "Centaur's Retaliate punishes every hit you take in melee range, and Double Edge plus Hoof Stomp can burst you quickly. Do not manfight him; focus on last hits and use Blink defensively. Once you have items, you can burn his mana but early game he controls the lane."
+  },
+  "Anti-Mage:Slardar": {
+    "heroes": ["Anti-Mage", "Slardar"],
+    "tip": "Corrosive Haze's armor reduction combined with Bash of the Deep makes Slardar a real threat. He can chase you with Guardian Sprint even after you Blink. Build early stat items and avoid extended trades. Manta Style can dispel Corrosive Haze to remove the armor debuff and vision."
+  },
+  "Anti-Mage:Clockwerk": {
+    "heroes": ["Anti-Mage", "Clockwerk"],
+    "tip": "Clockwerk's Hookshot into Power Cogs traps you in a small area where Battery Assault locks you down. Your Blink cannot escape Power Cogs once you are inside. Buy a Force Staff if Clockwerk is frequently targeting you. In lane, avoid Rocket Flare harass by not standing in the creep wave."
+  },
+  "Anti-Mage:Sand King": {
+    "heroes": ["Anti-Mage", "Sand King"],
+    "tip": "Sand King's Burrowstrike stun followed by Epicenter can destroy you in teamfights. In lane, Caustic Finale makes last hitting risky since killed creeps explode for damage. Use Blink aggressively after Sand King uses Burrowstrike to jump on him before he can channel Epicenter."
+  },
+  "Anti-Mage:Storm Spirit": {
+    "heroes": ["Anti-Mage", "Storm Spirit"],
+    "tip": "Mana Break makes you one of Storm Spirit's hardest counters. Every hit drains his mana pool, which he desperately needs for Ball Lightning. Once you have Manta Style, each illusion also burns mana. Abyssal Blade locks him down through his zipping. Storm will try to avoid you, so push the lanes he is not in."
+  },
+  "Anti-Mage:Medusa": {
+    "heroes": ["Anti-Mage", "Medusa"],
+    "tip": "Mana Break is devastating against Medusa since her survivability depends entirely on Mana Shield. You can burn through her mana pool rapidly with Manta Style illusions. Diffusal Blade is not needed since Mana Break is innate. Force fights once you hit your Battle Fury and Manta timings before Medusa gets six-slotted."
+  },
+  "Anti-Mage:Leshrac": {
+    "heroes": ["Anti-Mage", "Leshrac"],
+    "tip": "Leshrac relies on his mana pool to sustain Pulse Nova and cast his spells. Your Mana Break drains him quickly, and Mana Void can deal massive damage when his mana is low. Blink onto Leshrac when he overextends, burn his mana, and finish with Mana Void for a huge AOE nuke."
+  },
+  "Anti-Mage:Wraith King": {
+    "heroes": ["Anti-Mage", "Wraith King"],
+    "tip": "Mana Break completely shuts down Wraith King's Reincarnation. If you drain his mana pool below 160 before he dies, he stays dead permanently. Manta Style illusions accelerate the mana drain. This matchup is so one-sided that WK players often buy Soul Ring just to ensure Reincarnation is available."
+  },
+  "Anti-Mage:Invoker": {
+    "heroes": ["Anti-Mage", "Invoker"],
+    "tip": "Invoker has a large mana pool that makes Mana Void extremely potent when he is low. Blink onto Invoker after he uses several spells to drain and Mana Void him for burst. Watch for Cold Snap lockdown and Tornado into EMP combo. Manta Style dispels Cold Snap and provides illusions for mana burn."
+  },
+
+  "Phantom Assassin:Axe": {
+    "heroes": ["Phantom Assassin", "Axe"],
+    "tip": "Axe's Counter Helix triggers on every attack, including your fast Phantom Strike attacks. Berserker's Call forces you to hit him, proccing multiple Counter Helix spins. Avoid jumping on Axe unless you have BKB active. Build armor items like Desolator to reduce his effective HP rather than attack speed."
+  },
+  "Phantom Assassin:Mars": {
+    "heroes": ["Phantom Assassin", "Mars"],
+    "tip": "Mars's Bulwark blocks a large percentage of physical damage from the front, making your crits far less effective. Arena of Blood prevents you from Phantom Striking out. Try to attack Mars from behind to bypass Bulwark. BKB lets you ignore Arena of Blood's damage barrier."
+  },
+  "Phantom Assassin:Centaur Warrunner": {
+    "heroes": ["Phantom Assassin", "Centaur Warrunner"],
+    "tip": "Centaur's Retaliate returns damage on every hit, and your high attack speed from Phantom Strike means you take substantial reflected damage. Hoof Stomp into Double Edge can burst you before you can react. Avoid committing Phantom Strike on Centaur unless he is isolated and low."
+  },
+  "Phantom Assassin:Slardar": {
+    "heroes": ["Phantom Assassin", "Slardar"],
+    "tip": "Corrosive Haze strips away your armor and provides vision, eliminating your Blur evasion advantage. Slardar's Bash of the Deep can lock you down in fights. Manta Style can remove the Haze debuff. You win this matchup late game once you have BKB and Satanic to lifesteal through his damage."
+  },
+  "Phantom Assassin:Bristleback": {
+    "heroes": ["Phantom Assassin", "Bristleback"],
+    "tip": "Bristleback's passive damage reduction from behind makes him extremely hard to kill. Quill Spray stacks add up fast when you Phantom Strike him. Try to attack from the front or side to bypass Bristleback's passive. Silver Edge can break his passive, making him far more vulnerable to your burst."
+  },
+  "Phantom Assassin:Timbersaw": {
+    "heroes": ["Phantom Assassin", "Timbersaw"],
+    "tip": "Timbersaw's Reactive Armor makes him incredibly tanky against your physical damage, and his pure damage from Whirling Death and Timber Chain bypasses your evasion and armor. Do not waste Phantom Strike on Timbersaw in the early game. Focus other targets and only hit Timber when his Reactive Armor stacks are low."
+  },
+
+  "Juggernaut:Axe": {
+    "heroes": ["Juggernaut", "Axe"],
+    "tip": "Berserker's Call interrupts your Blade Fury and Omnislash. Counter Helix triggers during Omnislash jumps, potentially killing you during your own ultimate. Save Blade Fury to dodge Call rather than using it offensively. Build Diffusal Blade or Manta Style for versatility rather than committing to pure damage."
+  },
+  "Juggernaut:Mars": {
+    "heroes": ["Juggernaut", "Mars"],
+    "tip": "Mars's Arena of Blood limits Omnislash jump range and Bulwark blocks frontal physical damage. God's Rebuke's crit hurts badly in lane. Use Blade Fury to walk through Arena of Blood. Try to use Omnislash when Mars has used his spells, and attack from behind to bypass Bulwark."
+  },
+  "Juggernaut:Centaur Warrunner": {
+    "heroes": ["Juggernaut", "Centaur Warrunner"],
+    "tip": "Centaur is dangerous because Retaliate procs on every Omnislash hit, dealing significant return damage. Hoof Stomp can interrupt Blade Fury if timed well. Focus on farming and use Healing Ward to sustain through his harass. Pick off supports rather than trying to Omnislash a full-HP Centaur."
+  },
+  "Juggernaut:Legion Commander": {
+    "heroes": ["Juggernaut", "Legion Commander"],
+    "tip": "Duel locks you in place and prevents Blade Fury and Omnislash. Press the Attack dispels your Healing Ward debuffs and provides Legion with attack speed. Spin through Overwhelming Odds damage and save Omnislash for after Duel is used. Linken's Sphere blocks Duel entirely."
+  },
+  "Juggernaut:Bristleback": {
+    "heroes": ["Juggernaut", "Bristleback"],
+    "tip": "Bristleback is hard to kill with Omnislash because his passive reduces damage from behind. Quill Spray stacks accumulate quickly during extended trades. Use Blade Fury to disengage rather than fight. Silver Edge breaks Bristleback's passive, making Omnislash far more effective."
+  },
+
+  "Spectre:Axe": {
+    "heroes": ["Spectre", "Axe"],
+    "tip": "Spectre has one of the weakest laning phases, and Axe punishes this relentlessly. Counter Helix shreds your low armor and HP. Do not contest Axe in lane; focus on getting whatever last hits you can with Spectral Dagger from range. Your power spike comes with Radiance, so survive until then."
+  },
+  "Spectre:Mars": {
+    "heroes": ["Spectre", "Mars"],
+    "tip": "Mars can bully you in lane with God's Rebuke and zone you with Arena of Blood. However, Spectre's Haunt illusions attack from all directions, bypassing Bulwark. Focus on surviving the lane phase and use Haunt to join fights globally once you have Radiance or Blade Mail."
+  },
+  "Spectre:Centaur Warrunner": {
+    "heroes": ["Spectre", "Centaur Warrunner"],
+    "tip": "Centaur dominates the lane against Spectre with Hoof Stomp and Double Edge burst. Retaliate also punishes your Desolate procs on illusions. Survive with regen consumables and Spectral Dagger last hits. Once you have Radiance and level 3 Dispersion, Centaur becomes less threatening."
+  },
+  "Spectre:Undying": {
+    "heroes": ["Spectre", "Undying"],
+    "tip": "Undying's Decay steals your strength repeatedly, making your already fragile lane presence even worse. Tombstone spawns zombies that slow and damage you constantly. Do not fight near Tombstone. Use Spectral Dagger to escape ganks and focus on getting experience. Your Haunt illusions are strong against Undying later."
+  },
+
+  "Faceless Void:Axe": {
+    "heroes": ["Faceless Void", "Axe"],
+    "tip": "Axe can Call you inside your own Chronosphere if he is caught in it, forcing your team to hit him. Counter Helix ignores Time Lock procs. In lane, Battle Hunger is punishing since you have limited ways to remove it. Time Walk can dodge Call if you react fast enough."
+  },
+  "Faceless Void:Mars": {
+    "heroes": ["Faceless Void", "Mars"],
+    "tip": "Mars's Arena of Blood inside Chronosphere creates chaos for your team. Bulwark blocks your right-click damage from the front. Position Chronosphere to catch Mars from behind. Time Walk out of Arena if caught, and focus on Chronosphere-ing Mars when his Arena is on cooldown."
+  },
+  "Faceless Void:Centaur Warrunner": {
+    "heroes": ["Faceless Void", "Centaur Warrunner"],
+    "tip": "Centaur's Stampede can save his entire team from your Chronosphere setup by granting haste and free pathing. Retaliate also punishes you during Chronosphere when you right-click him. Chrono Centaur first to prevent Stampede, or catch his team when Centaur is out of position."
+  },
+  "Faceless Void:Sand King": {
+    "heroes": ["Faceless Void", "Sand King"],
+    "tip": "Sand King can Burrowstrike out of Chronosphere edges and channel Epicenter before you catch him. Sandstorm makes him hard to catch. Use Chronosphere when Sand King is visible and has committed his Burrowstrike. Time Walk can dodge Epicenter damage if timed correctly."
+  },
+  "Faceless Void:Enigma": {
+    "heroes": ["Faceless Void", "Enigma"],
+    "tip": "This is one of the most feared matchups in Dota. Chronosphere cancels Black Hole and vice versa. The team that uses their big ultimate second usually wins the fight. Hold Chronosphere to counter Black Hole, or force Enigma to hold Black Hole in fear of your Chrono. Communicate with your team about initiation priority."
+  },
+  "Faceless Void:Tidehunter": {
+    "heroes": ["Faceless Void", "Tidehunter"],
+    "tip": "Ravage into Chronosphere or Chronosphere to prevent Ravage are both game-deciding plays. Kraken Shell can dispel Time Lock bashes outside of Chrono. Hold Chrono to catch Tidehunter before he Ravages, or bait Ravage and Chrono his team afterward. BKB blocks Ravage entirely."
+  },
+  "Faceless Void:Warlock": {
+    "heroes": ["Faceless Void", "Warlock"],
+    "tip": "Warlock's Chaotic Offering golems inside Chronosphere can stun your team if poorly positioned. Fatal Bonds spreads damage to targets inside Chrono. However, catching Warlock and his team in Chronosphere before he can cast his ultimate is devastating. Time Walk through Shadow Word damage."
+  },
+
+  "Wraith King:Anti-Mage": {
+    "heroes": ["Wraith King", "Anti-Mage"],
+    "tip": "Anti-Mage's Mana Break is your worst nightmare. If your mana is below 160 when you die, Reincarnation does not trigger. Manta Style illusions each burn mana, draining you in seconds. Build Soul Ring for emergency mana and consider Refresher Orb for a second life. Avoid prolonged fights against Anti-Mage."
+  },
+  "Wraith King:Phantom Lancer": {
+    "heroes": ["Wraith King", "Phantom Lancer"],
+    "tip": "Phantom Lancer's illusions with Diffusal Blade burn your mana at an alarming rate, disabling Reincarnation. You cannot easily find the real PL among his illusions. Build Radiance to deal with illusions and Mjollnir for chain lightning. Soul Ring is mandatory as a mana safety net."
+  },
+
+  "Luna:Axe": {
+    "heroes": ["Luna", "Axe"],
+    "tip": "Axe's Berserker's Call is devastating against Luna due to your low HP pool. Counter Helix procs frequently against your fast attack speed from Moon Glaives. In lane, Battle Hunger is hard to remove. Position far back in fights and let your Moon Glaives bounce from range; do not get Blink-Called."
+  },
+  "Luna:Mars": {
+    "heroes": ["Luna", "Mars"],
+    "tip": "Mars's Arena of Blood limits your positioning, and God's Rebuke can one-shot you with your low HP. Bulwark reduces your Moon Glaive bounces from the front. Use Eclipse from outside Arena of Blood range and position where Mars cannot Spear you into trees."
+  },
+  "Luna:Centaur Warrunner": {
+    "heroes": ["Luna", "Centaur Warrunner"],
+    "tip": "Centaur can one-shot you early with Hoof Stomp into Double Edge. Retaliate punishes your fast attack speed. Stay behind creeps and use Lucent Beam to last hit safely. After BKB, you can fight Centaur, but early game respect his burst combo."
+  },
+  "Luna:Clockwerk": {
+    "heroes": ["Luna", "Clockwerk"],
+    "tip": "Clockwerk's Hookshot into Power Cogs is a death sentence for Luna since you have no escape. Battery Assault interrupts your channeling and Eclipse is wasted in Cogs. Build BKB to survive the Cogs lockdown and Force Staff as a secondary escape. Stay near your team to deter solo Hookshot ganks."
+  },
+
+  "Slark:Axe": {
+    "heroes": ["Slark", "Axe"],
+    "tip": "Berserker's Call prevents Pounce escape and locks you in place for Counter Helix spins. Axe's Call also provides true sight, countering Shadow Dance. Dark Pact can purge Battle Hunger but not Call. Time your Dark Pact to dispel just before Axe blinks in. Silver Edge breaks Counter Helix and provides initiation."
+  },
+  "Slark:Legion Commander": {
+    "heroes": ["Slark", "Legion Commander"],
+    "tip": "Duel is one of the hardest counters to Slark since it pierces BKB and prevents Shadow Dance. Press the Attack dispels your Pounce leash from Legion. Play around Duel cooldown and never fight Legion without your team nearby. Linken's Sphere is a core pickup to block Duel."
+  },
+  "Slark:Disruptor": {
+    "heroes": ["Slark", "Disruptor"],
+    "tip": "Glimpse sends you back to your previous position after you Pounce or Shadow Dance away, completely negating your escape. Static Storm silences you inside the AoE with Aghanim's preventing item usage. Dark Pact cannot purge Glimpse. Build BKB to dispel Static Storm and play carefully around Disruptor's Glimpse range."
+  },
+  "Slark:Bloodseeker": {
+    "heroes": ["Slark", "Bloodseeker"],
+    "tip": "Rupture punishes your high mobility and Thirst provides true sight of you when low HP, countering Shadow Dance. Blood Rite silences you if you stand still to avoid Rupture damage. Build BKB to dispel Rupture or stand still and fight rather than running. Your Essence Shift stacks can overpower Bloodseeker in a stationary fight."
+  },
+
+  "Morphling:Axe": {
+    "heroes": ["Morphling", "Axe"],
+    "tip": "Axe's Berserker's Call is dangerous because Culling Blade's kill threshold catches Morphling players who shift too much to Agility. You might die before you can Strength Morph. In lane, Counter Helix hurts your low HP when shifted to Agility. Keep enough Strength to survive a Call into Blade combo."
+  },
+  "Morphling:Ancient Apparition": {
+    "heroes": ["Morphling", "Ancient Apparition"],
+    "tip": "Ice Blast is Morphling's hardest counter in the game. It prevents all HP regeneration and kills you below a threshold, completely negating Attribute Shift to Strength. You cannot morph Strength while debuffed. Build BKB to avoid getting hit by Ice Blast and play fights cautiously until AA uses his ultimate elsewhere."
+  },
+  "Morphling:Legion Commander": {
+    "heroes": ["Morphling", "Legion Commander"],
+    "tip": "Duel prevents Attribute Shift and Waveform, locking you in place at whatever Strength/Agility ratio you were at. If you are shifted to Agility when Dueled, you die instantly. Always maintain a healthy Strength balance and build Linken's Sphere to block Duel initiation."
+  },
+
+  "Medusa:Anti-Mage": {
+    "heroes": ["Medusa", "Anti-Mage"],
+    "tip": "Anti-Mage's Mana Break devastates your Mana Shield, draining your effective HP at an alarming rate. Manta Style illusions each burn mana, making it even worse. You need to build raw HP items alongside mana items. Use Stone Gaze to freeze Anti-Mage when he Blinks in and have your team focus him down."
+  },
+  "Medusa:Phantom Lancer": {
+    "heroes": ["Medusa", "Phantom Lancer"],
+    "tip": "Phantom Lancer with Diffusal Blade creates dozens of illusions that drain your mana through Mana Shield. Split Shot cannot efficiently clear his illusions. Build Mjollnir for chain lightning procs and consider Divine Rapier as a last resort since PL outscales you through mana burn. Stone Gaze helps identify the real PL."
+  },
+  "Medusa:Nyx Assassin": {
+    "heroes": ["Medusa", "Nyx Assassin"],
+    "tip": "Nyx's Mana Burn deals damage based on your intelligence multiplied, which is devastating given your large mana pool. Spiked Carapace reflects your Split Shot damage. Avoid being solo on the map where Nyx can Vendetta into Mana Burn combo you. BKB blocks Mana Burn entirely and is a mandatory pickup."
+  },
+
+  "Troll Warlord:Axe": {
+    "heroes": ["Troll Warlord", "Axe"],
+    "tip": "Axe is terrifying because your Battle Trance forces you to attack the nearest target, and Berserker's Call redirects all your hits into Counter Helix spins. This can kill you during your own ultimate. Save Battle Trance for when Axe has used Call, or use it from range in Ranged Form first."
+  },
+  "Troll Warlord:Mars": {
+    "heroes": ["Troll Warlord", "Mars"],
+    "tip": "Mars's Bulwark blocks your frontal attacks in both Melee and Ranged form. Arena of Blood limits your chasing ability. Switch to Ranged Form to kite around Arena edges and toggle to Melee when behind Mars to bypass Bulwark. BKB is essential for getting on top of Mars."
+  },
+  "Troll Warlord:Centaur Warrunner": {
+    "heroes": ["Troll Warlord", "Centaur Warrunner"],
+    "tip": "Centaur's Retaliate returns damage on every attack, and your high attack speed from Fervor and Battle Trance means you take enormous reflected damage. Hoof Stomp interrupts your attacks. Use Ranged Form to stack Fervor safely before committing to Melee Form. Satanic lifesteal is key to outsustaining the return damage."
+  },
+  "Troll Warlord:Phantom Lancer": {
+    "heroes": ["Troll Warlord", "Phantom Lancer"],
+    "tip": "Phantom Lancer's illusions can surround you and burn your mana with Diffusal Blade, while Battle Trance forces you to attack the nearest target which is often an illusion. Build Mjollnir and Battle Fury for AoE to clear illusions. Whirling Axes in Melee Form provides AoE to find the real PL."
+  },
+
+  "Lifestealer:Axe": {
+    "heroes": ["Lifestealer", "Axe"],
+    "tip": "Axe's Berserker's Call pierces Rage BKB, making you vulnerable even during your magic immunity. Counter Helix hurts during Call. However, your Feast lifesteal lets you sustain through trades. Build Desolator to shred Axe's armor and fight him when Call is on cooldown."
+  },
+  "Lifestealer:Mars": {
+    "heroes": ["Lifestealer", "Mars"],
+    "tip": "Mars's Bulwark reduces your right-click damage from the front, and Arena of Blood limits your chase. Rage allows you to walk through Arena's damage barrier. Spear of Mars is blocked by Rage. Infest into a teammate who initiates on Mars to get behind his Bulwark."
+  },
+  "Lifestealer:Phantom Lancer": {
+    "heroes": ["Lifestealer", "Phantom Lancer"],
+    "tip": "Phantom Lancer overwhelms you with illusions that you cannot efficiently clear. Diffusal Blade mana burn is less relevant since your mana pool is small, but the sheer illusion count means Feast procs are wasted on fake targets. Build Mjollnir or Radiance for AoE damage. Rage and focus the real PL."
+  },
+
+  "Shadow Fiend:Puck": {
+    "heroes": ["Shadow Fiend", "Puck"],
+    "tip": "Puck can Phase Shift to dodge your Shadowraze and has excellent mobility to avoid your damage. Illusory Orb into Waning Rift silence shuts down your Raze combo. Focus on building Necromastery stacks from range and use Razes to secure ranged creeps. BKB is essential to prevent Puck from kiting you."
+  },
+  "Shadow Fiend:Queen of Pain": {
+    "heroes": ["Shadow Fiend", "Queen of Pain"],
+    "tip": "Queen of Pain's Blink and Shadow Strike harass make laning difficult. She can dodge Razes with Blink and burst you with Sonic Wave. Prioritize positioning where she cannot Blink behind you. Bottle Crow and stack camps to maintain your Necromastery souls. Eul's Scepter sets up easy triple Razes."
+  },
+  "Shadow Fiend:Storm Spirit": {
+    "heroes": ["Shadow Fiend", "Storm Spirit"],
+    "tip": "Storm Spirit can zip past your Razes and burst you with Overload procs. After level 6, Storm has massive kill threat on you. Win the lane before 6 by stacking Necromastery early with superior last hit damage. Build BKB early and hold Razes for when Storm commits his Ball Lightning towards you."
+  },
+  "Shadow Fiend:Tinker": {
+    "heroes": ["Shadow Fiend", "Tinker"],
+    "tip": "Tinker's Laser blinds you, preventing last hits and Necromastery stacks. Heat-Seeking Missiles chunk your HP. Tinker pushes waves from base after BoTs, limiting your map control. Focus on dominating before Tinker gets Boots of Travel. Stack ancients and build BKB to fight through Laser."
+  },
+  "Shadow Fiend:Invoker": {
+    "heroes": ["Shadow Fiend", "Invoker"],
+    "tip": "Invoker has strong harassment with Forge Spirits and Cold Snap, making it hard to stand in lane. Tornado into EMP drains your mana for Razes. You have higher burst damage early, so look for kills before Invoker hits level 7 and his combo becomes lethal. Eul's Scepter purges Cold Snap."
+  },
+  "Shadow Fiend:Lina": {
+    "heroes": ["Shadow Fiend", "Lina"],
+    "tip": "Lina matches your wave-clear with Dragon Slave and can stun with Light Strike Array to set up Laguna Blade kills. Both of you are fragile, so the lane often comes down to who lands their combo first. Dodge Light Strike Array and trade Razes for Dragon Slaves. BKB blocks Laguna Blade's magic damage."
+  },
+  "Shadow Fiend:Viper": {
+    "heroes": ["Shadow Fiend", "Viper"],
+    "tip": "Viper's Poison Attack makes trading in lane nearly impossible, and Nethertoxin breaks your Presence of the Dark Lord armor aura. Corrosive Skin reduces your magic damage from Razes. Focus on clearing waves with Raze from max range and avoid trading right-clicks. Build Dragon Lance for attack range."
+  },
+  "Shadow Fiend:Huskar": {
+    "heroes": ["Shadow Fiend", "Huskar"],
+    "tip": "Huskar dominates mid with Burning Spears harass, and his magic resistance from Berserker's Blood reduces your Raze damage. Life Break gap-close into attack range is often lethal. Stack armor items and physical damage since Huskar has low armor. Silver Edge's break disables Berserker's Blood."
+  },
+
+  "Puck:Queen of Pain": {
+    "heroes": ["Puck", "Queen of Pain"],
+    "tip": "This is a skill-intensive mid matchup. Both heroes have high mobility with Blink and Illusory Orb. Queen of Pain has stronger right-click harass with Shadow Strike. Use Phase Shift to dodge Scream of Pain and Sonic Wave. Dream Coil can lock QoP down if she does not have Blink available."
+  },
+  "Puck:Storm Spirit": {
+    "heroes": ["Puck", "Storm Spirit"],
+    "tip": "Storm's Ball Lightning can chase you through Illusory Orb escapes, making it hard to disengage. Static Remnant and Overload harass are strong. Win the lane before level 6 by out-last-hitting with Illusory Orb. After 6, Dream Coil punishes Storm if he zips without breaking the leash."
+  },
+  "Puck:Invoker": {
+    "heroes": ["Puck", "Invoker"],
+    "tip": "Invoker's Forge Spirits and Cold Snap can zone you from creeps. Phase Shift dodges Sun Strike, and Illusory Orb provides escape from combos. Puck has the advantage early with Waning Rift silence preventing Invoke combos. Pressure Invoker before he reaches level 7 when his damage spikes."
+  },
+  "Puck:Shadow Fiend": {
+    "heroes": ["Puck", "Shadow Fiend"],
+    "tip": "Phase Shift dodges Shadowraze, and Illusory Orb lets you position aggressively. Waning Rift silence prevents Shadow Fiend from Razing. You dominate this matchup by harassing with Orb and silencing SF when he tries to farm. Dream Coil punishes SF's lack of mobility. Zone him early to deny Necromastery stacks."
+  },
+
+  "Storm Spirit:Anti-Mage": {
+    "heroes": ["Storm Spirit", "Anti-Mage"],
+    "tip": "Anti-Mage's Mana Break is catastrophic for you since Ball Lightning consumes a percentage of your mana per distance. Counterspell reflects your Electric Vortex. Avoid fighting Anti-Mage directly unless you have significant mana advantage. Focus on ganking his sidelanes and delaying his farm rather than fighting him head-on."
+  },
+  "Storm Spirit:Puck": {
+    "heroes": ["Storm Spirit", "Puck"],
+    "tip": "Puck's Phase Shift dodges your initiation, and Waning Rift silence prevents Ball Lightning escape. Dream Coil leash punishes your zipping. However, you have kill threat once you hit level 6 if Puck has used Phase Shift. Bait Phase Shift with Remnant before committing Ball Lightning."
+  },
+  "Storm Spirit:Invoker": {
+    "heroes": ["Storm Spirit", "Invoker"],
+    "tip": "Invoker's Tornado purges your Overload charge and EMP drains your mana, severely limiting your Ball Lightning usage. Cold Snap interrupts your attack animation. Win the lane before level 7 and use your level 6 power spike to kill Invoker before he has his full combo online."
+  },
+  "Storm Spirit:Shadow Fiend": {
+    "heroes": ["Storm Spirit", "Shadow Fiend"],
+    "tip": "Shadow Fiend out-last-hits you early with Necromastery, but you have huge kill potential at level 6. Ball Lightning into Electric Vortex gives SF no escape. Stack your jungle between waves to keep up in farm. Once you have Orchid, SF cannot survive your initiation without BKB."
+  },
+  "Storm Spirit:Silencer": {
+    "heroes": ["Storm Spirit", "Silencer"],
+    "tip": "Global Silence prevents Ball Lightning usage across the entire map, making it one of the strongest counters in the game. Last Word forces you to either waste a spell or get silenced. Build Eul's Scepter to dispel silences and BKB for teamfights. Gank Silencer first in fights when possible."
+  },
+
+  "Templar Assassin:Viper": {
+    "heroes": ["Templar Assassin", "Viper"],
+    "tip": "Viper is TA's hardest counter in lane. Poison Attack strips Refraction charges with low-damage instances, and Nethertoxin's break disables Refraction entirely. Corrosive Skin makes Psi Blades splash less effective. Consider leaving mid to stack ancients and avoid this lane entirely. Build early Dragon Lance for range."
+  },
+  "Templar Assassin:Puck": {
+    "heroes": ["Templar Assassin", "Puck"],
+    "tip": "Puck's Waning Rift damage ticks strip Refraction charges, and Phase Shift dodges your burst. Illusory Orb provides escape from Meld strikes. However, your superior last-hitting with Refraction lets you win the farm battle. Place Psionic Traps in Puck's escape routes and focus on out-farming."
+  },
+  "Templar Assassin:Queen of Pain": {
+    "heroes": ["Templar Assassin", "Queen of Pain"],
+    "tip": "Shadow Strike's damage over time strips Refraction charges efficiently. QoP's Blink lets her dodge Meld strike and reposition. You have the last-hit advantage with Refraction, so focus on winning the CS battle. Desolator timing is key; rush it to burst QoP before she can Blink away."
+  },
+  "Templar Assassin:Invoker": {
+    "heroes": ["Templar Assassin", "Invoker"],
+    "tip": "Forge Spirits strip Refraction charges with fast attacks, and Cold Snap triggers on each Forge Spirit hit. EMP removes your mana for Refraction. Kill Forge Spirits quickly with Psi Blades splash. You dominate the first few levels before Invoker has Forge Spirits; press this advantage hard."
+  },
+  "Templar Assassin:Batrider": {
+    "heroes": ["Templar Assassin", "Batrider"],
+    "tip": "Sticky Napalm stacks combined with Firefly strip your Refraction charges almost instantly. Flaming Lasso drags you away from your team. Batrider can also turn to aggro Firefly in lane to zone you. Build early BKB and try to stack ancients with Psi Blades to recover farm if the lane is lost."
+  },
+
+  "Invoker:Storm Spirit": {
+    "heroes": ["Invoker", "Storm Spirit"],
+    "tip": "Storm's level 6 power spike is dangerous since Ball Lightning closes distance instantly. Before 6, harass with Forge Spirits and Cold Snap. After Storm hits 6, keep Tornado EMP ready to drain his mana when he zips in. Ghost Walk provides escape if caught. Orchid is a strong pickup against Storm."
+  },
+  "Invoker:Puck": {
+    "heroes": ["Invoker", "Puck"],
+    "tip": "Puck can Phase Shift through your Sun Strike and dodge Tornado. Waning Rift silence disrupts your Invoke combos. Forge Spirits give you lane presence to trade favorably. After level 7, your Tornado EMP Meteor combo can kill Puck if Phase Shift is baited. Save Ice Wall for Puck's aggressive dives."
+  },
+  "Invoker:Tinker": {
+    "heroes": ["Invoker", "Tinker"],
+    "tip": "Tinker's Laser blinds your Forge Spirits, reducing their effectiveness. March of the Machines pushes the wave and forces you to stay in lane. You scale better into the mid game. Focus on hitting level 7 for your power spike and use Sun Strike to secure kills on other lanes."
+  },
+  "Invoker:Broodmother": {
+    "heroes": ["Invoker", "Broodmother"],
+    "tip": "Broodmother's spiderlings overwhelm your Forge Spirits and push your tower fast. Spin Web provides high mobility in the trees. Ice Wall and Meteor can clear spiderlings, but Brood herself is hard to catch in webs. Call for rotations and use Tornado EMP to deal with spiderling waves."
+  },
+
+  "Tinker:Storm Spirit": {
+    "heroes": ["Tinker", "Storm Spirit"],
+    "tip": "Storm Spirit can zip onto you from across the map, making your Blink Dagger positioning meaningless. Overload procs cancel your Rearm channel. After level 6, you must play very carefully. Use Laser defensively to blind Storm and keep trees warded. Overwhelming Blink's knockback can buy time."
+  },
+  "Tinker:Spectre": {
+    "heroes": ["Tinker", "Spectre"],
+    "tip": "Spectre's Haunt creates an illusion on top of you no matter where you are on the map, bypassing your Blink Dagger and BoTs retreat. Desolate triggers since the illusion isolates you. Buy Ghost Scepter or Ethereal Blade to survive Haunt illusion damage and play near teammates."
+  },
+  "Tinker:Anti-Mage": {
+    "heroes": ["Tinker", "Anti-Mage"],
+    "tip": "Anti-Mage can Blink onto you and burn your mana, preventing Rearm. Counterspell reflects Laser and missiles. Your job is to delay the game long enough for your team, but Anti-Mage's split-push matches your wave clear. Stack defensive items and avoid being caught solo on the map."
+  },
+  "Tinker:Nature's Prophet": {
+    "heroes": ["Tinker", "Nature's Prophet"],
+    "tip": "Nature's Prophet can teleport to your location and Sprout you, preventing your Blink escape. Treants push waves that contest your march stacks. Wrath of Nature provides global damage. Keep a Quelling Blade or Force Staff to escape Sprout. Ward your jungle and play near towers."
+  },
+
+  "Queen of Pain:Puck": {
+    "heroes": ["Queen of Pain", "Puck"],
+    "tip": "Two highly mobile mids. Puck's Phase Shift dodges Sonic Wave, and Waning Rift can silence your Blink. Shadow Strike provides consistent harass that Puck cannot Phase Shift. Win the right-click battle with Shadow Strike and trade aggressively. Dream Coil punishes aggressive Blink plays."
+  },
+  "Queen of Pain:Storm Spirit": {
+    "heroes": ["Queen of Pain", "Storm Spirit"],
+    "tip": "Storm can zip through your Sonic Wave and chase you even after Blink. However, you win the lane before level 6 with superior harass from Shadow Strike and Scream. Press your advantage early and gank sidelanes. Build Orchid to silence Storm and prevent Ball Lightning."
+  },
+  "Queen of Pain:Shadow Fiend": {
+    "heroes": ["Queen of Pain", "Shadow Fiend"],
+    "tip": "You have kill threat on Shadow Fiend with Shadow Strike slow into Scream and Blink. SF has no escape from your burst. Zone him from creeps to deny Necromastery stacks. Blink behind SF for guaranteed Sonic Wave hits. Build early aggression items like Orchid to maintain tempo."
+  },
+  "Queen of Pain:Invoker": {
+    "heroes": ["Queen of Pain", "Invoker"],
+    "tip": "Invoker's Cold Snap punishes your low HP pool, and Forge Spirits trade well against you. Your Blink allows you to dodge Sun Strike and EMP. Scream of Pain clears Forge Spirits efficiently. Pressure Invoker before level 7 and use Blink aggressively to land Sonic Wave from close range."
+  },
+
+  "Lina:Puck": {
+    "heroes": ["Lina", "Puck"],
+    "tip": "Puck can Phase Shift to dodge Light Strike Array and Laguna Blade, making your combo unreliable. Illusory Orb provides escape from your burst range. Bait Phase Shift with Dragon Slave before committing to Light Strike Array. Build Eul's Scepter for a guaranteed stun setup."
+  },
+  "Lina:Storm Spirit": {
+    "heroes": ["Lina", "Storm Spirit"],
+    "tip": "Storm's level 6 kill threat is significant since Ball Lightning closes the gap instantly. Before 6, your Dragon Slave and right-click with Fiery Soul stacks dominate the lane. After Storm hits 6, hold Light Strike Array for when he zips at you. Eul's into LSA is your best setup."
+  },
+  "Lina:Shadow Fiend": {
+    "heroes": ["Lina", "Shadow Fiend"],
+    "tip": "Both heroes are fragile with high burst damage, making this a volatile lane. Your attack animation is worse than SF's, but Dragon Slave helps secure range creeps. Light Strike Array into Laguna Blade can kill SF at level 6. Build Eul's for guaranteed stuns and play aggressively when you have kill threat."
+  },
+
+  "Ember Spirit:Storm Spirit": {
+    "heroes": ["Ember Spirit", "Storm Spirit"],
+    "tip": "Storm can zip through your Flame Guard and burst you with Overload. Your Sleight of Fist cannot dodge Ball Lightning. However, Searing Chains roots Storm if he zips into your range. Hold Chains for when Storm commits Ball Lightning. Remnant back to safety if the fight turns bad."
+  },
+  "Ember Spirit:Puck": {
+    "heroes": ["Ember Spirit", "Puck"],
+    "tip": "Puck's Phase Shift dodges Searing Chains and Sleight of Fist. Waning Rift silence prevents Remnant escape. Dream Coil leash limits your Remnant mobility. Bait Phase Shift before committing Chains and use Flame Guard to trade during Puck's cooldowns. Build Maelstrom for wave clear."
+  },
+  "Ember Spirit:Shadow Fiend": {
+    "heroes": ["Ember Spirit", "Shadow Fiend"],
+    "tip": "Shadow Fiend has superior last-hit damage early with Necromastery, but your Flame Guard absorbs Shadowraze magic damage. Searing Chains into Sleight of Fist combo can burst SF. Zone him from souls and use Remnants aggressively once you hit level 6. Build early magical damage with Maelstrom."
+  },
+
+  "Void Spirit:Storm Spirit": {
+    "heroes": ["Void Spirit", "Storm Spirit"],
+    "tip": "Storm's Ball Lightning chase ability is hard to escape, but your Dissimilate provides invulnerability and Astral Step provides two charges of repositioning. Resonant Pulse's shield absorbs Overload damage. Build Orchid to silence Storm when he zips in and follow up with Astral Step burst."
+  },
+  "Void Spirit:Puck": {
+    "heroes": ["Void Spirit", "Puck"],
+    "tip": "Both heroes have multiple escape tools, making kills difficult to secure. Puck's Phase Shift dodges your burst, and Illusory Orb escapes Aether Remnant pull. Use Dissimilate to dodge Dream Coil's stun and save Astral Step for follow-up after Puck uses Phase Shift. Build Eul's for reliable setup."
+  },
+  "Void Spirit:Invoker": {
+    "heroes": ["Void Spirit", "Invoker"],
+    "tip": "Invoker's Forge Spirits and Cold Snap harass you heavily, but Dissimilate dodges Cold Snap procs and Sun Strike. Resonant Pulse absorbs Forge Spirit damage. Your burst combo with Astral Step can kill Invoker before he finishes his invoke combos. Play aggressively at level 6 before Invoker scales."
+  },
+
+  "Earthshaker:Phantom Lancer": {
+    "heroes": ["Earthshaker", "Phantom Lancer"],
+    "tip": "Echo Slam is Phantom Lancer's hardest counter. Each illusion counts as a unit for Echo Slam damage, meaning a PL with 10+ illusions takes catastrophic damage. Wait for PL to commit with his illusion army before blinking in. One good Echo Slam in a crowd of illusions can team-wipe. Blink Dagger is your top priority item."
+  },
+  "Earthshaker:Chaos Knight": {
+    "heroes": ["Earthshaker", "Chaos Knight"],
+    "tip": "Chaos Knight's Phantasm illusions are perfect Echo Slam targets. Each strong illusion amplifies your ultimate's damage enormously. Wait for CK to use Phantasm before committing Echo Slam. Fissure also stuns all illusions in a line. Your goal is to counter-initiate after CK commits his ultimate."
+  },
+  "Earthshaker:Naga Siren": {
+    "heroes": ["Earthshaker", "Naga Siren"],
+    "tip": "Naga Siren's Mirror Image illusions multiply Echo Slam damage significantly. However, Naga can Song of the Siren to dodge your Blink into Echo. Blink in immediately when you see illusions but before Naga can react with Song. Fissure can also clear illusion waves pushing your towers."
+  },
+  "Earthshaker:Meepo": {
+    "heroes": ["Earthshaker", "Meepo"],
+    "tip": "Meepo clones count as heroes for Echo Slam, making it deal quadruple or quintuple damage. This is one of the hardest counters in Dota. Fissure also stuns all clones in a line. Simply having Earthshaker on your team forces Meepo to play cautiously. Blink Dagger timing decides teamfights."
+  },
+  "Earthshaker:Terrorblade": {
+    "heroes": ["Earthshaker", "Terrorblade"],
+    "tip": "Terrorblade's Conjure Image and Reflection create multiple illusions that amplify Echo Slam. Metamorphosis illusions are particularly dangerous targets. Wait for TB to pop his illusions before initiating. Fissure provides long-range stun to catch TB's fragile base form."
+  },
+
+  "Sand King:Phantom Lancer": {
+    "heroes": ["Sand King", "Phantom Lancer"],
+    "tip": "Sand Storm and Caustic Finale both deal AoE damage that clears Phantom Lancer's illusions efficiently. Epicenter's multiple pulses hit all nearby illusions. Burrowstrike into Epicenter devastates PL's illusion army. Build Aghanim's Scepter to add Caustic Finale to Burrowstrike for even more AoE clear."
+  },
+  "Sand King:Broodmother": {
+    "heroes": ["Sand King", "Broodmother"],
+    "tip": "Sand Storm and Caustic Finale obliterate Broodmother's spiderlings, giving you massive gold and experience from each wave. Burrowstrike provides escape from Brood's aggression. Epicenter clears spiderlings instantly. Lane against Brood confidently and farm her spiderlings for accelerated item timings."
+  },
+  "Sand King:Naga Siren": {
+    "heroes": ["Sand King", "Naga Siren"],
+    "tip": "Caustic Finale's explosion damage triggers when Naga's illusions die, dealing AoE damage around each one. Sand Storm damages all illusions in the area. Epicenter's pulses hit every illusion. Position aggressively when Naga sends illusions to push and use Burrowstrike to engage on the real Naga."
+  },
+
+  "Beastmaster:Storm Spirit": {
+    "heroes": ["Beastmaster", "Storm Spirit"],
+    "tip": "Primal Roar pierces BKB and stuns through Ball Lightning, making it one of Storm Spirit's hardest counters. Roar's long stun duration gives your team time to burst Storm down. Hawk provides flying vision to track Storm's movements. Build Aghanim's Scepter for reduced Roar cooldown."
+  },
+  "Beastmaster:Anti-Mage": {
+    "heroes": ["Beastmaster", "Anti-Mage"],
+    "tip": "Primal Roar pierces Counterspell and BKB, providing reliable lockdown against Anti-Mage's mobility. Boar's slow prevents Blink for several seconds. Hawk scouts Anti-Mage's farming patterns for ganks. Push towers with your summons and force Anti-Mage to respond rather than free-farming."
+  },
+  "Beastmaster:Ember Spirit": {
+    "heroes": ["Beastmaster", "Ember Spirit"],
+    "tip": "Primal Roar pierces BKB and prevents Ember from using Fire Remnant to escape. The long stun duration is usually enough for your team to kill him. Hawk provides vision of Ember's Remnant positions. Build Aghanim's for lower Roar cooldown and Refresher for double initiation."
+  },
+
+  "Enigma:Rubick": {
+    "heroes": ["Enigma", "Rubick"],
+    "tip": "Rubick stealing Black Hole is one of the most devastating spell steals in Dota. Never use Black Hole when Rubick is alive and has Spell Steal available. Cast a small spell like Malefice or Midnight Pulse after Black Hole to overwrite it. Alternatively, catch Rubick inside Black Hole itself."
+  },
+
+  "Magnus:Phantom Lancer": {
+    "heroes": ["Magnus", "Phantom Lancer"],
+    "tip": "Reverse Polarity pulls all of PL's illusions into one spot for your team's AoE. Skewer repositions the entire illusion army. Empower on your carry gives them cleave to destroy PL's illusions. Shockwave hits all illusions in a line for efficient wave clear. Your teamfight presence hard-counters PL's strategy."
+  },
+  "Magnus:Chaos Knight": {
+    "heroes": ["Magnus", "Chaos Knight"],
+    "tip": "Reverse Polarity groups CK's Phantasm illusions together, setting up AoE damage to clear them all. Empower on your carry provides cleave that devastates grouped illusions. CK's strength-based illusions are durable, so ensure your team has the AoE follow-up damage after RP."
+  },
+  "Magnus:Meepo": {
+    "heroes": ["Magnus", "Meepo"],
+    "tip": "Reverse Polarity catches all Meepo clones in the AoE since Meepo players group their clones for Poof damage. Empower's cleave hits all clones at once. Skewer can separate one clone from the group for a pickoff. This matchup forces Meepo to split his clones, reducing his burst damage."
+  },
+  "Magnus:Phantom Assassin": {
+    "heroes": ["Magnus", "Phantom Assassin"],
+    "tip": "Empower on Phantom Assassin is one of the strongest synergies in Dota. Cleave damage is based on attack damage and Coup de Grace crits apply to cleave, meaning one PA crit can cleave for thousands of damage. Reverse Polarity groups enemies for PA to cleave them all. Prioritize Empowering PA every fight."
+  },
+
+  "Silencer:Storm Spirit": {
+    "heroes": ["Silencer", "Storm Spirit"],
+    "tip": "Global Silence completely shuts down Storm Spirit since he cannot use Ball Lightning or any spells. Last Word forces Storm to either waste mana or get silenced. Arcane Curse deals damage when Storm uses his mana-hungry spells. Save Global Silence for when Storm initiates a teamfight."
+  },
+  "Silencer:Puck": {
+    "heroes": ["Silencer", "Puck"],
+    "tip": "Global Silence prevents Phase Shift, Illusory Orb, and Waning Rift, leaving Puck completely immobile. Last Word punishes Puck's spell-dependent playstyle. Puck cannot escape your team if Silenced properly. Time Global Silence after Puck uses Phase Shift to prevent a second use."
+  },
+  "Silencer:Ember Spirit": {
+    "heroes": ["Silencer", "Ember Spirit"],
+    "tip": "Global Silence prevents Ember from using Fire Remnant to escape, effectively trapping him. Last Word forces Ember to waste a spell or get silenced. Arcane Curse punishes Ember's frequent spell usage. Save Global Silence for critical moments when Ember commits to a fight."
+  },
+  "Silencer:Void Spirit": {
+    "heroes": ["Silencer", "Void Spirit"],
+    "tip": "Global Silence prevents all of Void Spirit's escape tools: Dissimilate, Astral Step, and Resonant Pulse. Without his spells, Void Spirit is extremely fragile. Last Word forces him to waste a spell or risk being silenced in a bad position. Your presence alone forces Void Spirit to buy BKB or Manta."
+  },
+
+  "Orchid Carrier:Storm Spirit": {
+    "heroes": ["Orchid Carrier", "Storm Spirit"],
+    "tip": "Orchid Malevolence silences Storm Spirit and prevents Ball Lightning, effectively rooting one of the most mobile heroes in the game. The damage amplification from Soul Burn can burst Storm before the silence ends. Storm must buy Eul's Scepter or BKB to counter Orchid, delaying his damage items significantly."
+  },
+  "Orchid Carrier:Queen of Pain": {
+    "heroes": ["Orchid Carrier", "Queen of Pain"],
+    "tip": "Orchid Malevolence silences Queen of Pain's Blink, preventing her escape and keeping her in place for your team. Soul Burn's damage amplification makes QoP's low HP pool even more fragile. QoP must rush Eul's or BKB to counter Orchid, disrupting her preferred item build."
+  },
+  "Orchid Carrier:Puck": {
+    "heroes": ["Orchid Carrier", "Puck"],
+    "tip": "Orchid Malevolence prevents Phase Shift, Illusory Orb, and all of Puck's escape tools. Puck is extremely fragile when silenced and the Soul Burn damage amplification ensures a quick kill. Puck must buy Eul's Scepter or Linken's Sphere to survive Orchid, delaying Blink Dagger timing."
+  },
+
+  "Phantom Lancer:Earthshaker": {
+    "heroes": ["Phantom Lancer", "Earthshaker"],
+    "tip": "Earthshaker's Echo Slam is your hardest counter. Every illusion amplifies the damage, potentially one-shotting you and your entire team. Do not group illusions near Earthshaker. Send illusions to push waves and fight only when Echo Slam is on cooldown. Consider building tanky items so illusions survive initial burst."
+  },
+  "Phantom Lancer:Ember Spirit": {
+    "heroes": ["Phantom Lancer", "Ember Spirit"],
+    "tip": "Ember Spirit's Sleight of Fist with Battlefury cleave shreds through your illusions. Flame Guard and Searing Chains hit all nearby illusions. Avoid clumping illusions near Ember and try to catch him without Fire Remnant escape. Your Diffusal Blade mana burn is strong but Ember can kite with Remnants."
+  },
+  "Phantom Lancer:Sven": {
+    "heroes": ["Phantom Lancer", "Sven"],
+    "tip": "Sven's Great Cleave with God's Strength active can one-shot your entire illusion army in a single hit. Storm Hammer stuns in an AoE that catches grouped illusions. Do not fight Sven during God's Strength; kite until it expires. Build mana burn items to drain Sven's small mana pool."
+  },
+
+  "Broodmother:Sand King": {
+    "heroes": ["Broodmother", "Sand King"],
+    "tip": "Sand King is one of your hardest lane counters. Caustic Finale kills your spiderlings and the explosion chain-reaction destroys entire spiderling waves. Sand Storm deals AoE damage you cannot interrupt. Avoid sending spiderlings into Sand King's lane. Split push other lanes and use webs for mobility."
+  },
+  "Broodmother:Earthshaker": {
+    "heroes": ["Broodmother", "Earthshaker"],
+    "tip": "Echo Slam with spiderlings nearby deals massive damage amplified by each spider. Fissure stuns through your spiderling army. Do not clump spiderlings and avoid teamfighting near Earthshaker. Split push with webs and use Spin Web's free pathing to escape. Your spiders become a liability near ES."
+  },
+  "Broodmother:Axe": {
+    "heroes": ["Broodmother", "Axe"],
+    "tip": "Axe's Counter Helix triggers on every spiderling attack, and Berserker's Call forces all nearby spiders to hit him, proccing Counter Helix repeatedly. Your spiderlings feed him gold and experience. Do not swarm Axe with spiders. Use your hero's right-click and webs to outmaneuver him instead."
+  },
+  "Broodmother:Legion Commander": {
+    "heroes": ["Broodmother", "Legion Commander"],
+    "tip": "Legion Commander's Overwhelming Odds deals bonus damage per unit, and your spiderling army provides massive bonus damage. Press the Attack dispels your Spawn Spiderlings slow. Duel prevents you from running with web speed. Avoid grouping spiderlings near LC and split push lanes she is not in."
+  },
+
+  "Phoenix:Ursa": {
+    "heroes": ["Phoenix", "Ursa"],
+    "tip": "Ursa is one of the biggest threats to your Supernova egg. His high single-target DPS with Overpower and Fury Swipes can destroy the egg in seconds. Never Supernova near Ursa unless he has used Overpower and is locked down. Fire Spirits reduce his attack speed significantly, which is your best defense."
+  },
+
+  "Tidehunter:Naga Siren": {
+    "heroes": ["Tidehunter", "Naga Siren"],
+    "tip": "Song of the Siren into Ravage is one of the most reliable teamfight combos in Dota. Naga puts the entire enemy team to sleep, your team positions around them, Naga ends Song and you immediately Ravage for a guaranteed five-man stun. Communicate the timing and practice ending Song just as Ravage animation begins."
+  },
+
+  "Io:Tiny": {
+    "heroes": ["Io", "Tiny"],
+    "tip": "Io Tether plus Tiny's burst is one of the most lethal early game combos. Relocate enables global ganks starting at level 6, and Tiny's Toss plus Avalanche combo deals massive burst during Tether's bonus damage. Overcharge boosts Tiny's already high attack speed. Focus on aggressive Relocate ganks to snowball the game."
+  },
+
+  "Dazzle:Axe": {
+    "heroes": ["Dazzle", "Axe"],
+    "tip": "Axe's Culling Blade kills through Shallow Grave, making it one of the few abilities in the game that ignores your signature save. Do not waste Shallow Grave on a teammate who is below Culling Blade threshold. Instead, Grave teammates early before they reach kill range and use Poison Touch to kite Axe."
+  },
+
+  "Oracle:Huskar": {
+    "heroes": ["Oracle", "Huskar"],
+    "tip": "False Promise combined with Huskar's Life Break is extremely potent. Huskar can dive at low HP with False Promise ensuring he survives, while his Berserker's Blood gives maximum attack speed and magic resistance. Fate's Edict provides physical damage immunity during False Promise. Purifying Flames heals Huskar under False Promise's delayed healing."
+  },
+
+  "Winter Wyvern:Ursa": {
+    "heroes": ["Winter Wyvern", "Ursa"],
+    "tip": "Winter's Curse on Ursa forces nearby enemies to attack him with their full damage, but more importantly, Ursa's massive Fury Swipes damage means if an ally is Cursed near Ursa, he will shred them instantly. Use Curse on the hero standing next to Ursa to weaponize his damage against his own team."
+  },
+
+  "Pudge:Anti-Mage": {
+    "heroes": ["Pudge", "Anti-Mage"],
+    "tip": "Anti-Mage's Blink makes landing Meat Hook nearly impossible. He can Blink to dodge both Hook and Dismember. Counterspell reflects Dismember. Your best bet is using Smoke of Deceit to get close without AM seeing you, then Hook from fog. Late game, AM farms too fast for Pudge to have impact."
+  },
+  "Pudge:Puck": {
+    "heroes": ["Pudge", "Puck"],
+    "tip": "Puck can Phase Shift to dodge Meat Hook and Illusory Orb to escape Dismember. Waning Rift silences you, preventing Rot followup. This is one of your worst matchups. Hook Puck only when Phase Shift is on cooldown. Smoke ganks from fog are your best chance at catching Puck."
+  },
+  "Pudge:Storm Spirit": {
+    "heroes": ["Pudge", "Storm Spirit"],
+    "tip": "Storm Spirit can zip through or away from Meat Hook, making it extremely hard to catch him. Ball Lightning dodges Hook if timed. Your one advantage is that Dismember pierces BKB if upgraded. Build Aghanim's Shard and hook Storm when he commits Ball Lightning toward your team."
+  },
+  "Pudge:Slark": {
+    "heroes": ["Pudge", "Slark"],
+    "tip": "Slark's Dark Pact purges Dismember and his high mobility with Pounce makes Hook unreliable. Shadow Dance also dodges Hook in the dark. Wait for Slark to use Dark Pact before attempting Hook. Your Flesh Heap stacks still make you tanky late game. Build Aghanim's for the damage."
+  },
+  "Pudge:Ember Spirit": {
+    "heroes": ["Pudge", "Ember Spirit"],
+    "tip": "Ember Spirit has multiple ways to dodge Hook with Fire Remnant, Sleight of Fist, and Flame Guard shield. Searing Chains can root you but you can Rot through them. Hook Ember when he has no Remnant placed behind him. Build Aether Lens for extended Hook range to surprise him."
+  },
+
+  "Sniper:Storm Spirit": {
+    "heroes": ["Sniper", "Storm Spirit"],
+    "tip": "Storm Spirit is one of your hardest counters. Ball Lightning closes distance instantly, and Overload procs interrupt your attacks. Headshot cannot stop Ball Lightning. You need Shadow Blade or Pike to create distance and BKB to prevent lockdown. Stay near your team and never farm solo against Storm."
+  },
+  "Sniper:Phantom Assassin": {
+    "heroes": ["Sniper", "Phantom Assassin"],
+    "tip": "Phantom Assassin's Phantom Strike blinks directly on top of you, negating your range advantage. Blur dodge can avoid Headshot procs and Assassinate. Build Monkey King Bar to counter evasion and Hurricane Pike for emergency escape. Position behind teammates and hold Shrapnel to slow PA after she jumps."
+  },
+  "Sniper:Clockwerk": {
+    "heroes": ["Sniper", "Clockwerk"],
+    "tip": "Clockwerk's Hookshot into Power Cogs traps you at melee range where Sniper is weakest. Battery Assault prevents channeling and Assassinate. Build Force Staff to escape Cogs and Shadow Blade for positioning. Stay far from Clockwerk and ward his Hookshot angles."
+  },
+  "Sniper:Spirit Breaker": {
+    "heroes": ["Sniper", "Spirit Breaker"],
+    "tip": "Spirit Breaker's Charge of Darkness tracks you globally with a guaranteed bash stun on arrival. Nether Strike closes any remaining distance. Your range advantage is meaningless against Charge. Build Shadow Blade to dodge Charge and BKB to survive the bash combo. Play near towers and teammates."
+  },
+
+  "Zeus:Anti-Mage": {
+    "heroes": ["Zeus", "Anti-Mage"],
+    "tip": "Anti-Mage's high magic resistance from Counterspell reduces your burst significantly. He can Blink onto you in teamfights, and Mana Void deals massive damage to your large mana pool when low. Stay at the back of fights and never let AM get within Blink range. Build Aeon Disk as insurance."
+  },
+  "Zeus:Storm Spirit": {
+    "heroes": ["Zeus", "Storm Spirit"],
+    "tip": "Storm can Ball Lightning onto you from anywhere on the map, making your squishy hero an easy target. Your Lightning Bolt provides true sight to reveal Storm, and Thundergod's Wrath reveals the entire map. Use Nimbus to zone Storm and keep sight of him. Build Eul's for self-defense."
+  },
+  "Zeus:Spectre": {
+    "heroes": ["Zeus", "Spectre"],
+    "tip": "Spectre's Haunt creates an illusion on you regardless of position, and Dispersion reflects a percentage of your burst damage back to you. Thundergod's Wrath hitting the entire enemy team feeds Spectre assist gold. Avoid using Wrath casually since it benefits Spectre. Focus on ending the game before Spectre hits her timing."
+  },
+
+  "Riki:Slardar": {
+    "heroes": ["Riki", "Slardar"],
+    "tip": "Slardar's Corrosive Haze provides true sight on you for a long duration, completely negating Cloak and Dagger invisibility. Guardian Sprint lets Slardar chase even through Smoke Screen. Build Diffusal Blade to purge Haze and Manta Style as a backup dispel. Avoid Slardar and focus other targets."
+  },
+  "Riki:Bounty Hunter": {
+    "heroes": ["Riki", "Bounty Hunter"],
+    "tip": "Bounty Hunter's Track provides true sight and bonus move speed, negating your invisibility and letting the entire enemy team chase you. Jinada's burst combined with Track's gold bonus makes killing you extremely rewarding. Buy Diffusal Blade to purge Track and avoid being alone on the map."
+  },
+  "Riki:Zeus": {
+    "heroes": ["Riki", "Zeus"],
+    "tip": "Zeus's Lightning Bolt and Thundergod's Wrath both provide true sight, revealing you from invisibility. Nimbus can also reveal you in an area. Your Smoke Screen does not prevent Zeus from casting spells. Focus on ganking Zeus early before he has defensive items. Build BKB to block his damage."
+  },
+
+  "Techies:Nature's Prophet": {
+    "heroes": ["Techies", "Nature's Prophet"],
+    "tip": "Nature's Prophet can Teleport past your mine stacks and use Treants to push lanes without triggering mines. Wrath of Nature pushes waves globally. Your mines become less effective when NP can bypass them entirely. Focus on mining objectives and teamfight areas rather than lane choke points."
+  },
+  "Techies:Lycan": {
+    "heroes": ["Techies", "Lycan"],
+    "tip": "Lycan's summons and Howl push power can overwhelm your mine fields by sending wolves ahead to trigger Proximity Mines. Shapeshift grants haste which runs through mine clusters before multiple mines can trigger. Mine high-ground entrances and teamfight areas rather than lane mines that wolves will clear."
+  },
+
+  "Ancient Apparition:Huskar": {
+    "heroes": ["Ancient Apparition", "Huskar"],
+    "tip": "Ice Blast is the ultimate Huskar counter. It prevents all healing including Inner Fire and lifesteal items, and shatters him below the HP threshold. Huskar's entire strategy revolves around being low HP with high regen, which Ice Blast completely negates. One good Ice Blast can solo kill Huskar. Always save Ice Blast for when Huskar commits."
+  },
+  "Ancient Apparition:Alchemist": {
+    "heroes": ["Ancient Apparition", "Alchemist"],
+    "tip": "Ice Blast prevents Chemical Rage's massive HP regeneration, which is Alchemist's core survivability mechanic. Without regen, Alchemist is a squishy hero with mediocre stats. Time Ice Blast for when Alchemist dives in with Chemical Rage active. Cold Feet also punishes Alchemist's desire to stand and fight."
+  },
+  "Ancient Apparition:Morphling": {
+    "heroes": ["Ancient Apparition", "Morphling"],
+    "tip": "Ice Blast prevents Morphling from using Attribute Shift to Strength, which is his primary survivability tool. If caught at low HP with Ice Blast debuff, Morphling cannot morph back and will shatter below the kill threshold. Land Ice Blast when Morphling is shifted to Agility for maximum effectiveness."
+  },
+  "Ancient Apparition:Lifestealer": {
+    "heroes": ["Ancient Apparition", "Lifestealer"],
+    "tip": "Lifestealer relies on Feast lifesteal and Open Wounds to sustain through fights. Ice Blast removes all healing, making Lifestealer's core mechanic useless. Rage does not dispel Ice Blast's debuff. Time your ultimate when Lifestealer commits to a fight and he becomes extremely fragile without his sustain."
+  },
+  "Ancient Apparition:Necrophos": {
+    "heroes": ["Ancient Apparition", "Necrophos"],
+    "tip": "Necrophos's Ghost Shroud amplifies healing and Death Pulse sustain, all of which Ice Blast completely negates. Heartstopper Aura's damage combined with Ice Blast's shatter threshold can kill Necrophos's allies. Ice Blast Necrophos when he activates Ghost Shroud to deny both his healing amp and Death Pulse recovery."
+  },
+
+  "Pudge:Lifestealer": {
+    "heroes": ["Pudge", "Lifestealer"],
+    "tip": "Lifestealer's Rage grants magic immunity, preventing your Dismember and Hook damage. Feast heals him while hitting your high HP pool. However, your Flesh Heap HP stacks make you a risky Infest target for him. Hook Lifestealer when Rage is on cooldown and immediately Dismember before he can activate it."
+  },
+
+  "Ursa:Phantom Lancer": {
+    "heroes": ["Ursa", "Phantom Lancer"],
+    "tip": "Phantom Lancer's illusions make it impossible to stack Fury Swipes on the real hero. Overpower's limited attack charges get wasted on illusions. You cannot burst PL when he is hidden among copies. Build Battle Fury or Mjollnir to clear illusions and Abyssal Blade to lock down the real PL when you find him."
+  },
+
+  "Huskar:Timbersaw": {
+    "heroes": ["Huskar", "Timbersaw"],
+    "tip": "Timbersaw deals pure damage which bypasses your magic resistance from Berserker's Blood entirely. Reactive Armor makes him very tanky against your attacks. Whirling Death reduces your primary attribute. This is one of your worst matchups. Build armor items and avoid long fights against Timber."
+  },
+  "Huskar:Necrophos": {
+    "heroes": ["Huskar", "Necrophos"],
+    "tip": "Necrophos's Reaper's Scythe deals damage based on missing HP, which is exactly where you want to be. Ghost Shroud prevents your right-clicks while amplifying magical damage on you. Heartstopper Aura drains your HP passively. Build BKB to fight through Ghost Shroud and burst Necro before Scythe kills you."
+  },
+
+  "Alchemist:Anti-Mage": {
+    "heroes": ["Alchemist", "Anti-Mage"],
+    "tip": "Anti-Mage's Mana Break drains the mana pool you rely on for Chemical Rage. However, your accelerated farm means you hit item timings before AM. Push your BKB and Radiance advantage early. Force fights before Anti-Mage has Battle Fury and Manta. Late game, AM outscales you with Mana Void damage on your large pool."
+  },
+
+  "Naga Siren:Earthshaker": {
+    "heroes": ["Naga Siren", "Earthshaker"],
+    "tip": "Your Mirror Image illusions amplify Echo Slam damage massively. A well-timed Echo Slam in your illusion army can team-wipe. Send illusions to push lanes separately rather than grouping them. Use Song of the Siren defensively to dodge Echo Slam. Do not fight near Earthshaker without Song available."
+  },
+
+  "Meepo:Earthshaker": {
+    "heroes": ["Meepo", "Earthshaker"],
+    "tip": "Earthshaker is your hardest counter in the game. Each Meepo clone counts as a hero for Echo Slam, meaning a 5-clone Meepo takes quintuple damage. Keep clones spread out and never group them near Earthshaker. Only fight when Echo Slam is on cooldown and consider Aghanim's for survivability."
+  },
+
+  "Terrorblade:Anti-Mage": {
+    "heroes": ["Terrorblade", "Anti-Mage"],
+    "tip": "Anti-Mage's Mana Break is effective against your mana-dependent Metamorphosis and Conjure Image. However, your illusions with Metamorphosis out-damage AM's illusions. You have stronger push and earlier fighting power. Force objectives while Metamorphosis is active and avoid prolonged fights where AM burns your mana."
+  },
+
+  "Necrophos:Lifestealer": {
+    "heroes": ["Necrophos", "Lifestealer"],
+    "tip": "Lifestealer's Rage grants BKB which negates Ghost Shroud's magic damage amplification and prevents Reaper's Scythe. Feast heals through your Heartstopper Aura. Do not Scythe a Lifestealer with Rage available. Bait Rage first, then use Ghost Shroud and Scythe combo. Build Spirit Vessel to reduce his lifesteal."
+  },
+
+  "Shadow Fiend:Huskar": {
+    "heroes": ["Shadow Fiend", "Huskar"],
+    "tip": "Huskar's Berserker's Blood gives massive magic resistance at low HP, reducing your Shadowraze damage significantly. Burning Spears harass drives you out of lane. Inner Fire disarms you. Focus on building physical damage with Desolator since Huskar has naturally low armor. Silver Edge breaks Berserker's Blood."
+  },
+
+  "Sven:Phantom Lancer": {
+    "heroes": ["Sven", "Phantom Lancer"],
+    "tip": "Great Cleave with God's Strength active can one-shot Phantom Lancer's entire illusion army. Storm Hammer stuns in AoE hitting illusions. Your cleave damage is the strongest counter to PL's strategy. Build BKB and Blink Dagger to reach PL and activate God's Strength before the fight. PL must avoid fighting during your ultimate."
+  },
+  "Sven:Terrorblade": {
+    "heroes": ["Sven", "Terrorblade"],
+    "tip": "Great Cleave demolishes Terrorblade's Conjure Image illusions. God's Strength gives you the raw damage to burst TB even through his high armor. Storm Hammer provides AoE stun for initiation. Build Blink and BKB to jump on Terrorblade. Be careful of Sunder when TB reaches low HP, as he can swap HP with you."
+  },
+
+  "Lycan:Spirit Breaker": {
+    "heroes": ["Lycan", "Spirit Breaker"],
+    "tip": "Spirit Breaker's Charge of Darkness interrupts your push timing and Greater Bash's damage scales with move speed, making Shapeshift a liability. Nether Strike closes distance through your wolves. However, your push speed often outpaces SB's response time. Split push and force TP responses rather than fighting SB head-on."
+  },
+
+  "Nature's Prophet:Anti-Mage": {
+    "heroes": ["Nature's Prophet", "Anti-Mage"],
+    "tip": "Anti-Mage can Blink out of Sprout and his farming speed rivals your split push. However, you can Teleport to wherever AM is farming to gank with your team. Ward his jungle and use global Teleportation to pressure lanes he is not in. Wrath of Nature provides chip damage to slow his farm."
+  },
+
+  "Chaos Knight:Sven": {
+    "heroes": ["Chaos Knight", "Sven"],
+    "tip": "Sven's Great Cleave with God's Strength cleaves through your Phantasm illusions devastatingly. Storm Hammer AoE stuns all illusions. Your strong illusions become a liability when Sven can cleave them. Fight Sven after God's Strength expires or from multiple angles to limit cleave damage."
+  },
+
+  "Dazzle:Necrophos": {
+    "heroes": ["Dazzle", "Necrophos"],
+    "tip": "Shallow Grave counters Reaper's Scythe by preventing the kill threshold from applying. Necrophos cannot use Scythe on a Graved target effectively. Poison Touch slows Necrophos to prevent Ghost Shroud escape. Shadow Wave heals through Heartstopper Aura. Stay close to your carry to provide Grave against Scythe attempts."
+  },
+
+  "Abaddon:Legion Commander": {
+    "heroes": ["Abaddon", "Legion Commander"],
+    "tip": "Borrowed Time automatically triggers when you take fatal damage during Duel, healing you instead of dying. Aphotic Shield can be pre-cast on Duel targets to absorb damage and purge the Duel debuff. Your presence alone deters Legion from using Duel on you or nearby allies."
+  },
+
+  "Templar Assassin:Huskar": {
+    "heroes": ["Templar Assassin", "Huskar"],
+    "tip": "Burning Spears rapidly strip Refraction charges with low-damage ticks, negating your damage block and bonus damage. Huskar's magic resistance means your Psi Blades pure damage is one of the few things that hurts him. Focus on Psi Blade splash harass and rush Desolator for physical burst."
+  },
+
+  "Outworld Destroyer:Silencer": {
+    "heroes": ["Outworld Destroyer", "Silencer"],
+    "tip": "Silencer's intelligence steal permanently reduces your damage and mana pool from Arcane Orb. Global Silence prevents Astral Imprisonment and Sanity's Eclipse. Last Word forces you to use a spell or be silenced. Build BKB to fight through Global Silence and avoid dying to minimize intelligence loss."
+  },
+
+  "Lone Druid:Monkey King": {
+    "heroes": ["Lone Druid", "Monkey King"],
+    "tip": "Monkey King can build Jingu Mastery stacks on your Spirit Bear, then turn on your hero with bonus damage and lifesteal. Boundless Strike crits hit both you and the bear. Keep the bear between you and MK to body-block Tree Dance leaps. Entangling Claws root prevents Tree Dance."
+  },
+
+  "Weaver:Spirit Breaker": {
+    "heroes": ["Weaver", "Spirit Breaker"],
+    "tip": "Spirit Breaker's Charge of Darkness tracks you through Shukuchi invisibility and Greater Bash cancels Time Lapse timing. Nether Strike goes through Linkens. However, your high mobility makes you hard to lock down otherwise. Build Linkens for the first Bash and Time Lapse immediately after the second stun. Play near teammates."
+  },
+
+  "Clinkz:Spirit Breaker": {
+    "heroes": ["Clinkz", "Spirit Breaker"],
+    "tip": "Spirit Breaker can Charge of Darkness onto you while you are invisible with Skeleton Walk, revealing your position. Greater Bash interrupts your Searing Arrows damage output. Build BKB and play with your team rather than solo ganking when SB is missing. Burning Army can zone SB in teamfights."
+  },
+
+  "Visage:Medusa": {
+    "heroes": ["Visage", "Medusa"],
+    "tip": "Stone Gaze petrifies your Familiars and can destroy them. Medusa's Split Shot hits all Familiars simultaneously. However, your burst damage from Familiars can kill Medusa quickly before she activates Stone Gaze. Stun with Familiars, apply Soul Assumption, and burst before she turns on Stone Gaze."
+  },
+
+  "Dark Seer:Phantom Lancer": {
+    "heroes": ["Dark Seer", "Phantom Lancer"],
+    "tip": "Wall of Replica creates illusions of PL's illusions, turning his army against him. Ion Shell on PL's illusions damages other illusions around them. Vacuum into Wall is devastating against grouped illusion armies. However, PL can Doppelganger to dodge Wall placement. Time Wall for after PL commits Doppelganger."
+  },
+
+  "Axe:Phantom Assassin": {
+    "heroes": ["Axe", "Phantom Assassin"],
+    "tip": "Berserker's Call forces PA to attack you, and her fast attacks from Phantom Strike trigger Counter Helix multiple times. Culling Blade ignores PA's evasion from Blur and kills through Satanic lifesteal. Build Blade Mail to reflect PA's own crits back. You are one of PA's hardest counters."
+  },
+  "Axe:Anti-Mage": {
+    "heroes": ["Axe", "Anti-Mage"],
+    "tip": "Berserker's Call locks Anti-Mage in place and prevents Blink escape. Counter Helix shreds AM's low HP pool. Culling Blade's kill threshold prevents Manta split. Build Blink Dagger and catch AM when he appears on the map to farm. You are one of the strongest Anti-Mage counters in the early-mid game."
+  },
+  "Axe:Troll Warlord": {
+    "heroes": ["Axe", "Troll Warlord"],
+    "tip": "Berserker's Call during Troll's Battle Trance forces Troll to attack you, which is devastating since he cannot switch targets or cancel Trance. Counter Helix procs frequently from Troll's high attack speed. Call into Blade Mail reflects Troll's own damage. Save Call for when Troll activates Battle Trance."
+  },
+
+  "Spirit Breaker:Sniper": {
+    "heroes": ["Spirit Breaker", "Sniper"],
+    "tip": "Charge of Darkness tracks Sniper globally and Greater Bash stun cancels Assassinate channel. Nether Strike closes any remaining gap. Sniper has zero escape against your kit. Charge from fog whenever Sniper is visible on the map. Build Shadow Blade for the bonus damage on arrival."
+  },
+  "Spirit Breaker:Nature's Prophet": {
+    "heroes": ["Spirit Breaker", "Nature's Prophet"],
+    "tip": "Nature's Prophet constantly splits the map, giving you Charge targets in isolated locations. Charge of Darkness interrupts Teleportation and Nature's Prophet has no escape besides Sprout, which you walk through. Hunt NP when he shows on the map farming side lanes. Build BKB to ignore Sprout."
+  },
+
+  "Disruptor:Storm Spirit": {
+    "heroes": ["Disruptor", "Storm Spirit"],
+    "tip": "Glimpse is devastating against Storm Spirit. After Storm zips across the map, Glimpse sends him back to his previous position, wasting his entire mana pool. Static Storm with Aghanim's Scepter mutes items, preventing BKB and Orchid usage. Thunder Strike provides vision to track Storm after he zips. Always save Glimpse for Storm's Ball Lightning."
+  },
+
+  "Bloodseeker:Slark": {
+    "heroes": ["Bloodseeker", "Slark"],
+    "tip": "Thirst provides true sight of Slark when he is below the HP threshold, negating Shadow Dance's invisibility. Rupture prevents Slark from Pouncing away without taking massive damage. Blood Rite silences Slark in an area, preventing Dark Pact purge if timed correctly. Force early fights before Slark gets too many Essence Shift stacks."
+  },
+
+  "Batrider:Templar Assassin": {
+    "heroes": ["Batrider", "Templar Assassin"],
+    "tip": "Sticky Napalm stacks rapidly on TA, and every instance of Firefly damage strips a Refraction charge while Napalm amplifies the damage. Flaming Lasso drags TA away from her Psionic Traps and safety. TA cannot avoid Napalm stacks in melee range. Build Blink and Lasso TA to isolate her from fights."
+  },
+
+  "Underlord:Phantom Lancer": {
+    "heroes": ["Underlord", "Phantom Lancer"],
+    "tip": "Firestorm deals percentage-based burn damage that hits all of PL's illusions. Pit of Malice roots illusions in place. Atrophy Aura's attack damage reduction affects illusions. Your AoE kit makes you one of the strongest answers to PL's illusion army. Build Crimson Guard and Pipe to further mitigate illusion damage."
+  },
+
+  "Vengeful Spirit:Enigma": {
+    "heroes": ["Vengeful Spirit", "Enigma"],
+    "tip": "Nether Swap can pull a teammate out of Black Hole or swap Enigma to cancel his channel. Magic Missile provides a long-range stun to interrupt Black Hole from fog. Even if you die, your Vengeance Aura illusion continues to provide the aura benefit. Position on the edge of fights ready to counter Black Hole."
+  },
+
+  "Rubick:Enigma": {
+    "heroes": ["Rubick", "Enigma"],
+    "tip": "Stealing Black Hole is one of the most game-winning plays possible with Rubick. A stolen Black Hole has full effectiveness. Telekinesis can interrupt Black Hole channel from long range. Position at max cast range of Spell Steal and wait for Enigma to commit. Spell Steal immediately after Black Hole before he casts another spell."
+  },
+  "Rubick:Tidehunter": {
+    "heroes": ["Rubick", "Tidehunter"],
+    "tip": "Stealing Ravage gives you a massive AoE stun for your own team's follow-up. Telekinesis can set up Ravage or displace Tidehunter before he can cast. Watch for Tidehunter's Blink Ravage and position where you can Spell Steal immediately after. A stolen Ravage can turn any teamfight in your favor."
+  },
+  "Rubick:Magnus": {
+    "heroes": ["Rubick", "Magnus"],
+    "tip": "Stealing Reverse Polarity is extremely valuable for grouping enemies for your team. Telekinesis can interrupt Magnus's Blink RP combo if you have fast reactions. Position behind your team and steal RP immediately after Magnus uses it. Even Empower or Skewer are decent steals as utility."
+  },
+
+  "Nyx Assassin:Invoker": {
+    "heroes": ["Nyx Assassin", "Invoker"],
+    "tip": "Mana Burn deals damage based on Invoker's high intelligence multiplied, hitting for enormous amounts. Spiked Carapace reflects Invoker's combo damage and stuns him. Vendetta provides initiation to reach Invoker's backline position. Build Meteor Hammer for additional lockdown after your stun combo."
+  },
+
+  "Lion:Anti-Mage": {
+    "heroes": ["Lion", "Anti-Mage"],
+    "tip": "Hex and Earth Spike provide lockdown that goes through Counterspell's passive. Mana Drain destroys AM's small mana pool. Finger of Death provides burst to finish AM before he Blinks away. However, late-game AM survives your combo. Focus on ganking AM before Battle Fury timing to delay his farm."
+  },
+
+  "Shadow Shaman:Anti-Mage": {
+    "heroes": ["Shadow Shaman", "Anti-Mage"],
+    "tip": "Hex provides instant lockdown through Counterspell's passive, and Shackles holds AM in place. Mass Serpent Wards can trap AM or push towers while he farms. However, AM's Mana Break drains your crucial mana quickly. Gank AM early with Hex into Shackles combo and push objectives with Wards to pressure his farm."
+  },
+
+  "Grimstroke:Phantom Lancer": {
+    "heroes": ["Grimstroke", "Phantom Lancer"],
+    "tip": "Phantom's Embrace latches onto illusions and spreads, dealing damage across PL's army. Ink Swell's AoE stun hits clustered illusions. Soulbind links PL with his nearest illusion, which is always close, making it easy to land. Stroke of Fate hits all illusions in a line. Your kit naturally punishes illusion-heavy strategies."
+  },
+
+  "Pugna:Skywrath Mage": {
+    "heroes": ["Pugna", "Skywrath Mage"],
+    "tip": "Nether Ward punishes Skywrath's rapid spell casting, dealing damage per mana spent. Mystic Flare's high mana cost triggers massive Nether Ward damage. Decrepify can save allies from Skywrath's magic-heavy burst or amplify your own. Place Nether Ward in fights and watch Skywrath kill himself with his own combos."
+  },
+
+  "Snapfire:Drow Ranger": {
+    "heroes": ["Snapfire", "Drow Ranger"],
+    "tip": "Gobble Up combined with Firesnap Cookie lets you close the gap on Drow and disable her Marksmanship by getting close. Lil' Shredder provides armor reduction that stacks with your team's physical damage. Mortimer Kisses provides long-range engagement that Drow cannot dodge without BKB."
+  },
+
+  "Marci:Storm Spirit": {
+    "heroes": ["Marci", "Storm Spirit"],
+    "tip": "Dispose throws Storm Spirit into your team and stuns, preventing Ball Lightning escape. Rebound closes gap instantly. Sidekick provides burst potential with the attack damage bonus. Unleash provides sustained lockdown with rapid attacks. Your mobility matches Storm's, making you an effective counter in the mid game."
+  },
+
+  "Primal Beast:Puck": {
+    "heroes": ["Primal Beast", "Puck"],
+    "tip": "Onslaught charges through Puck's Illusory Orb path and Trample prevents Phase Shift during its AoE damage ticks. Pulverize is a BKB-piercing channel that locks Puck completely. However, Dream Coil can punish your Onslaught charge. Use Onslaught when Puck has committed Phase Shift."
+  },
+
+  "Treant Protector:Broodmother": {
+    "heroes": ["Treant Protector", "Broodmother"],
+    "tip": "Nature's Guise grants tree walking which reveals Broodmother hiding in trees with Spin Web. Overgrowth roots Broodmother and all spiderlings in AoE. Living Armor sustains your tower against spiderling pushes. Eyes in the Forest provides vision of Brood's web networks. You counter Brood's tree-based strategy."
+  },
+
+  "Kunkka:Shadow Fiend": {
+    "heroes": ["Kunkka", "Shadow Fiend"],
+    "tip": "Torrent into X Marks the Spot combo provides guaranteed damage and stun. Tidebringer cleave harass outranges Shadow Fiend's Razes. Ghostship provides team sustain to survive Requiem of Souls. Use X on SF to guarantee Torrent hit and follow up with Tidebringer. You dominate mid against SF with proper timing."
+  },
+
+  "Pangolier:Phantom Assassin": {
+    "heroes": ["Pangolier", "Phantom Assassin"],
+    "tip": "Swashbuckle procs Javelin and Maelstrom hits regardless of evasion, bypassing PA's Blur. Lucky Shot disarms PA preventing Coup de Grace crits. Rolling Thunder provides AoE control that PA's single-target kit cannot deal with. Build Javelin early for lane dominance."
+  },
+
+  "Razor:Anti-Mage": {
+    "heroes": ["Razor", "Anti-Mage"],
+    "tip": "Static Link drains Anti-Mage's attack damage, but AM can Blink to break the link. Eye of the Storm provides sustained damage that AM's spell shield cannot block. Your lane presence is stronger, but AM outscales you. Force fights with your team before AM completes his core items."
+  },
+
+  "Doom:Invoker": {
+    "heroes": ["Doom", "Invoker"],
+    "tip": "Doom silences and mutes Invoker, preventing all spell combinations and item usage. Invoker without spells is one of the weakest heroes in the game. Build Blink Dagger and Doom Invoker at the start of every fight. Aghanim's Scepter Doom duration ensures Invoker is disabled for an entire teamfight."
+  },
+
+  "Bounty Hunter:Clinkz": {
+    "heroes": ["Bounty Hunter", "Clinkz"],
+    "tip": "Track reveals Clinkz through Skeleton Walk invisibility, providing true sight to your entire team. Jinada's burst damage can chunk Clinkz's squishy HP pool. Shuriken Toss provides ranged interrupt. Track Clinkz whenever he appears and follow him to deny his ganking potential. The bonus gold from Track kills snowballs your team."
+  },
+
+  "Tusk:Sniper": {
+    "heroes": ["Tusk", "Sniper"],
+    "tip": "Snowball closes the gap to Sniper instantly and provides magic immunity during travel. Walrus Punch's guaranteed crit burst kills Sniper with his low HP. Ice Shards traps Sniper in place. Your kit perfectly counters Sniper's range advantage. Smoke into Snowball is unavoidable initiation."
+  },
+
+  "Earth Spirit:Huskar": {
+    "heroes": ["Earth Spirit", "Huskar"],
+    "tip": "Magnetize's damage over time is unaffected by Huskar's magic resistance and the slow prevents him from chasing. Rolling Boulder provides escape from Huskar's aggression. Geomagnetic Grip silence prevents Inner Fire. Your utility kit provides excellent teamfight contribution against Huskar's all-in playstyle."
+  },
+
+  "Undying:Spectre": {
+    "heroes": ["Undying", "Spectre"],
+    "tip": "Decay's strength steal makes Spectre's already weak laning even worse. Tombstone spawns zombies that constantly slow and harass Spectre, preventing last hits. Flesh Golem amplifies damage on Spectre. Dominate the lane to delay Spectre's Radiance timing. Your early aggression window is key to shutting her down."
+  },
+
+  "Chen:Broodmother": {
+    "heroes": ["Chen", "Broodmother"],
+    "tip": "Holy Persuasion can convert Broodmother's spiderlings, denying her farm and army. Your controlled creeps provide push and sustain that matches Brood's push power. Hand of God provides global heal to sustain lanes against spider pressure. Convert the strongest spiderlings and push back against Brood's tower aggression."
+  },
+
+  "Warlock:Phantom Lancer": {
+    "heroes": ["Warlock", "Phantom Lancer"],
+    "tip": "Fatal Bonds links PL's illusions together, causing damage dealt to one to spread across all bonded targets. Chaotic Offering stuns all illusions in AoE and the Golem's Flaming Fists cleave hits all nearby illusions. Shadow Word damage can reveal the real PL. Bond his illusion group and watch the chain damage melt them."
+  },
+
+  "Witch Doctor:Faceless Void": {
+    "heroes": ["Witch Doctor", "Faceless Void"],
+    "tip": "Death Ward channeled from outside Chronosphere onto targets trapped inside deals devastating damage. The bouncing attacks hit all frozen enemies. Maledict's ticking damage amplifies the longer targets are stunned. Position outside Chronosphere range and channel Death Ward the moment Void Chronos. This is one of the strongest synergies."
+  },
+
+  "Keeper of the Light:Anti-Mage": {
+    "heroes": ["Keeper of the Light", "Anti-Mage"],
+    "tip": "Chakra Magic restores mana to allies, countering Anti-Mage's mana burn strategy. Illuminate provides wave clear to slow AM's push. Blinding Light disarms AM preventing his right-click mana burn. Will-O-Wisp provides AoE disable in teamfights. Your mana sustain for teammates mitigates AM's impact on your cores."
+  },
+
+  "Lich:Phantom Lancer": {
+    "heroes": ["Lich", "Phantom Lancer"],
+    "tip": "Chain Frost bounces between PL and his illusions for massive damage amplification. Sinister Gaze can pull the real PL out of his illusion group. Frost Shield provides AoE damage reduction against illusion swarms. Wait for PL to commit his illusions before casting Chain Frost for maximum bounces."
+  },
+
+  "Crystal Maiden:Faceless Void": {
+    "heroes": ["Crystal Maiden", "Faceless Void"],
+    "tip": "Freezing Field channeled outside Chronosphere deals massive damage to trapped enemies. Crystal Nova provides AoE slow on grouped targets. Frostbite roots individual targets for follow-up. Coordinate with Void to position outside Chrono and immediately channel Freezing Field. BKB or Glimmer Cape protects your channel."
+  },
+
+  "Dark Willow:Faceless Void": {
+    "heroes": ["Dark Willow", "Faceless Void"],
+    "tip": "Terrorize inside Chronosphere forces enemies to flee when Chrono ends, extending the disable chain. Bedlam deals damage to Chrono targets from range. Bramble Maze inside Chrono roots enemies when the stun ends. Coordinate ultimate usage with Void's Chronosphere for devastating combo potential."
+  },
+
+  "Jakiro:Faceless Void": {
+    "heroes": ["Jakiro", "Faceless Void"],
+    "tip": "Macropyre combined with Chronosphere deals massive sustained damage to frozen enemies who cannot move. Ice Path provides additional stun when Chrono ends. Dual Breath slows targets emerging from Chrono. Cast Macropyre through Chronosphere immediately when Void initiates for guaranteed full-duration damage."
+  },
+
+  "Skywrath Mage:Storm Spirit": {
+    "heroes": ["Skywrath Mage", "Storm Spirit"],
+    "tip": "Ancient Seal silences Storm Spirit and amplifies magic damage, preventing Ball Lightning. Mystic Flare deals massive burst on a silenced, immobile Storm. Concussive Shot provides slow to set up Ancient Seal. However, if Storm has BKB, your entire combo is negated. Time your silence for after Storm uses his BKB charges."
+  },
+
+  "Ogre Magi:Phantom Assassin": {
+    "heroes": ["Ogre Magi", "Phantom Assassin"],
+    "tip": "Bloodlust on your carry increases attack speed to deal with PA. Ignite's slow prevents PA from chasing. Fireblast provides reliable stun through Blur. Your high base armor and HP make you hard for PA to burst. Multicast Fireblast can lockdown PA long enough for your team to focus her."
+  },
+
+  "Hoodwink:Sniper": {
+    "heroes": ["Hoodwink", "Sniper"],
+    "tip": "Bushwhack stuns Sniper from trees where he cannot see you. Acorn Shot provides harass from cover. Scurry gives you tree-walking to approach from unexpected angles. Sharpshooter's break disables Headshot and Take Aim. Your tree-based mobility makes Sniper's positioning advantage meaningless."
+  },
+
+  "Vengeful Spirit:Sniper": {
+    "heroes": ["Vengeful Spirit", "Sniper"],
+    "tip": "Nether Swap puts Sniper into your team while you take his safe position. Magic Missile provides long-range stun. Wave of Terror's armor reduction amplifies your team's physical damage. Swap Sniper from his high-ground position into your waiting team for a guaranteed kill."
+  },
+
+  "Clockwerk:Sniper": {
+    "heroes": ["Clockwerk", "Sniper"],
+    "tip": "Hookshot's global range initiates on Sniper from any distance. Power Cogs traps Sniper at melee range where he is weakest. Battery Assault interrupts Assassinate channel. Rocket Flare scouts Sniper's position. You are one of Sniper's hardest counters. Build Blade Mail to reflect his damage inside Cogs."
+  },
+
+  "Spirit Breaker:Tinker": {
+    "heroes": ["Spirit Breaker", "Tinker"],
+    "tip": "Charge of Darkness tracks Tinker globally, even after he BoTs back to base. Greater Bash interrupts Rearm channel. Nether Strike provides guaranteed gap close. Tinker's reliance on positioning in trees is negated by your global mobility. Charge whenever Tinker appears on the map to deny his march stacking."
+  },
+
+  "Spectre:Tinker": {
+    "heroes": ["Spectre", "Tinker"],
+    "tip": "Haunt creates an illusion on Tinker regardless of where he hides, revealing his position and preventing Blink Dagger. Desolate deals bonus damage since Tinker farms alone. Reality lets you jump to Tinker's location. Build Radiance and use Haunt whenever Tinker shows on the map. You globally counter his split-push."
+  },
+
+  "Centaur Warrunner:Anti-Mage": {
+    "heroes": ["Centaur Warrunner", "Anti-Mage"],
+    "tip": "Stampede provides your team with haste to chase Anti-Mage after he Blinks. Hoof Stomp and Double Edge burst can kill AM before he Blinks away. Retaliate punishes AM's right-clicks. Your job is to initiate on AM with Blink into Stomp and Double Edge, then Stampede your team to follow up."
+  },
+
+  "Leshrac:Anti-Mage": {
+    "heroes": ["Leshrac", "Anti-Mage"],
+    "tip": "Anti-Mage's Mana Break devastates your mana-dependent hero. Without mana, Pulse Nova and your other spells are useless. Mana Void on your large mana pool deals enormous damage. Build Bloodstone for mana sustain and fight before AM completes his core items. Push towers with your AoE before he comes online."
+  },
+
+  "Timbersaw:Huskar": {
+    "heroes": ["Timbersaw", "Huskar"],
+    "tip": "Your pure damage from Whirling Death and Timber Chain bypasses Huskar's magic resistance entirely. Reactive Armor makes you tanky against Burning Spears. Whirling Death reduces Huskar's primary attribute, lowering his damage. You are one of Huskar's hardest counters. Build Bloodstone and fight aggressively."
+  },
+
+  "Viper:Bristleback": {
+    "heroes": ["Viper", "Bristleback"],
+    "tip": "Nethertoxin's Break disables Bristleback's passive damage reduction, making him vulnerable to attacks from behind. Poison Attack kites Bristleback who wants to run at you. Viper Strike's slow prevents Bristleback from chasing. Apply Nethertoxin under Bristleback in fights and your team can focus him from any angle."
+  },
+
+  "Lifestealer:Ursa": {
+    "heroes": ["Lifestealer", "Ursa"],
+    "tip": "Feast deals percentage-based damage which is strong against Ursa's large HP pool. Rage prevents Earthshock slow and Enrage's status resistance is less effective against your sustained damage. However, Ursa's burst with Overpower can kill you during Rage downtime. Build Armlet and Desolator for sustained damage advantage."
+  },
+
+  "Gyrocopter:Phantom Lancer": {
+    "heroes": ["Gyrocopter", "Phantom Lancer"],
+    "tip": "Flak Cannon hits all of PL's illusions simultaneously with full damage. Call Down provides AoE slow and damage on grouped illusions. Homing Missile can chase the real PL through his illusion army. Build Mjollnir for chain lightning procs on Flak Cannon attacks. You are an effective counter to illusion strategies."
+  },
+
+  "Monkey King:Slark": {
+    "heroes": ["Monkey King", "Slark"],
+    "tip": "Boundless Strike's stun and crit provide burst before Slark can Dark Pact. Wukong's Command soldiers hit Slark inside the ring. Jingu Mastery lifesteal sustains you through Essence Shift stacks. Tree Dance scouts Slark's movements. Build Silver Edge to break Essence Shift and fight Slark aggressively."
+  },
+
+  "Mars:Drow Ranger": {
+    "heroes": ["Mars", "Drow Ranger"],
+    "tip": "Spear of Mars pins Drow to trees or Arena walls, shutting down her kiting. Arena of Blood traps Drow at close range where Marksmanship deactivates. God's Rebuke crits destroy her low HP pool. Bulwark blocks her ranged attacks from the front. You completely negate Drow's range advantage."
+  },
+
+  "Bristleback:Viper": {
+    "heroes": ["Bristleback", "Viper"],
+    "tip": "Nethertoxin's Break ability disables your Bristleback passive, removing your signature damage reduction. Poison Attack kites you and prevents you from chasing. Corrosive Skin slows you further. Do not fight Viper when standing in Nethertoxin. Build Pipe of Insight and BKB to fight through his kit."
+  },
+
+  "Doom:Storm Spirit": {
+    "heroes": ["Doom", "Storm Spirit"],
+    "tip": "Doom silences and mutes Storm Spirit, preventing Ball Lightning and all item usage including BKB. A Doomed Storm Spirit is one of the most useless heroes in the game. Build Blink Dagger and Doom Storm at the start of every fight. Aghanim's extends Doom duration to ensure Storm stays disabled."
+  },
+
+  "Legion Commander:Broodmother": {
+    "heroes": ["Legion Commander", "Broodmother"],
+    "tip": "Overwhelming Odds deals bonus damage per unit, and Broodmother's spiderling army provides enormous bonus damage. One Overwhelming Odds on a spiderling wave can deal hundreds of damage. Press the Attack dispels Spawn Spiderlings slow. Duel Broodmother when her spiders are cleared. Use OO to farm spiderlings for bonus Duel damage."
+  },
+
+  "Centaur Warrunner:Sniper": {
+    "heroes": ["Centaur Warrunner", "Sniper"],
+    "tip": "Stampede provides team-wide haste to reach Sniper's backline position. Blink into Hoof Stomp and Double Edge instantly kills squishy Sniper. Retaliate damages Sniper even from range. Your Aghanim's Scepter Stampede reduces incoming damage while charging at Sniper. He cannot kite you with Stampede active."
+  },
+
+  "Wraith King:Chaos Knight": {
+    "heroes": ["Wraith King", "Chaos Knight"],
+    "tip": "Your Vampiric Spirit skeletons provide additional targets for CK to waste his Phantasm on. Reincarnation lets you survive CK's burst combo and fight back. Mortal Strike's critical hits can delete CK's illusions. Build Radiance to burn down CK illusions. Your durability with two lives outmatches CK in prolonged fights."
+  },
+
+  "Terrorblade:Earthshaker": {
+    "heroes": ["Terrorblade", "Earthshaker"],
+    "tip": "Your Conjure Image and Reflection illusions multiply Echo Slam damage significantly. Never fight near Earthshaker with active illusions. Push lanes with illusions but keep them spread out. Wait for Echo Slam to be used before joining fights. Sunder can save you from burst but only if you survive the initial Echo."
+  },
+
+  "Io:Faceless Void": {
+    "heroes": ["Io", "Faceless Void"],
+    "tip": "Tether keeps your carry alive inside Chronosphere if you are outside it. Relocate can save an ally caught in a bad Chrono by teleporting them out after it ends. Overcharge's attack speed and damage reduction buffs are powerful on Void during Chrono. Coordinate Tether positions to stay outside Chrono while healing Void inside."
+  },
+
+  "Dazzle:Faceless Void": {
+    "heroes": ["Dazzle", "Faceless Void"],
+    "tip": "Shallow Grave can save allies caught inside Chronosphere if cast before the Chrono hits. Shadow Wave heals targets inside Chrono. Poison Touch slows Void if he Walks toward your team. Bad Juju reduces cooldowns letting you Grave multiple allies. Position behind your team and react instantly with Grave when Void initiates."
+  },
+
+  "Oracle:Faceless Void": {
+    "heroes": ["Oracle", "Faceless Void"],
+    "tip": "False Promise can be cast on allies before Chronosphere lands, absorbing all damage during the frozen duration. Fate's Edict provides physical damage immunity inside Chrono. Fortune's End dispels Time Dilation. Your saves can nullify Chronosphere if you position outside its radius. Build Aeon Disk for self-protection."
+  }
+}

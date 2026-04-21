@@ -8,19 +8,23 @@
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5/dist/echarts.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/app.css?v=2">
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
     <div id="app">
         <!-- Header (only visible before match loaded) -->
         <header v-if="!analysisData" class="bg-gray-800 border-b border-gray-700 px-6 py-4">
             <div class="max-w-7xl mx-auto flex items-center justify-between">
-                <h1 class="text-2xl font-bold text-yellow-400">Dota 2 对局分析器</h1>
+                <h1 class="text-2xl font-bold text-yellow-400">{{ t('app_title') }}</h1>
                 <div class="flex items-center gap-4">
-                    <span v-if="parseSource === 'clarity'" class="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded">本地解析 (Clarity)</span>
-                    <span v-else-if="parseSource === 'opendota'" class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded">OpenDota API</span>
-                    <span v-else-if="parseSource === 'mock'" class="text-xs bg-yellow-900 text-yellow-300 px-2 py-1 rounded">演示数据</span>
+                    <span v-if="parseSource === 'clarity'" class="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded">{{ t('source_clarity') }}</span>
+                    <span v-else-if="parseSource === 'opendota'" class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded">{{ t('source_opendota') }}</span>
+                    <span v-else-if="parseSource === 'mock'" class="text-xs bg-yellow-900 text-yellow-300 px-2 py-1 rounded">{{ t('source_mock') }}</span>
                     <span v-else-if="parseSource" class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">{{ parseSource }}</span>
+                    <select v-model="locale" @change="onLocaleChange" class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-600 focus:border-yellow-400 focus:outline-none cursor-pointer">
+                        <option value="zh">中文</option>
+                        <option value="en">English</option>
+                    </select>
                 </div>
             </div>
         </header>
@@ -28,32 +32,32 @@
         <!-- Upload Section -->
         <div v-if="!analysisData" class="max-w-2xl mx-auto mt-20 text-center">
             <div class="bg-gray-800 rounded-lg p-10 border border-gray-700">
-                <h2 class="text-xl mb-6">上传 Replay 文件进行分析</h2>
+                <h2 class="text-xl mb-6">{{ t('upload_heading') }}</h2>
                 <div class="upload-zone" @drop.prevent="handleDrop" @dragover.prevent
                      @click="$refs.fileInput.click()">
                     <input ref="fileInput" type="file" accept=".dem" @change="handleFileSelect" hidden>
                     <div class="text-6xl mb-4">&#x1F4C2;</div>
-                    <p class="text-lg">拖拽 .dem 文件到此处，或点击选择文件</p>
-                    <p class="text-gray-500 mt-2 text-sm">支持 Dota 2 录像文件 (.dem)</p>
+                    <p class="text-lg">{{ t('upload_drag_hint') }}</p>
+                    <p class="text-gray-500 mt-2 text-sm">{{ t('upload_format_hint') }}</p>
                 </div>
                 <div class="mt-6 flex items-center justify-center gap-3">
-                    <input v-model="matchIdInput" type="text" placeholder="输入比赛ID（如 8713267082）"
+                    <input v-model="matchIdInput" type="text" :placeholder="t('upload_match_id_placeholder')"
                            class="bg-gray-700 border border-gray-600 rounded px-4 py-2 text-white text-center w-64 focus:border-yellow-400 focus:outline-none"
                            @keyup.enter="fetchMatchById">
                     <button @click="fetchMatchById" class="btn-primary" :disabled="!matchIdInput || uploading">
-                        获取数据
+                        {{ t('upload_fetch_btn') }}
                     </button>
                 </div>
-                <p class="text-gray-500 text-xs mt-2">通过 OpenDota API 获取比赛数据，无需上传录像文件</p>
+                <p class="text-gray-500 text-xs mt-2">{{ t('upload_opendota_hint') }}</p>
                 <div class="mt-4">
                     <button @click="loadDemo" class="text-sm text-gray-400 hover:text-yellow-400 underline">
-                        加载演示数据
+                        {{ t('upload_demo_btn') }}
                     </button>
                 </div>
                 <p v-if="uploadError" class="text-red-400 mt-4">{{ uploadError }}</p>
                 <div v-if="uploading" class="mt-4">
                     <div class="loading-spinner"></div>
-                    <p class="text-gray-400 mt-2">正在解析录像文件...</p>
+                    <p class="text-gray-400 mt-2">{{ t('upload_parsing') }}</p>
                 </div>
             </div>
         </div>
@@ -69,12 +73,16 @@
                     <!-- Top row: back button + data source badge -->
                     <div class="flex items-center justify-between mb-3">
                         <button @click="resetAnalysis" class="text-sm text-gray-300 hover:text-white opacity-80 hover:opacity-100 transition-opacity flex items-center gap-1">
-                            <span style="font-size:18px;">&#x2190;</span> 返回
+                            <span style="font-size:18px;">&#x2190;</span> {{ t('back') }}
                         </button>
                         <div class="flex items-center gap-2">
-                            <span v-if="parseSource === 'clarity'" class="text-xs bg-blue-900 bg-opacity-60 text-blue-300 px-2 py-1 rounded">本地解析</span>
-                            <span v-else-if="parseSource === 'opendota'" class="text-xs bg-green-900 bg-opacity-60 text-green-300 px-2 py-1 rounded">OpenDota API</span>
-                            <span v-else-if="parseSource === 'mock'" class="text-xs bg-yellow-900 bg-opacity-60 text-yellow-300 px-2 py-1 rounded">演示数据</span>
+                            <span v-if="parseSource === 'clarity'" class="text-xs bg-blue-900 bg-opacity-60 text-blue-300 px-2 py-1 rounded">{{ t('source_clarity_short') }}</span>
+                            <span v-else-if="parseSource === 'opendota'" class="text-xs bg-green-900 bg-opacity-60 text-green-300 px-2 py-1 rounded">{{ t('source_opendota') }}</span>
+                            <span v-else-if="parseSource === 'mock'" class="text-xs bg-yellow-900 bg-opacity-60 text-yellow-300 px-2 py-1 rounded">{{ t('source_mock') }}</span>
+                            <select v-model="locale" @change="onLocaleChange" class="text-xs bg-gray-700 bg-opacity-60 text-gray-300 px-2 py-1 rounded border border-gray-600 focus:border-yellow-400 focus:outline-none cursor-pointer">
+                                <option value="zh">中文</option>
+                                <option value="en">English</option>
+                            </select>
                         </div>
                     </div>
 
@@ -87,7 +95,7 @@
                                     <path v-if="overview.radiant_win" d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
                                     <path v-else d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
                                 </svg>
-                                <span class="od-victory-text">{{ overview.radiant_win ? '天辉胜利' : '夜魇胜利' }}</span>
+                                <span class="od-victory-text">{{ overview.radiant_win ? t('radiant_victory') : t('dire_victory') }}</span>
                             </div>
                         </div>
 
@@ -122,17 +130,13 @@
                             class="od-tab" :class="{ 'od-tab-active': activeTab === tab.id }">
                         {{ tab.label }}
                     </button>
-                    <button @click="activeTab = 'pro_compare'"
-                            class="od-tab" :class="{ 'od-tab-active': activeTab === 'pro_compare' }">
-                        职业对比
-                    </button>
                 </div>
             </div>
 
             <!-- Clarity parse note -->
             <div v-if="parseSource === 'clarity'" class="max-w-7xl mx-auto px-4 mt-4">
                 <div class="p-3 bg-blue-900 bg-opacity-30 border border-blue-800 rounded-lg text-sm text-blue-300">
-                    本地解析模式：部分高级数据（技能加点、表现评估、对线热力图等）需要 OpenDota API 才能获取，相关标签页可能显示为空。
+                    {{ t('clarity_note') }}
                 </div>
             </div>
 
@@ -142,15 +146,15 @@
                 <!-- ===== Radiant Table ===== -->
                 <div class="od-team-section mb-6">
                     <div class="od-team-header od-team-radiant">
-                        <span class="font-bold text-sm tracking-wide uppercase">天辉</span>
+                        <span class="font-bold text-sm tracking-wide uppercase">{{ t('radiant') }}</span>
                         <span v-if="overview.radiant_win" class="od-winner-badge">WINNER</span>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="od-table w-full">
                             <thead>
                                 <tr>
-                                    <th class="od-th od-th-hero text-left">英雄</th>
-                                    <th class="od-th od-th-narrow">等级</th>
+                                    <th class="od-th od-th-hero text-left">{{ t('hero') }}</th>
+                                    <th class="od-th od-th-narrow">{{ t('level') }}</th>
                                     <th class="od-th od-th-narrow">K</th>
                                     <th class="od-th od-th-narrow">D</th>
                                     <th class="od-th od-th-narrow">A</th>
@@ -160,7 +164,7 @@
                                     <th class="od-th od-th-dmg">HD</th>
                                     <th class="od-th od-th-dmg">TD</th>
                                     <th class="od-th od-th-dmg">HH</th>
-                                    <th class="od-th od-th-items2">装备</th>
+                                    <th class="od-th od-th-items2">{{ t('items_col') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -222,7 +226,7 @@
                                 </tr>
                                 <!-- Team totals row -->
                                 <tr class="od-row-totals">
-                                    <td class="od-td od-td-hero"><span class="od-totals-label">合计</span></td>
+                                    <td class="od-td od-td-hero"><span class="od-totals-label">{{ t('total') }}</span></td>
                                     <td class="od-td od-td-narrow"></td>
                                     <td class="od-td od-td-narrow od-text-kills od-text-bold">{{ teamSum(radiantPlayers, 'kills') }}</td>
                                     <td class="od-td od-td-narrow od-text-deaths od-text-bold">{{ teamSum(radiantPlayers, 'deaths') }}</td>
@@ -243,15 +247,15 @@
                 <!-- ===== Dire Table ===== -->
                 <div class="od-team-section mb-6">
                     <div class="od-team-header od-team-dire">
-                        <span class="font-bold text-sm tracking-wide uppercase">夜魇</span>
+                        <span class="font-bold text-sm tracking-wide uppercase">{{ t('dire') }}</span>
                         <span v-if="!overview.radiant_win" class="od-winner-badge">WINNER</span>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="od-table w-full">
                             <thead>
                                 <tr>
-                                    <th class="od-th od-th-hero text-left">英雄</th>
-                                    <th class="od-th od-th-narrow">等级</th>
+                                    <th class="od-th od-th-hero text-left">{{ t('hero') }}</th>
+                                    <th class="od-th od-th-narrow">{{ t('level') }}</th>
                                     <th class="od-th od-th-narrow">K</th>
                                     <th class="od-th od-th-narrow">D</th>
                                     <th class="od-th od-th-narrow">A</th>
@@ -261,7 +265,7 @@
                                     <th class="od-th od-th-dmg">HD</th>
                                     <th class="od-th od-th-dmg">TD</th>
                                     <th class="od-th od-th-dmg">HH</th>
-                                    <th class="od-th od-th-items2">装备</th>
+                                    <th class="od-th od-th-items2">{{ t('items_col') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -320,7 +324,7 @@
                                 </tr>
                                 <!-- Team totals row -->
                                 <tr class="od-row-totals">
-                                    <td class="od-td od-td-hero"><span class="od-totals-label">合计</span></td>
+                                    <td class="od-td od-td-hero"><span class="od-totals-label">{{ t('total') }}</span></td>
                                     <td class="od-td od-td-narrow"></td>
                                     <td class="od-td od-td-narrow od-text-kills od-text-bold">{{ teamSum(direPlayers, 'kills') }}</td>
                                     <td class="od-td od-td-narrow od-text-deaths od-text-bold">{{ teamSum(direPlayers, 'deaths') }}</td>
@@ -340,11 +344,11 @@
 
                 <!-- ===== Picks & Bans (combined, below both tables) ===== -->
                 <div v-if="draftData && draftData.has_draft" class="od-draft-section mb-6">
-                    <div class="od-draft-header">BP 顺序</div>
+                    <div class="od-draft-header">{{ t('draft_order') }}</div>
                     <div class="od-draft-grid">
                         <!-- Radiant drafts -->
                         <div class="od-draft-team">
-                            <span class="od-draft-team-label" style="color:#48bb78;">天辉</span>
+                            <span class="od-draft-team-label" style="color:#48bb78;">{{ t('radiant') }}</span>
                             <div class="od-draft-cards">
                                 <template v-for="(pb, idx) in draftData.picks_bans.filter(x => x.team === 'radiant')" :key="'rpb'+idx">
                                     <div class="od-draft-card" :class="pb.is_pick ? 'od-draft-pick' : 'od-draft-ban'">
@@ -360,7 +364,7 @@
                         </div>
                         <!-- Dire drafts -->
                         <div class="od-draft-team">
-                            <span class="od-draft-team-label" style="color:#fc8181;">夜魇</span>
+                            <span class="od-draft-team-label" style="color:#fc8181;">{{ t('dire') }}</span>
                             <div class="od-draft-cards">
                                 <template v-for="(pb, idx) in draftData.picks_bans.filter(x => x.team === 'dire')" :key="'dpb'+idx">
                                     <div class="od-draft-card" :class="pb.is_pick ? 'od-draft-pick' : 'od-draft-ban'">
@@ -381,7 +385,7 @@
                 <div v-if="(radiantPlayers.some(p => p.skills && p.skills.length > 0) || direPlayers.some(p => p.skills && p.skills.length > 0))"
                      class="od-ability-section mb-6">
                     <button class="od-ability-toggle" @click="showAbilityBuilds = !showAbilityBuilds">
-                        <span class="od-ability-toggle-text">技能加点</span>
+                        <span class="od-ability-toggle-text">{{ t('ability_build') }}</span>
                         <svg :class="{'od-chevron-open': showAbilityBuilds}" class="od-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="6 9 12 15 18 9"/>
                         </svg>
@@ -424,58 +428,58 @@
 
             <!-- Economy Chart -->
             <section v-if="activeTab === 'economy'" class="panel">
-                <h3 class="panel-title">经济/经验曲线</h3>
+                <h3 class="panel-title">{{ t('economy_title') }}</h3>
                 <template v-if="hasEconomyTimeline">
                     <div class="sub-tab-group mb-4">
                         <button @click="economyMode = 'gold_diff'"
                                 class="tab-btn" :class="{ 'tab-active': economyMode === 'gold_diff' }">
-                            经济差
+                            {{ t('economy_gold_diff') }}
                         </button>
                         <button @click="economyMode = 'gold_total'"
                                 class="tab-btn" :class="{ 'tab-active': economyMode === 'gold_total' }">
-                            经济总量
+                            {{ t('economy_gold_total') }}
                         </button>
                         <button @click="economyMode = 'xp_diff'"
                                 class="tab-btn" :class="{ 'tab-active': economyMode === 'xp_diff' }">
-                            经验差
+                            {{ t('economy_xp_diff') }}
                         </button>
                         <button @click="economyMode = 'xp_total'"
                                 class="tab-btn" :class="{ 'tab-active': economyMode === 'xp_total' }">
-                            经验总量
+                            {{ t('economy_xp_total') }}
                         </button>
                         <span class="sub-tab-divider"></span>
                         <button @click="economyMode = 'player_gold'"
                                 class="tab-btn" :class="{ 'tab-active': economyMode === 'player_gold' }">
-                            个人经济
+                            {{ t('economy_player_gold') }}
                         </button>
                         <button @click="economyMode = 'player_xp'"
                                 class="tab-btn" :class="{ 'tab-active': economyMode === 'player_xp' }">
-                            个人经验
+                            {{ t('economy_player_xp') }}
                         </button>
                         <button @click="economyMode = 'player_lh'"
                                 class="tab-btn" :class="{ 'tab-active': economyMode === 'player_lh' }">
-                            个人补刀
+                            {{ t('economy_player_lh') }}
                         </button>
                     </div>
                     <div class="text-xs text-gray-500 mb-2" v-if="economyMode === 'gold_diff' || economyMode === 'xp_diff'">
-                        正值 = 天辉领先，负值 = 夜魇领先
+                        {{ t('economy_diff_hint') }}
                     </div>
                     <div ref="economyChart" style="width: 100%; height: 400px;"></div>
                 </template>
                 <div v-else class="empty-state">
                     <div class="empty-state-icon">📈</div>
-                    <p class="empty-state-title">经济/经验曲线数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供分钟级经济经验数据，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('economy_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('economy_empty_desc') }}</p>
                 </div>
             </section>
 
             <!-- Item Builds -->
             <section v-if="activeTab === 'items'" class="panel">
-                <h3 class="panel-title">出装分析</h3>
+                <h3 class="panel-title">{{ t('items_title') }}</h3>
                 <div v-if="!hasItemBuilds" class="empty-state">
                     <div class="empty-state-icon">🛡</div>
-                    <p class="empty-state-title">出装数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供详细出装时间线数据</p>
+                    <p class="empty-state-title">{{ t('items_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('items_empty_desc') }}</p>
                 </div>
                 <div v-for="player in (analysisData.item_builds || [])" :key="player.player_slot"
                      class="player-card" :class="player.team === 'radiant' ? 'player-card-radiant' : 'player-card-dire'">
@@ -523,11 +527,11 @@
 
             <!-- Skill Builds -->
             <section v-if="activeTab === 'skills'" class="panel">
-                <h3 class="panel-title">加点分析</h3>
+                <h3 class="panel-title">{{ t('skills_title') }}</h3>
                 <div v-if="!hasSkillBuilds" class="empty-state">
                     <div class="empty-state-icon">⚡</div>
-                    <p class="empty-state-title">技能加点数据暂不可用</p>
-                    <p class="empty-state-desc">本地 Clarity 解析暂不提供技能加点数据，请通过 OpenDota API 获取</p>
+                    <p class="empty-state-title">{{ t('skills_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('skills_empty_desc') }}</p>
                 </div>
                 <div v-for="player in (analysisData.skill_builds || [])" :key="player.player_slot"
                      class="player-card" :class="player.team === 'radiant' ? 'player-card-radiant' : 'player-card-dire'">
@@ -552,17 +556,17 @@
                             <span class="text-xs font-bold">{{ idx + 1 }}</span>
                         </div>
                     </div>
-                    <div v-else class="text-gray-600 text-sm">技能加点数据不可用</div>
+                    <div v-else class="text-gray-600 text-sm">{{ t('skills_unavailable') }}</div>
                 </div>
             </section>
 
             <!-- Ward Map -->
             <section v-if="activeTab === 'wards'" class="panel">
-                <h3 class="panel-title">眼位分析</h3>
+                <h3 class="panel-title">{{ t('wards_title') }}</h3>
                 <div v-if="!hasWardData" class="empty-state">
                     <div class="empty-state-icon">👁</div>
-                    <p class="empty-state-title">眼位数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供眼位数据，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('wards_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('wards_empty_desc') }}</p>
                 </div>
 
                 <!-- Filter Controls -->
@@ -570,54 +574,54 @@
                     <label>
                         <input type="checkbox" v-model="wardFilters.observers">
                         <span class="ward-legend ward-obs"></span>
-                        <span class="text-yellow-400">侦查守卫 ({{ wardStats.totalObs }})</span>
+                        <span class="text-yellow-400">{{ t('wards_observer') }} ({{ wardStats.totalObs }})</span>
                     </label>
                     <label>
                         <input type="checkbox" v-model="wardFilters.sentries">
                         <span class="ward-legend ward-sent"></span>
-                        <span class="text-blue-400">岗哨守卫 ({{ wardStats.totalSent }})</span>
+                        <span class="text-blue-400">{{ t('wards_sentry') }} ({{ wardStats.totalSent }})</span>
                     </label>
                     <label>
                         <input type="checkbox" v-model="wardFilters.radiant">
-                        <span class="text-green-400">天辉</span>
+                        <span class="text-green-400">{{ t('radiant') }}</span>
                     </label>
                     <label>
                         <input type="checkbox" v-model="wardFilters.dire">
-                        <span class="text-red-400">夜魇</span>
+                        <span class="text-red-400">{{ t('dire') }}</span>
                     </label>
                     <span class="filter-divider"></span>
                     <label>
                         <input type="checkbox" v-model="wardTimelineEnabled">
-                        <span class="text-purple-400">时间轴</span>
+                        <span class="text-purple-400">{{ t('wards_timeline') }}</span>
                     </label>
                     <label>
                         <input type="checkbox" v-model="wardShowVision">
-                        <span class="text-blue-300">视野范围</span>
+                        <span class="text-blue-300">{{ t('wards_vision_range') }}</span>
                     </label>
                 </div>
 
                 <!-- Ward Statistics -->
                 <div v-if="hasWardData && analysisData.wards.radiant" class="grid grid-cols-2 gap-4 mb-4">
                     <div class="stat-card stat-card-radiant">
-                        <p class="text-green-400 text-xs font-bold mb-2 uppercase tracking-wider">天辉眼位</p>
+                        <p class="text-green-400 text-xs font-bold mb-2 uppercase tracking-wider">{{ t('wards_radiant') }}</p>
                         <div class="grid grid-cols-2 gap-2 text-xs">
-                            <div class="text-gray-400">侦查: <span class="text-yellow-400 font-semibold">{{ analysisData.wards.radiant.total_obs }}</span></div>
-                            <div class="text-gray-400">岗哨: <span class="text-blue-400 font-semibold">{{ analysisData.wards.radiant.total_sent }}</span></div>
-                            <div class="text-gray-400">被反(侦查): <span class="text-red-400">{{ analysisData.wards.radiant.dewarded_obs }}</span></div>
-                            <div class="text-gray-400">被反(岗哨): <span class="text-red-400">{{ analysisData.wards.radiant.dewarded_sent }}</span></div>
-                            <div class="text-gray-400">侦查均活: <span class="text-gray-300">{{ analysisData.wards.radiant.avg_obs_lifetime }}s</span></div>
-                            <div class="text-gray-400">岗哨均活: <span class="text-gray-300">{{ analysisData.wards.radiant.avg_sent_lifetime }}s</span></div>
+                            <div class="text-gray-400">{{ t('wards_obs_short') }}: <span class="text-yellow-400 font-semibold">{{ analysisData.wards.radiant.total_obs }}</span></div>
+                            <div class="text-gray-400">{{ t('wards_sen_short') }}: <span class="text-blue-400 font-semibold">{{ analysisData.wards.radiant.total_sent }}</span></div>
+                            <div class="text-gray-400">{{ t('wards_dewarded_obs') }}: <span class="text-red-400">{{ analysisData.wards.radiant.dewarded_obs }}</span></div>
+                            <div class="text-gray-400">{{ t('wards_dewarded_sen') }}: <span class="text-red-400">{{ analysisData.wards.radiant.dewarded_sent }}</span></div>
+                            <div class="text-gray-400">{{ t('wards_avg_obs_life') }}: <span class="text-gray-300">{{ analysisData.wards.radiant.avg_obs_lifetime }}s</span></div>
+                            <div class="text-gray-400">{{ t('wards_avg_sen_life') }}: <span class="text-gray-300">{{ analysisData.wards.radiant.avg_sent_lifetime }}s</span></div>
                         </div>
                     </div>
                     <div class="stat-card stat-card-dire">
-                        <p class="text-red-400 text-xs font-bold mb-2 uppercase tracking-wider">夜魇眼位</p>
+                        <p class="text-red-400 text-xs font-bold mb-2 uppercase tracking-wider">{{ t('wards_dire') }}</p>
                         <div class="grid grid-cols-2 gap-2 text-xs">
-                            <div class="text-gray-400">侦查: <span class="text-yellow-400 font-semibold">{{ analysisData.wards.dire.total_obs }}</span></div>
-                            <div class="text-gray-400">岗哨: <span class="text-blue-400 font-semibold">{{ analysisData.wards.dire.total_sent }}</span></div>
-                            <div class="text-gray-400">被反(侦查): <span class="text-red-400">{{ analysisData.wards.dire.dewarded_obs }}</span></div>
-                            <div class="text-gray-400">被反(岗哨): <span class="text-red-400">{{ analysisData.wards.dire.dewarded_sent }}</span></div>
-                            <div class="text-gray-400">侦查均活: <span class="text-gray-300">{{ analysisData.wards.dire.avg_obs_lifetime }}s</span></div>
-                            <div class="text-gray-400">岗哨均活: <span class="text-gray-300">{{ analysisData.wards.dire.avg_sent_lifetime }}s</span></div>
+                            <div class="text-gray-400">{{ t('wards_obs_short') }}: <span class="text-yellow-400 font-semibold">{{ analysisData.wards.dire.total_obs }}</span></div>
+                            <div class="text-gray-400">{{ t('wards_sen_short') }}: <span class="text-blue-400 font-semibold">{{ analysisData.wards.dire.total_sent }}</span></div>
+                            <div class="text-gray-400">{{ t('wards_dewarded_obs') }}: <span class="text-red-400">{{ analysisData.wards.dire.dewarded_obs }}</span></div>
+                            <div class="text-gray-400">{{ t('wards_dewarded_sen') }}: <span class="text-red-400">{{ analysisData.wards.dire.dewarded_sent }}</span></div>
+                            <div class="text-gray-400">{{ t('wards_avg_obs_life') }}: <span class="text-gray-300">{{ analysisData.wards.dire.avg_obs_lifetime }}s</span></div>
+                            <div class="text-gray-400">{{ t('wards_avg_sen_life') }}: <span class="text-gray-300">{{ analysisData.wards.dire.avg_sent_lifetime }}s</span></div>
                         </div>
                     </div>
                 </div>
@@ -635,7 +639,7 @@
                         <span class="text-gray-500 text-sm w-14 font-mono text-right">{{ formatGameTime(wardMatchDuration) }}</span>
                     </div>
                     <div class="text-center text-xs text-gray-500 mt-1">
-                        活跃眼位: <span class="text-yellow-400">{{ timelineWards.length }}</span> / {{ filteredWards.length }}
+                        {{ t('wards_active') }}: <span class="text-yellow-400">{{ timelineWards.length }}</span> / {{ filteredWards.length }}
                     </div>
                 </div>
 
@@ -646,7 +650,7 @@
 
                 <!-- Ward List -->
                 <div v-if="hasWardData" class="mt-6">
-                    <h4 class="text-lg font-semibold mb-3">眼位时间线</h4>
+                    <h4 class="text-lg font-semibold mb-3">{{ t('wards_timeline_title') }}</h4>
                     <div class="max-h-96 overflow-y-auto custom-scroll">
                         <div v-for="ward in filteredWards" :key="ward.time + '' + ward.x"
                              class="flex items-center gap-3 py-1.5 text-sm border-b border-gray-800">
@@ -658,11 +662,11 @@
                                   class="flex-1 truncate">{{ ward.hero_name }}</span>
                             <span v-if="ward.destroyed_time != null"
                                   class="text-red-500 text-xs font-mono"
-                                  :title="'存活 ' + (ward.destroyed_time - ward.time) + '秒'">
-                                被反 {{ formatGameTime(ward.destroyed_time) }}
+                                  :title="t('wards_alive') + ' ' + (ward.destroyed_time - ward.time) + 's'">
+                                {{ t('wards_dewarded') }} {{ formatGameTime(ward.destroyed_time) }}
                             </span>
                             <span class="text-gray-500 text-xs">
-                                {{ ward.ward_type === 'observer' ? '侦查' : '岗哨' }}
+                                {{ ward.ward_type === 'observer' ? t('wards_obs_short') : t('wards_sen_short') }}
                             </span>
                         </div>
                     </div>
@@ -671,39 +675,39 @@
 
             <!-- Smoke Analysis -->
             <section v-if="activeTab === 'smokes'" class="panel">
-                <h3 class="panel-title">开雾分析</h3>
+                <h3 class="panel-title">{{ t('smokes_title') }}</h3>
                 <div v-if="!hasSmokeData" class="empty-state">
                     <div class="empty-state-icon">💨</div>
-                    <p class="empty-state-title">开雾数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供开雾事件数据，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('smokes_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('smokes_empty_desc') }}</p>
                 </div>
 
                 <!-- Stats Summary with Success Rate -->
                 <div v-if="hasSmokeData" class="grid grid-cols-2 gap-4 mb-4">
                     <div class="stat-card stat-card-radiant text-center">
                         <p class="text-green-400 text-3xl font-bold">{{ smokeData.radiant.total }}</p>
-                        <p class="text-green-400 text-xs uppercase tracking-wider font-semibold mt-1">天辉用雾</p>
+                        <p class="text-green-400 text-xs uppercase tracking-wider font-semibold mt-1">{{ t('smokes_radiant') }}</p>
                         <div class="mt-2 text-xs text-gray-400">
-                            <span class="text-green-300 font-bold">{{ smokeData.radiant.success_rate }}%</span> 成功率
+                            <span class="text-green-300 font-bold">{{ smokeData.radiant.success_rate }}%</span> {{ t('smokes_success_rate') }}
                             <span class="mx-1 opacity-30">|</span>
-                            击杀 <span class="text-green-300">{{ smokeData.radiant.kills }}</span>
+                            {{ t('smokes_kills') }} <span class="text-green-300">{{ smokeData.radiant.kills }}</span>
                             <span class="mx-1 opacity-30">|</span>
-                            目标 <span class="text-blue-300">{{ smokeData.radiant.objectives }}</span>
+                            {{ t('smokes_objective') }} <span class="text-blue-300">{{ smokeData.radiant.objectives }}</span>
                             <span class="mx-1 opacity-30">|</span>
-                            无效 <span class="text-gray-500">{{ smokeData.radiant.no_contact }}</span>
+                            {{ t('smokes_no_contact') }} <span class="text-gray-500">{{ smokeData.radiant.no_contact }}</span>
                         </div>
                     </div>
                     <div class="stat-card stat-card-dire text-center">
                         <p class="text-red-400 text-3xl font-bold">{{ smokeData.dire.total }}</p>
-                        <p class="text-red-400 text-xs uppercase tracking-wider font-semibold mt-1">夜魇用雾</p>
+                        <p class="text-red-400 text-xs uppercase tracking-wider font-semibold mt-1">{{ t('smokes_dire') }}</p>
                         <div class="mt-2 text-xs text-gray-400">
-                            <span class="text-red-300 font-bold">{{ smokeData.dire.success_rate }}%</span> 成功率
+                            <span class="text-red-300 font-bold">{{ smokeData.dire.success_rate }}%</span> {{ t('smokes_success_rate') }}
                             <span class="mx-1 opacity-30">|</span>
-                            击杀 <span class="text-red-300">{{ smokeData.dire.kills }}</span>
+                            {{ t('smokes_kills') }} <span class="text-red-300">{{ smokeData.dire.kills }}</span>
                             <span class="mx-1 opacity-30">|</span>
-                            目标 <span class="text-blue-300">{{ smokeData.dire.objectives }}</span>
+                            {{ t('smokes_objective') }} <span class="text-blue-300">{{ smokeData.dire.objectives }}</span>
                             <span class="mx-1 opacity-30">|</span>
-                            无效 <span class="text-gray-500">{{ smokeData.dire.no_contact }}</span>
+                            {{ t('smokes_no_contact') }} <span class="text-gray-500">{{ smokeData.dire.no_contact }}</span>
                         </div>
                     </div>
                 </div>
@@ -712,7 +716,7 @@
                 <div v-if="hasSmokeData" class="filter-bar mb-4">
                     <label>
                         <input type="checkbox" v-model="smokeTimelineEnabled">
-                        <span class="text-purple-400">时间轴模式</span>
+                        <span class="text-purple-400">{{ t('smokes_timeline_mode') }}</span>
                     </label>
                 </div>
 
@@ -734,10 +738,10 @@
                 <div v-if="hasSmokeData" class="flex flex-col items-center mb-4">
                     <div ref="smokeMapRef" class="ward-map-container ward-map-large"></div>
                     <div class="flex gap-6 mt-2 text-xs text-gray-400">
-                        <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-green-400"></span> 天辉开雾</span>
-                        <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-red-400"></span> 夜魇开雾</span>
-                        <span class="flex items-center gap-1"><span class="inline-block w-2 h-2" style="border: 2px dashed #a0aec0;"></span> 移动路径</span>
-                        <span class="flex items-center gap-1"><span class="inline-block w-0 h-0" style="border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid #a0aec0;"></span> 烟破位置</span>
+                        <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-green-400"></span> {{ t('smokes_radiant_legend') }}</span>
+                        <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-red-400"></span> {{ t('smokes_dire_legend') }}</span>
+                        <span class="flex items-center gap-1"><span class="inline-block w-2 h-2" style="border: 2px dashed #a0aec0;"></span> {{ t('smokes_movement_path') }}</span>
+                        <span class="flex items-center gap-1"><span class="inline-block w-0 h-0" style="border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid #a0aec0;"></span> {{ t('smokes_break_point') }}</span>
                     </div>
                 </div>
 
@@ -747,16 +751,16 @@
                 <!-- Detail list -->
                 <div v-if="hasSmokeData" class="mt-4">
                     <div class="flex items-center justify-between mb-3">
-                        <h4 class="text-lg font-semibold">详细记录</h4>
+                        <h4 class="text-lg font-semibold">{{ t('smokes_detail_records') }}</h4>
                         <div class="flex items-center gap-3">
-                            <span class="text-xs text-gray-500">点击选择显示</span>
+                            <span class="text-xs text-gray-500">{{ t('smokes_click_to_select') }}</span>
                             <span v-if="smokeSelected.length > 0" class="text-xs text-yellow-400">
-                                已选 {{ smokeSelected.length }}/{{ smokeData.timeline.length }}
+                                {{ t('smokes_selected') }} {{ smokeSelected.length }}/{{ smokeData.timeline.length }}
                             </span>
                             <button v-if="smokeSelected.length > 0"
                                     @click="clearSmokeSelection()"
                                     class="text-xs text-gray-400 hover:text-white px-2 py-0.5 bg-gray-700 rounded transition-colors">
-                                显示全部
+                                {{ t('smokes_show_all') }}
                             </button>
                         </div>
                     </div>
@@ -770,13 +774,13 @@
                              }">
                             <span class="text-gray-500 w-14 font-mono text-sm">{{ smoke.time_str }}</span>
                             <span :class="smoke.team === 'radiant' ? 'text-green-400' : 'text-red-400'"
-                                  class="w-10 text-sm font-bold">{{ smoke.team === 'radiant' ? '天辉' : '夜魇' }}</span>
-                            <span v-if="smoke.duration" class="text-gray-500 text-xs w-12">{{ smoke.duration }}秒</span>
+                                  class="w-10 text-sm font-bold">{{ smoke.team === 'radiant' ? t('radiant') : t('dire') }}</span>
+                            <span v-if="smoke.duration" class="text-gray-500 text-xs w-12">{{ smoke.duration }}{{ t('smokes_seconds_suffix') }}</span>
                             <span class="text-xs px-1.5 py-0.5 rounded font-bold"
                                   :style="{ color: smokeResultColor(smoke.result), border: '1px solid ' + smokeResultColor(smoke.result) }">
                                 {{ smokeResultLabel(smoke.result) }}
-                                <template v-if="smoke.kills_gained > 0"> {{ smoke.kills_gained }}杀</template>
-                                <template v-if="smoke.objective_taken"> {{ smoke.objective_taken === 'roshan' ? '肉山' : '推塔' }}</template>
+                                <template v-if="smoke.kills_gained > 0"> {{ smoke.kills_gained }} {{ t('smokes_kills_suffix') }}</template>
+                                <template v-if="smoke.objective_taken"> {{ smoke.objective_taken === 'roshan' ? t('smokes_roshan') : t('smokes_tower') }}</template>
                             </span>
                             <div class="flex items-center gap-1 flex-wrap flex-1">
                                 <template v-for="(p, i) in smoke.participants" :key="p.player_slot">
@@ -794,11 +798,11 @@
 
             <!-- Teamfights -->
             <section v-if="activeTab === 'teamfights'" class="panel">
-                <h3 class="panel-title">团战分析</h3>
+                <h3 class="panel-title">{{ t('teamfights_title') }}</h3>
                 <div v-if="!hasTeamfightData" class="empty-state">
                     <div class="empty-state-icon">⚔</div>
-                    <p class="empty-state-title">团战数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供团战详情数据，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('teamfights_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('teamfights_empty_desc') }}</p>
                 </div>
                 <div v-if="hasTeamfightData" class="sub-tab-group mb-4" style="overflow-x:auto;">
                     <button v-for="tf in teamfightData" :key="tf.index"
@@ -821,7 +825,7 @@
                         <!-- Replay Controls -->
                         <div class="teamfight-replay-bar mt-3">
                             <div class="flex items-center gap-3">
-                                <button @click="toggleTeamfightPlay()" class="replay-play-btn" :title="teamfightPlaying ? '暂停' : '播放'">
+                                <button @click="toggleTeamfightPlay()" class="replay-play-btn" :title="teamfightPlaying ? t('teamfights_pause') : t('teamfights_play')">
                                     {{ teamfightPlaying ? '⏸' : '▶' }}
                                 </button>
                                 <span class="text-yellow-400 text-sm w-10 font-mono font-bold">{{ formatGameTime(teamfightReplayTime) }}</span>
@@ -835,7 +839,7 @@
                             </div>
                             <!-- Speed controls -->
                             <div class="flex items-center gap-2 mt-2 justify-center">
-                                <span class="text-gray-500 text-xs">倍速:</span>
+                                <span class="text-gray-500 text-xs">{{ t('teamfights_speed') }}:</span>
                                 <button v-for="speed in [0.25, 0.5, 1, 2]" :key="speed"
                                         @click="teamfightPlaySpeed = speed"
                                         class="speed-btn"
@@ -847,21 +851,21 @@
 
                         <!-- Map Legend -->
                         <div class="flex gap-4 mt-2 text-xs text-gray-400 justify-center">
-                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-green-400"></span> 天辉</span>
-                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-red-400"></span> 夜魇</span>
-                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm bg-yellow-400" style="transform: rotate(45deg); width: 8px; height: 8px;"></span> 技能</span>
+                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-green-400"></span> {{ t('radiant') }}</span>
+                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-red-400"></span> {{ t('dire') }}</span>
+                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm bg-yellow-400" style="transform: rotate(45deg); width: 8px; height: 8px;"></span> {{ t('teamfights_abilities') }}</span>
                         </div>
                     </div>
                     <div>
                         <div class="mb-4 text-sm text-gray-400">
-                            时间: <span class="text-white">{{ currentTeamfight.start_time_str }}</span>
-                            &nbsp;|&nbsp; 持续: <span class="text-white">{{ currentTeamfight.duration }}秒</span>
-                            &nbsp;|&nbsp; 结果:
+                            {{ t('teamfights_time') }}: <span class="text-white">{{ currentTeamfight.start_time_str }}</span>
+                            &nbsp;|&nbsp; {{ t('teamfights_duration') }}: <span class="text-white">{{ currentTeamfight.duration }}{{ t('smokes_seconds_suffix') }}</span>
+                            &nbsp;|&nbsp; {{ t('teamfights_result') }}:
                             <span class="font-bold" :class="currentTeamfight.winner === 'radiant' ? 'text-green-400' : 'text-red-400'">
-                                {{ currentTeamfight.winner === 'radiant' ? '天辉胜' : currentTeamfight.winner === 'dire' ? '夜魇胜' : '平局' }}
+                                {{ currentTeamfight.winner === 'radiant' ? t('teamfights_radiant_win') : currentTeamfight.winner === 'dire' ? t('teamfights_dire_win') : t('teamfights_draw') }}
                             </span>
                             <template v-if="currentTeamfight.gold_delta">
-                                &nbsp;|&nbsp; 经济变化:
+                                &nbsp;|&nbsp; {{ t('teamfights_gold_change') }}:
                                 <span class="font-bold" :class="currentTeamfight.gold_delta >= 0 ? 'text-yellow-400' : 'text-yellow-600'">
                                     {{ currentTeamfight.gold_delta >= 0 ? '+' : '' }}{{ formatNumber(currentTeamfight.gold_delta) }}
                                 </span>
@@ -870,7 +874,7 @@
 
                         <!-- Kill Timeline -->
                         <div v-if="currentTeamfight.kill_timeline && currentTeamfight.kill_timeline.length > 0" class="mb-4">
-                            <h4 class="text-xs text-gray-500 uppercase tracking-wider mb-2">击杀顺序</h4>
+                            <h4 class="text-xs text-gray-500 uppercase tracking-wider mb-2">{{ t('teamfights_kill_order') }}</h4>
                             <div class="kill-timeline">
                                 <div v-for="(kill, idx) in currentTeamfight.kill_timeline" :key="idx"
                                      class="kill-event"
@@ -891,13 +895,13 @@
                         <table class="w-full text-sm">
                             <thead>
                                 <tr class="text-gray-400 border-b border-gray-700">
-                                    <th class="text-left py-1">英雄</th>
+                                    <th class="text-left py-1">{{ t('teamfights_hero') }}</th>
                                     <th class="py-1">K/D</th>
-                                    <th class="py-1">输出</th>
-                                    <th class="py-1">承受</th>
-                                    <th class="py-1">治疗</th>
-                                    <th class="py-1">经济</th>
-                                    <th class="text-left py-1">技能</th>
+                                    <th class="py-1">{{ t('teamfights_damage') }}</th>
+                                    <th class="py-1">{{ t('teamfights_taken') }}</th>
+                                    <th class="py-1">{{ t('teamfights_healing') }}</th>
+                                    <th class="py-1">{{ t('teamfights_gold') }}</th>
+                                    <th class="text-left py-1">{{ t('teamfights_abilities') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -930,11 +934,11 @@
 
             <!-- Laning -->
             <section v-if="activeTab === 'laning'" class="panel">
-                <h3 class="panel-title">对线分析</h3>
+                <h3 class="panel-title">{{ t('laning_title') }}</h3>
                 <div v-if="!hasLaningData" class="empty-state">
                     <div class="empty-state-icon">🗺</div>
-                    <p class="empty-state-title">对线数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供对线期详细数据，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('laning_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('laning_empty_desc') }}</p>
                 </div>
                 <div v-if="hasLaningData">
                     <!-- Laning Stats Table (enhanced) -->
@@ -942,21 +946,21 @@
                         <table class="w-full text-sm">
                             <thead>
                                 <tr class="text-gray-400 border-b border-gray-700">
-                                    <th class="text-left py-2 px-2">英雄</th>
-                                    <th class="py-2 px-1">路线</th>
-                                    <th class="py-2 px-1">效率</th>
+                                    <th class="text-left py-2 px-2">{{ t('hero') }}</th>
+                                    <th class="py-2 px-1">{{ t('laning_lane') }}</th>
+                                    <th class="py-2 px-1">{{ t('laning_efficiency') }}</th>
                                     <th class="py-2 px-1">LH@10</th>
                                     <th class="py-2 px-1">DN@10</th>
-                                    <th class="py-2 px-1">10分经济</th>
-                                    <th class="py-2 px-1">10分经验</th>
-                                    <th class="py-2 px-1">伤害输出</th>
-                                    <th class="py-2 px-1">伤害承受</th>
-                                    <th class="py-2 px-1">回复道具</th>
+                                    <th class="py-2 px-1">{{ t('laning_gold_10') }}</th>
+                                    <th class="py-2 px-1">{{ t('laning_xp_10') }}</th>
+                                    <th class="py-2 px-1">{{ t('laning_dmg_dealt') }}</th>
+                                    <th class="py-2 px-1">{{ t('laning_dmg_taken') }}</th>
+                                    <th class="py-2 px-1">{{ t('laning_regen_items') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr class="border-b border-gray-700">
-                                    <td colspan="10" class="py-1 px-2 text-green-400 font-bold text-xs uppercase tracking-wider">天辉</td>
+                                    <td colspan="10" class="py-1 px-2 text-green-400 font-bold text-xs uppercase tracking-wider">{{ t('radiant') }}</td>
                                 </tr>
                                 <tr v-for="p in laningRadiant" :key="p.player_slot"
                                     class="border-b border-gray-800 hover:bg-gray-750 cursor-pointer"
@@ -968,7 +972,7 @@
                                             <span class="text-yellow-300 text-xs">{{ p.hero_name }}</span>
                                         </div>
                                     </td>
-                                    <td class="py-2 px-1 text-center text-xs">{{ p.lane_name }}</td>
+                                    <td class="py-2 px-1 text-center text-xs">{{ translateLaneName(p) }}</td>
                                     <td class="py-2 px-1 text-center">
                                         <span :class="p.lane_efficiency_pct >= 60 ? 'text-green-400' : p.lane_efficiency_pct >= 40 ? 'text-yellow-400' : 'text-red-400'">
                                             {{ p.lane_efficiency_pct.toFixed(0) }}%
@@ -983,7 +987,7 @@
                                     <td class="py-2 px-1 text-center text-blue-400">{{ p.regen_items_used || 0 }}</td>
                                 </tr>
                                 <tr class="border-b border-gray-700">
-                                    <td colspan="10" class="py-1 px-2 text-red-400 font-bold text-xs uppercase tracking-wider">夜魇</td>
+                                    <td colspan="10" class="py-1 px-2 text-red-400 font-bold text-xs uppercase tracking-wider">{{ t('dire') }}</td>
                                 </tr>
                                 <tr v-for="p in laningDire" :key="p.player_slot"
                                     class="border-b border-gray-800 hover:bg-gray-750 cursor-pointer"
@@ -995,7 +999,7 @@
                                             <span class="text-yellow-300 text-xs">{{ p.hero_name }}</span>
                                         </div>
                                     </td>
-                                    <td class="py-2 px-1 text-center text-xs">{{ p.lane_name }}</td>
+                                    <td class="py-2 px-1 text-center text-xs">{{ translateLaneName(p) }}</td>
                                     <td class="py-2 px-1 text-center">
                                         <span :class="p.lane_efficiency_pct >= 60 ? 'text-green-400' : p.lane_efficiency_pct >= 40 ? 'text-yellow-400' : 'text-red-400'">
                                             {{ p.lane_efficiency_pct.toFixed(0) }}%
@@ -1028,33 +1032,33 @@
                     <!-- Heatmap Section -->
                     <div class="flex flex-col items-center">
                         <div ref="laningHeatmap" class="ward-map-container" style="max-width:400px;"></div>
-                        <p class="text-xs text-gray-500 mt-2">点击上方英雄查看对线期位置热力图</p>
+                        <p class="text-xs text-gray-500 mt-2">{{ t('laning_heatmap_hint') }}</p>
                     </div>
                 </div>
             </section>
 
             <!-- Combat -->
             <section v-if="activeTab === 'combat'" class="panel">
-                <h3 class="panel-title">战斗分析</h3>
+                <h3 class="panel-title">{{ t('combat_title') }}</h3>
                 <div v-if="!hasCombatData" class="empty-state">
                     <div class="empty-state-icon">⚔</div>
-                    <p class="empty-state-title">战斗数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供击杀/伤害矩阵数据，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('combat_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('combat_empty_desc') }}</p>
                 </div>
                 <template v-if="hasCombatData">
                 <div class="sub-tab-group mb-4">
-                    <button @click="combatMode = 'kills'" class="tab-btn" :class="{ 'tab-active': combatMode === 'kills' }">击杀矩阵</button>
-                    <button @click="combatMode = 'damage'" class="tab-btn" :class="{ 'tab-active': combatMode === 'damage' }">伤害矩阵</button>
+                    <button @click="combatMode = 'kills'" class="tab-btn" :class="{ 'tab-active': combatMode === 'kills' }">{{ t('combat_kill_matrix') }}</button>
+                    <button @click="combatMode = 'damage'" class="tab-btn" :class="{ 'tab-active': combatMode === 'damage' }">{{ t('combat_damage_matrix') }}</button>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="text-xs" v-if="combatMatrix">
                         <thead>
                             <tr>
-                                <th class="p-1 text-gray-500 text-left">{{ combatMode === 'kills' ? '击杀 →' : '伤害 →' }}</th>
+                                <th class="p-1 text-gray-500 text-left">{{ combatMode === 'kills' ? t('combat_kills_arrow') : t('combat_damage_arrow') }}</th>
                                 <th v-for="h in combatMatrix.heroes" :key="h" class="p-1 text-center" style="min-width:50px;">
                                     <img :src="heroIcon(heroSlugByName(h))" class="hero-icon-sm mx-auto" :title="h" @error="e => e.target.style.display='none'">
                                 </th>
-                                <th class="p-1 text-yellow-400 text-center">合计</th>
+                                <th class="p-1 text-yellow-400 text-center">{{ t('total') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1082,31 +1086,31 @@
 
             <!-- Farm -->
             <section v-if="activeTab === 'farm'" class="panel">
-                <h3 class="panel-title">经济来源</h3>
+                <h3 class="panel-title">{{ t('farm_title') }}</h3>
                 <div v-if="!hasFarmData" class="empty-state">
                     <div class="empty-state-icon">💰</div>
-                    <p class="empty-state-title">经济来源数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供经济来源详情，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('farm_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('farm_empty_desc') }}</p>
                 </div>
                 <div v-if="hasFarmData" class="sub-tab-group mb-4">
-                    <button @click="farmMode = 'gold'" class="tab-btn" :class="{ 'tab-active': farmMode === 'gold' }">经济来源</button>
-                    <button @click="farmMode = 'xp'" class="tab-btn" :class="{ 'tab-active': farmMode === 'xp' }">经验来源</button>
-                    <button @click="farmMode = 'units'" class="tab-btn" :class="{ 'tab-active': farmMode === 'units' }">击杀单位</button>
-                    <button @click="farmMode = 'lh'" class="tab-btn" :class="{ 'tab-active': farmMode === 'lh' }">补刀曲线</button>
+                    <button @click="farmMode = 'gold'" class="tab-btn" :class="{ 'tab-active': farmMode === 'gold' }">{{ t('farm_gold_sources') }}</button>
+                    <button @click="farmMode = 'xp'" class="tab-btn" :class="{ 'tab-active': farmMode === 'xp' }">{{ t('farm_xp_sources') }}</button>
+                    <button @click="farmMode = 'units'" class="tab-btn" :class="{ 'tab-active': farmMode === 'units' }">{{ t('farm_unit_kills') }}</button>
+                    <button @click="farmMode = 'lh'" class="tab-btn" :class="{ 'tab-active': farmMode === 'lh' }">{{ t('farm_lh_timeline') }}</button>
                 </div>
                 <div v-if="hasFarmData && (farmMode === 'gold' || farmMode === 'xp')" ref="farmReasonChart" style="width:100%;height:400px;"></div>
                 <div v-if="hasFarmData && farmMode === 'units'">
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="text-gray-400 border-b border-gray-700">
-                                <th class="text-left py-2 px-2">英雄</th>
-                                <th class="py-2 px-1">英雄</th>
-                                <th class="py-2 px-1">小兵</th>
-                                <th class="py-2 px-1">中立</th>
-                                <th class="py-2 px-1">远古</th>
-                                <th class="py-2 px-1">塔</th>
-                                <th class="py-2 px-1">肉山</th>
-                                <th class="py-2 px-1">信使</th>
+                                <th class="text-left py-2 px-2">{{ t('hero') }}</th>
+                                <th class="py-2 px-1">{{ t('farm_heroes') }}</th>
+                                <th class="py-2 px-1">{{ t('farm_creeps') }}</th>
+                                <th class="py-2 px-1">{{ t('farm_neutrals') }}</th>
+                                <th class="py-2 px-1">{{ t('farm_ancients') }}</th>
+                                <th class="py-2 px-1">{{ t('farm_towers') }}</th>
+                                <th class="py-2 px-1">{{ t('farm_roshan') }}</th>
+                                <th class="py-2 px-1">{{ t('farm_courier') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1133,11 +1137,11 @@
 
             <!-- Purchases -->
             <section v-if="activeTab === 'purchases'" class="panel">
-                <h3 class="panel-title">物品购买时间线</h3>
+                <h3 class="panel-title">{{ t('purchases_title') }}</h3>
                 <div v-if="!hasPurchaseData" class="empty-state">
                     <div class="empty-state-icon">🛒</div>
-                    <p class="empty-state-title">物品购买数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供购买时间线数据，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('purchases_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('purchases_empty_desc') }}</p>
                 </div>
                 <div v-for="player in purchaseData" :key="player.player_slot"
                      class="player-card" :class="player.team === 'radiant' ? 'player-card-radiant' : 'player-card-dire'">
@@ -1160,17 +1164,17 @@
 
             <!-- Benchmarks -->
             <section v-if="activeTab === 'benchmarks'" class="panel">
-                <h3 class="panel-title">表现评估</h3>
+                <h3 class="panel-title">{{ t('benchmarks_title') }}</h3>
                 <div v-if="!hasBenchmarkData" class="empty-state">
                     <div class="empty-state-icon">📊</div>
-                    <p class="empty-state-title">表现评估数据暂不可用</p>
-                    <p class="empty-state-desc">表现评估需要 OpenDota API 的百分位数据，本地解析无法提供</p>
+                    <p class="empty-state-title">{{ t('benchmarks_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('benchmarks_empty_desc') }}</p>
                 </div>
                 <div v-if="hasBenchmarkData" class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="text-gray-400 border-b border-gray-700">
-                                <th class="text-left py-2 px-2">英雄</th>
+                                <th class="text-left py-2 px-2">{{ t('hero') }}</th>
                                 <th class="py-2 px-1" v-for="col in benchmarkColumns" :key="col.key">{{ col.label }}</th>
                             </tr>
                         </thead>
@@ -1199,16 +1203,16 @@
 
             <!-- Objectives -->
             <section v-if="activeTab === 'objectives'" class="panel">
-                <h3 class="panel-title">目标与事件</h3>
+                <h3 class="panel-title">{{ t('objectives_title') }}</h3>
                 <div v-if="!hasObjectivesData" class="empty-state">
                     <div class="empty-state-icon">🏰</div>
-                    <p class="empty-state-title">目标事件数据暂不可用</p>
-                    <p class="empty-state-desc">本地解析暂不提供目标事件数据，请通过 OpenDota API 获取完整数据</p>
+                    <p class="empty-state-title">{{ t('objectives_empty_title') }}</p>
+                    <p class="empty-state-desc">{{ t('objectives_empty_desc') }}</p>
                 </div>
                 <template v-if="hasObjectivesData">
                 <div class="sub-tab-group mb-4">
-                    <button @click="objMode = 'timeline'" class="tab-btn" :class="{ 'tab-active': objMode === 'timeline' }">事件时间线</button>
-                    <button @click="objMode = 'runes'" class="tab-btn" :class="{ 'tab-active': objMode === 'runes' }">符文统计</button>
+                    <button @click="objMode = 'timeline'" class="tab-btn" :class="{ 'tab-active': objMode === 'timeline' }">{{ t('objectives_timeline') }}</button>
+                    <button @click="objMode = 'runes'" class="tab-btn" :class="{ 'tab-active': objMode === 'runes' }">{{ t('objectives_rune_stats') }}</button>
                 </div>
                 <div v-if="objMode === 'timeline'" class="max-h-96 overflow-y-auto custom-scroll">
                     <div v-for="obj in objectivesData.objectives" :key="obj.time + obj.type"
@@ -1230,16 +1234,16 @@
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="text-gray-400 border-b border-gray-700">
-                                <th class="text-left py-2 px-2">英雄</th>
-                                <th class="py-2 px-1">双倍</th>
-                                <th class="py-2 px-1">急速</th>
-                                <th class="py-2 px-1">幻象</th>
-                                <th class="py-2 px-1">隐身</th>
-                                <th class="py-2 px-1">恢复</th>
-                                <th class="py-2 px-1">奥术</th>
-                                <th class="py-2 px-1">赏金</th>
-                                <th class="py-2 px-1">圣水</th>
-                                <th class="py-2 px-1 text-yellow-400">合计</th>
+                                <th class="text-left py-2 px-2">{{ t('hero') }}</th>
+                                <th class="py-2 px-1">{{ t('rune_dd') }}</th>
+                                <th class="py-2 px-1">{{ t('rune_haste') }}</th>
+                                <th class="py-2 px-1">{{ t('rune_illusion') }}</th>
+                                <th class="py-2 px-1">{{ t('rune_invis') }}</th>
+                                <th class="py-2 px-1">{{ t('rune_regen') }}</th>
+                                <th class="py-2 px-1">{{ t('rune_arcane') }}</th>
+                                <th class="py-2 px-1">{{ t('rune_bounty') }}</th>
+                                <th class="py-2 px-1">{{ t('rune_water') }}</th>
+                                <th class="py-2 px-1 text-yellow-400">{{ t('total') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1263,10 +1267,10 @@
 
             <!-- Chat -->
             <section v-if="activeTab === 'chat'" class="panel">
-                <h3 class="panel-title">聊天记录</h3>
+                <h3 class="panel-title">{{ t('chat_title') }}</h3>
                 <div v-if="chatMessages.length === 0" class="empty-state">
                     <div class="empty-state-icon">💬</div>
-                    <p class="empty-state-title">暂无聊天记录</p>
+                    <p class="empty-state-title">{{ t('chat_empty') }}</p>
                 </div>
                 <div v-else class="max-h-96 overflow-y-auto custom-scroll">
                     <div v-for="(msg, idx) in chatMessages" :key="idx"
@@ -1277,235 +1281,226 @@
                             {{ msg.hero_name }}
                         </span>
                         <span class="text-gray-300 flex-1">{{ msg.key }}</span>
-                        <span v-if="msg.type === 'chatwheel'" class="text-xs text-gray-600">[语音]</span>
+                        <span v-if="msg.type === 'chatwheel'" class="text-xs text-gray-600">{{ t('chat_chatwheel') }}</span>
                     </div>
                 </div>
             </section>
 
-            <!-- ======== Pro Compare Tab ======== -->
-            <div v-if="activeTab === 'pro_compare'" class="tab-content">
-                <div class="card" style="margin-bottom: 16px;">
-                    <h3 style="color: var(--text-primary); margin-bottom: 12px;">对线对比分析</h3>
-                    <p style="color: var(--text-muted); margin-bottom: 16px;">选择两个玩家进行对线阶段对比，可以是同一场比赛的对位选手，或上传参考录像进行对比。</p>
-
-                    <!-- Mode Selection -->
-                    <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-                        <button @click="compareMode = 'self'"
-                                :class="['btn', compareMode === 'self' ? 'btn-active' : '']">
-                            同场对比
-                        </button>
-                        <button @click="compareMode = 'upload'"
-                                :class="['btn', compareMode === 'upload' ? 'btn-active' : '']">
-                            上传参考录像
-                        </button>
-                    </div>
-
-                    <!-- Self Compare Mode -->
-                    <div v-if="compareMode === 'self'" style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
+            <!-- ============================================================ -->
+            <!-- AI COACH TAB                                                   -->
+            <!-- ============================================================ -->
+            <div v-if="activeTab === 'ai_coach'" class="tab-content">
+                <!-- Player Selection -->
+                <div class="card mb-6">
+                    <h3 class="card-title mb-4">{{ t('ai_coach_select_player') }}</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- Radiant team -->
                         <div>
-                            <label style="color: var(--text-muted); display: block; margin-bottom: 4px;">玩家A</label>
-                            <select v-model="comparePlayerA" class="select-input">
-                                <option v-for="p in analysisData?.overview?.players || []" :value="p.player_slot">
-                                    {{ p.hero_name }} ({{ p.team === 'radiant' ? '天辉' : '夜魇' }})
-                                </option>
-                            </select>
+                            <h4 class="text-green-400 mb-2 font-medium">{{ t('radiant') }}</h4>
+                            <div v-for="p in radiantPlayers" :key="p.player_slot" class="flex items-center gap-2 mb-2 cursor-pointer hover:bg-gray-700 rounded p-2 transition-colors"
+                                 :class="{ 'bg-gray-700 ring-1 ring-yellow-400': aiCoachPlayerSlot === p.player_slot }"
+                                 @click="requestAiCoach(p.player_slot)">
+                                <img :src="heroIcon(p.hero_slug || p.hero_name)" class="w-8 h-8 rounded" :alt="p.hero_name">
+                                <span>{{ p.hero_name }}</span>
+                                <span class="text-gray-400 text-sm ml-auto">{{ p.kills }}/{{ p.deaths }}/{{ p.assists }}</span>
+                            </div>
                         </div>
-                        <div style="color: var(--text-muted); font-size: 20px; padding-bottom: 4px;">VS</div>
+                        <!-- Dire team -->
                         <div>
-                            <label style="color: var(--text-muted); display: block; margin-bottom: 4px;">玩家B (参考)</label>
-                            <select v-model="comparePlayerB" class="select-input">
-                                <option v-for="p in analysisData?.overview?.players || []" :value="p.player_slot">
-                                    {{ p.hero_name }} ({{ p.team === 'radiant' ? '天辉' : '夜魇' }})
-                                </option>
-                            </select>
-                        </div>
-                        <button @click="runSelfCompare" class="btn btn-primary" :disabled="compareLoading">
-                            {{ compareLoading ? '分析中...' : '开始对比' }}
-                        </button>
-                    </div>
-
-                    <!-- Upload Reference Mode -->
-                    <div v-if="compareMode === 'upload'" style="margin-top: 12px;">
-                        <p style="color: var(--text-muted); margin-bottom: 8px;">上传职业选手或高分段玩家的录像文件作为参考：</p>
-                        <input type="file" @change="uploadRefReplay" accept=".dem" class="file-input" />
-                        <div v-if="refMatchData" style="margin-top: 12px;">
-                            <p style="color: var(--accent);">参考录像已加载</p>
-                            <div style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-top: 8px;">
-                                <div>
-                                    <label style="color: var(--text-muted); display: block; margin-bottom: 4px;">你的英雄</label>
-                                    <select v-model="comparePlayerA" class="select-input">
-                                        <option v-for="p in analysisData?.overview?.players || []" :value="p.player_slot">
-                                            {{ p.hero_name }}
-                                        </option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label style="color: var(--text-muted); display: block; margin-bottom: 4px;">参考英雄</label>
-                                    <select v-model="compareRefSlot" class="select-input">
-                                        <option v-for="p in refMatchData.players" :value="p.player_slot">
-                                            {{ p.hero_name }}
-                                        </option>
-                                    </select>
-                                </div>
-                                <button @click="runRefCompare" class="btn btn-primary" :disabled="compareLoading">
-                                    {{ compareLoading ? '分析中...' : '开始对比' }}
-                                </button>
+                            <h4 class="text-red-400 mb-2 font-medium">{{ t('dire') }}</h4>
+                            <div v-for="p in direPlayers" :key="p.player_slot" class="flex items-center gap-2 mb-2 cursor-pointer hover:bg-gray-700 rounded p-2 transition-colors"
+                                 :class="{ 'bg-gray-700 ring-1 ring-yellow-400': aiCoachPlayerSlot === p.player_slot }"
+                                 @click="requestAiCoach(p.player_slot)">
+                                <img :src="heroIcon(p.hero_slug || p.hero_name)" class="w-8 h-8 rounded" :alt="p.hero_name">
+                                <span>{{ p.hero_name }}</span>
+                                <span class="text-gray-400 text-sm ml-auto">{{ p.kills }}/{{ p.deaths }}/{{ p.assists }}</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Comparison Results -->
-                <div v-if="compareResult" class="comparison-results">
-                    <!-- Summary Card -->
-                    <div class="card" style="margin-bottom: 16px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                            <h3 style="color: var(--text-primary);">对比结果</h3>
-                            <div style="font-size: 32px; font-weight: bold;"
-                                 :style="{ color: compareResult.summary?.grade === 'S' ? '#ffd700' : compareResult.summary?.grade === 'A' ? '#66bb6a' : compareResult.summary?.grade === 'B' ? '#42a5f5' : compareResult.summary?.grade === 'C' ? '#ffa726' : '#ef5350' }">
-                                {{ compareResult.summary?.grade || '-' }}
+                <!-- Loading state -->
+                <div v-if="aiCoachLoading" class="text-center py-12">
+                    <div class="loading-spinner mx-auto"></div>
+                    <p class="text-gray-400 mt-4">{{ t('ai_coach_loading') }}</p>
+                    <p class="text-gray-500 text-sm mt-1">{{ t('ai_coach_loading_detail') }}</p>
+                </div>
+
+                <!-- Error state -->
+                <div v-if="aiCoachError" class="card bg-red-900 bg-opacity-30 border-red-700">
+                    <p class="text-red-400">{{ aiCoachError }}</p>
+                </div>
+
+                <!-- Report Content -->
+                <div v-if="aiCoachData && !aiCoachLoading">
+                    <!-- Overall Grade Banner -->
+                    <div class="card mb-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-xl font-bold mb-1">{{ aiCoachData.hero_name }} - {{ t('ai_coach_overall') }}</h3>
+                                <p class="text-gray-300">{{ aiCoachData.summary }}</p>
+                            </div>
+                            <div class="ai-grade" :class="'grade-' + aiCoachData.overall_grade.toLowerCase()">
+                                {{ aiCoachData.overall_grade }}
                             </div>
                         </div>
+                    </div>
 
-                        <!-- Key Stats Grid -->
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
-                            <div class="stat-box">
-                                <div style="color: var(--text-muted); font-size: 12px;">补刀 (10分钟)</div>
-                                <div style="color: var(--text-primary); font-size: 18px;">
-                                    {{ compareResult.summary?.cs_10min?.player || 0 }}
-                                    <span style="color: var(--text-muted);">vs</span>
-                                    {{ compareResult.summary?.cs_10min?.ref || 0 }}
+                    <!-- Death Analyses -->
+                    <div v-if="aiCoachData.death_analyses && aiCoachData.death_analyses.length" class="card mb-6">
+                        <h3 class="card-title mb-4">{{ t('ai_coach_death_analysis') }} ({{ aiCoachData.death_analyses.length }} {{ t('ai_coach_deaths_suffix') }})</h3>
+                        <div v-for="(death, idx) in aiCoachData.death_analyses" :key="idx" class="mb-4 p-4 bg-gray-800 rounded-lg border-l-4"
+                             :class="{
+                                 'border-red-500': death.score === 'D',
+                                 'border-orange-500': death.score === 'C',
+                                 'border-yellow-500': death.score === 'B',
+                                 'border-green-500': death.score === 'A',
+                                 'border-purple-500': death.score === 'S'
+                             }">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="ai-grade-small" :class="'grade-' + death.score.toLowerCase()">{{ death.score }}</span>
+                                    <span class="font-medium">{{ death.brief }}</span>
+                                </div>
+                                <span class="text-gray-400 text-sm">{{ formatGameTime(death.time) }}</span>
+                            </div>
+                            <p class="text-gray-300 text-sm mb-2" v-html="renderMarkdown(death.analysis)"></p>
+                            <div v-if="death.mistake" class="text-sm mt-2">
+                                <span class="text-red-400 font-medium">{{ t('ai_coach_issue') }}: </span>
+                                <span class="text-gray-300">{{ death.mistake }}</span>
+                            </div>
+                            <div v-if="death.better_play" class="text-sm mt-1">
+                                <span class="text-green-400 font-medium">{{ t('ai_coach_suggestion') }}: </span>
+                                <span class="text-gray-300">{{ death.better_play }}</span>
+                            </div>
+                            <div v-if="death.lesson" class="text-sm mt-1">
+                                <span class="text-blue-400 font-medium">{{ t('ai_coach_lesson') }}: </span>
+                                <span class="text-gray-300">{{ death.lesson }}</span>
+                            </div>
+                            <div v-if="death.causal_chain && death.causal_chain.steps && death.causal_chain.steps.length" class="mt-3 pt-3 border-t border-gray-700">
+                                <div class="text-sm font-medium text-yellow-400 mb-2">{{ t('ai_coach_causal_chain') }}</div>
+                                <div v-if="death.causal_chain.root_cause_summary" class="text-xs text-orange-300 mb-2">
+                                    {{ t('ai_coach_root_cause') }}: {{ death.causal_chain.root_cause_summary }}
+                                </div>
+                                <div class="space-y-1">
+                                    <div v-for="(step, si) in death.causal_chain.steps" :key="si"
+                                         class="text-xs flex items-start gap-2"
+                                         :class="{
+                                             'text-red-400 font-medium': step.significance === 'root_cause',
+                                             'text-orange-300': step.significance === 'contributing',
+                                             'text-gray-400': step.significance === 'consequence',
+                                             'text-red-500': step.significance === 'final'
+                                         }">
+                                        <span class="text-gray-500 flex-shrink-0">{{ formatGameTime(step.time) }}</span>
+                                        <span v-if="step.significance === 'root_cause'" class="flex-shrink-0">{{ t('ai_coach_root_tag') }}</span>
+                                        <span v-else-if="step.significance === 'final'" class="flex-shrink-0">{{ t('ai_coach_death_tag') }}</span>
+                                        <span>{{ step.description }}</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="stat-box">
-                                <div style="color: var(--text-muted); font-size: 12px;">经济 (10分钟)</div>
-                                <div style="color: var(--text-primary); font-size: 18px;">
-                                    {{ compareResult.summary?.gold_10min?.player || 0 }}
-                                    <span style="color: var(--text-muted);">vs</span>
-                                    {{ compareResult.summary?.gold_10min?.ref || 0 }}
+                        </div>
+                    </div>
+
+                    <!-- Key Moments -->
+                    <div v-if="aiCoachData.key_moments && aiCoachData.key_moments.length" class="card mb-6">
+                        <h3 class="card-title mb-4">{{ t('ai_coach_key_moments') }}</h3>
+                        <div v-for="(moment, idx) in aiCoachData.key_moments" :key="idx" class="mb-4 p-4 bg-gray-800 rounded-lg border-l-4"
+                             :class="{
+                                 'border-red-500': moment.score === 'D',
+                                 'border-orange-500': moment.score === 'C',
+                                 'border-yellow-500': moment.score === 'B',
+                                 'border-green-500': moment.score === 'A',
+                                 'border-purple-500': moment.score === 'S',
+                                 'border-gray-500': !moment.score
+                             }">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span v-if="moment.score" class="ai-grade-small" :class="'grade-' + moment.score.toLowerCase()">{{ moment.score }}</span>
+                                    <span class="font-medium">{{ moment.brief }}</span>
+                                </div>
+                                <span class="text-gray-400 text-sm">{{ formatGameTime(moment.time) }}</span>
+                            </div>
+                            <p class="text-gray-300 text-sm" v-html="renderMarkdown(moment.analysis)"></p>
+                            <div v-if="moment.better_play" class="text-sm mt-2">
+                                <span class="text-green-400 font-medium">{{ t('ai_coach_suggestion') }}: </span>
+                                <span class="text-gray-300">{{ moment.better_play }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Laning Review -->
+                    <div v-if="aiCoachData.laning_review && aiCoachData.laning_review.summary" class="card mb-6">
+                        <h3 class="card-title mb-4">{{ t('ai_coach_laning_summary') }}</h3>
+                        <div class="grid grid-cols-4 gap-4 mb-4">
+                            <div class="bg-gray-800 rounded p-3 text-center">
+                                <div class="text-2xl font-bold text-yellow-400">{{ aiCoachData.laning_review.cs_10min || '-' }}</div>
+                                <div class="text-xs text-gray-400">{{ t('ai_coach_cs_10min') }}</div>
+                            </div>
+                            <div class="bg-gray-800 rounded p-3 text-center">
+                                <div class="text-2xl font-bold text-yellow-400">{{ aiCoachData.laning_review.denies_10min || '-' }}</div>
+                                <div class="text-xs text-gray-400">{{ t('ai_coach_denies_10min') }}</div>
+                            </div>
+                            <div class="bg-gray-800 rounded p-3 text-center">
+                                <div class="text-2xl font-bold" :class="aiCoachData.laning_review.lane_result === 'won' ? 'text-green-400' : aiCoachData.laning_review.lane_result === 'lost' ? 'text-red-400' : 'text-yellow-400'">
+                                    {{ aiCoachData.laning_review.lane_result === 'won' ? t('ai_coach_lane_won') : aiCoachData.laning_review.lane_result === 'lost' ? t('ai_coach_lane_lost') : t('ai_coach_lane_even') }}
+                                </div>
+                                <div class="text-xs text-gray-400">{{ t('ai_coach_lane_result') }}</div>
+                            </div>
+                            <div class="bg-gray-800 rounded p-3 text-center">
+                                <div class="text-2xl font-bold text-yellow-400">{{ aiCoachData.laning_review.lane_matchup || '-' }}</div>
+                                <div class="text-xs text-gray-400">{{ t('ai_coach_lane_matchup') }}</div>
+                            </div>
+                        </div>
+                        <p class="text-gray-300 text-sm" v-html="renderMarkdown(aiCoachData.laning_review.summary)"></p>
+                    </div>
+
+                    <!-- Pro Comparison -->
+                    <div v-if="aiCoachData.pro_comparison && aiCoachData.pro_comparison.comparisons && aiCoachData.pro_comparison.comparisons.length" class="card mb-6">
+                        <h3 class="card-title mb-4">{{ t('ai_coach_pro_comparison') }}</h3>
+                        <div v-if="aiCoachData.pro_comparison.summary" class="text-sm text-gray-300 mb-4">
+                            {{ aiCoachData.pro_comparison.summary }}
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div v-for="(comp, idx) in aiCoachData.pro_comparison.comparisons" :key="idx"
+                                 class="p-3 bg-gray-800 rounded text-center">
+                                <div class="text-xs text-gray-400 mb-1">{{ comp.metric_label }}</div>
+                                <div class="text-lg font-bold"
+                                     :class="{
+                                         'text-green-400': comp.rating === 'excellent' || comp.rating === 'good',
+                                         'text-yellow-400': comp.rating === 'average',
+                                         'text-orange-400': comp.rating === 'below_average',
+                                         'text-red-400': comp.rating === 'poor'
+                                     }">
+                                    {{ comp.actual_display || comp.actual_value }}
+                                </div>
+                                <div class="text-xs mt-1"
+                                     :class="{
+                                         'text-green-300': comp.rating === 'excellent' || comp.rating === 'good',
+                                         'text-yellow-300': comp.rating === 'average',
+                                         'text-orange-300': comp.rating === 'below_average',
+                                         'text-red-300': comp.rating === 'poor'
+                                     }">
+                                    {{ comp.description }}
                                 </div>
                             </div>
-                            <div class="stat-box">
-                                <div style="color: var(--text-muted); font-size: 12px;">对线伤害</div>
-                                <div style="color: var(--text-primary); font-size: 18px;">
-                                    {{ compareResult.summary?.damage_laning?.player || 0 }}
-                                    <span style="color: var(--text-muted);">vs</span>
-                                    {{ compareResult.summary?.damage_laning?.ref || 0 }}
-                                </div>
-                            </div>
-                            <div class="stat-box">
-                                <div style="color: var(--text-muted); font-size: 12px;">恢复品使用</div>
-                                <div style="color: var(--text-primary); font-size: 18px;">
-                                    {{ compareResult.summary?.regen_used?.player || 0 }}
-                                    <span style="color: var(--text-muted);">vs</span>
-                                    {{ compareResult.summary?.regen_used?.ref || 0 }}
-                                </div>
+                        </div>
+                    </div>
+
+                    <!-- Improvement Areas & Strengths -->
+                    <div class="grid grid-cols-2 gap-6">
+                        <div v-if="aiCoachData.improvement_areas && aiCoachData.improvement_areas.length" class="card">
+                            <h3 class="card-title mb-4 text-red-400">{{ t('ai_coach_improvement') }}</h3>
+                            <div v-for="(area, idx) in aiCoachData.improvement_areas" :key="idx" class="mb-3 p-3 bg-gray-800 rounded">
+                                <div class="font-medium text-sm">{{ area.category }}</div>
+                                <p class="text-gray-400 text-sm mt-1">{{ area.description }}</p>
                             </div>
                         </div>
-
-                        <!-- Top Differences -->
-                        <div v-if="compareResult.summary?.top_differences?.length" style="margin-top: 16px;">
-                            <h4 style="color: var(--text-primary); margin-bottom: 8px;">主要差距</h4>
-                            <div v-for="diff in compareResult.summary.top_differences" class="diff-item">
-                                <span style="color: var(--accent);">{{ diff.area }}</span>
-                                <span style="color: #ef5350; margin: 0 8px;">{{ diff.gap }}</span>
-                                <span style="color: var(--text-muted);">{{ diff.impact }}</span>
+                        <div v-if="aiCoachData.strengths && aiCoachData.strengths.length" class="card">
+                            <h3 class="card-title mb-4 text-green-400">{{ t('ai_coach_strengths') }}</h3>
+                            <div v-for="(s, idx) in aiCoachData.strengths" :key="idx" class="mb-3 p-3 bg-gray-800 rounded">
+                                <div class="font-medium text-sm">{{ s.category }}</div>
+                                <p class="text-gray-400 text-sm mt-1">{{ s.description }}</p>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Charts -->
-                    <div class="card" style="margin-bottom: 16px;">
-                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">补刀对比曲线</h4>
-                        <div id="compare-cs-chart" style="height: 300px;"></div>
-                    </div>
-                    <div class="card" style="margin-bottom: 16px;">
-                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">经济对比曲线</h4>
-                        <div id="compare-gold-chart" style="height: 300px;"></div>
-                    </div>
-                    <div class="card" style="margin-bottom: 16px;">
-                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">血量对比曲线</h4>
-                        <div id="compare-hp-chart" style="height: 300px;"></div>
-                    </div>
-                    <div class="card" style="margin-bottom: 16px;">
-                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">每分钟伤害对比</h4>
-                        <div id="compare-dmg-chart" style="height: 300px;"></div>
-                    </div>
-
-                    <!-- Dual Map Replay -->
-                    <div class="card" style="margin-bottom: 16px;">
-                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">对线走位回放</h4>
-
-                        <!-- Timeline Controls -->
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                            <button @click="toggleComparePlay" class="btn" style="min-width: 60px;">
-                                {{ comparePlaying ? '暂停' : '播放' }}
-                            </button>
-                            <select v-model.number="comparePlaySpeed" class="select-input" style="width: 70px;">
-                                <option :value="0.5">0.5x</option>
-                                <option :value="1">1x</option>
-                                <option :value="2">2x</option>
-                                <option :value="5">5x</option>
-                            </select>
-                            <input type="range" v-model.number="compareTimelineSlider" min="0" max="595" step="5"
-                                   style="flex: 1; accent-color: var(--accent);" />
-                            <span style="color: var(--text-muted); min-width: 50px; text-align: right;">
-                                {{ Math.floor(compareTimelineSlider / 60) }}:{{ String(compareTimelineSlider % 60).padStart(2, '0') }}
-                            </span>
-                        </div>
-
-                        <!-- Side-by-side maps -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                            <div ref="compareMapPlayerRef" style="height: 400px; background: var(--bg-card-alt); border-radius: 6px;"></div>
-                            <div ref="compareMapRefRef" style="height: 400px; background: var(--bg-card-alt); border-radius: 6px;"></div>
-                        </div>
-
-                        <!-- Snapshot info -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
-                            <div style="background: var(--bg-card-alt); padding: 10px; border-radius: 6px;">
-                                <div style="color: #42a5f5; font-weight: bold; margin-bottom: 4px;">玩家</div>
-                                <div style="color: var(--text-muted); font-size: 13px;" id="compare-snap-player"></div>
-                            </div>
-                            <div style="background: var(--bg-card-alt); padding: 10px; border-radius: 6px;">
-                                <div style="color: #66bb6a; font-weight: bold; margin-bottom: 4px;">参考</div>
-                                <div style="color: var(--text-muted); font-size: 13px;" id="compare-snap-ref"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Divergence Timeline -->
-                    <div v-if="compareResult.divergences?.length" class="card">
-                        <h4 style="color: var(--text-primary); margin-bottom: 12px;">差异点时间线</h4>
-                        <div v-for="(div, idx) in compareResult.divergences" :key="idx" class="divergence-item"
-                             :style="{ borderLeft: '3px solid ' + (div.severity > 0.7 ? '#ef5350' : div.severity > 0.4 ? '#ffa726' : '#42a5f5') }">
-                            <div style="display: flex; justify-content: space-between;">
-                                <span style="color: var(--accent);">{{ Math.floor(div.time / 60) }}:{{ String(div.time % 60).padStart(2, '0') }}</span>
-                                <span class="severity-badge" :style="{ background: div.severity > 0.7 ? '#ef5350' : div.severity > 0.4 ? '#ffa726' : '#42a5f5' }">
-                                    {{ div.div_type === 'cs' ? '补刀' : div.div_type === 'trade' ? '换血' : div.div_type === 'positioning' ? '走位' : div.div_type === 'regen' ? '续航' : div.div_type }}
-                                </span>
-                            </div>
-                            <p style="color: var(--text-muted); margin-top: 4px;">{{ div.description_zh }}</p>
-                        </div>
-                    </div>
-
-                    <!-- AI Coaching Report -->
-                    <div class="card" style="margin-top: 16px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                            <h4 style="color: var(--text-primary);">AI 教练分析</h4>
-                            <button @click="requestCoaching" class="btn btn-primary" :disabled="coachingLoading || !compareResult">
-                                {{ coachingLoading ? '分析中...' : coachingReport ? '重新分析' : '获取AI建议' }}
-                            </button>
-                        </div>
-                        <div v-if="coachingLoading" style="text-align: center; padding: 20px; color: var(--text-muted);">
-                            AI正在分析你的对线数据...
-                        </div>
-                        <div v-if="coachingReport" class="coaching-report" v-html="renderMarkdown(coachingReport.report)">
-                        </div>
-                        <div v-if="coachingReport?.is_fallback" style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">
-                            (规则生成的建议 · 设置ANTHROPIC_API_KEY启用AI分析)
-                        </div>
-                        <div v-if="coachingError" style="color: #ef5350; margin-top: 8px;">
-                            {{ coachingError }}
                         </div>
                     </div>
                 </div>
@@ -1515,6 +1510,7 @@
         </div><!-- /v-if="analysisData" -->
     </div><!-- /#app -->
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/i18n.js?v=3"></script>
+    <script src="/static/js/app.js?v=3"></script>
 </body>
 </html>

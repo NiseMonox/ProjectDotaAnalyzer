@@ -14,6 +14,12 @@ tools/clarity-analyzer/build/
 tools/clarity-analyzer/gradle/wrapper/gradle-8.5-bin.zip
 tools/clarity-analyzer/clarity_stderr.txt
 clarity_stderr.txt
+clarity_test_stderr.txt
+openjdk.jdk
+
+# Runtime-generated caches and fetched data
+cache/
+backend/data/gamedata/
 
 # Temp files
 3110ward.png

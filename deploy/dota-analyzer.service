@@ -1,0 +1,26 @@
+[Unit]
+Description=Dota 2 Match Analyzer (FastAPI + uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/dota-analyzer
+EnvironmentFile=/opt/dota-analyzer/.env
+ExecStart=/opt/dota-analyzer/backend/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8001
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Lightweight hardening (tighten further once under load)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/dota-analyzer
+
+[Install]
+WantedBy=multi-user.target

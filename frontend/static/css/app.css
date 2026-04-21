@@ -2343,31 +2343,6 @@ body {
    Pro Compare Tab
    ================================================================ */
 
-.stat-box {
-    background: var(--bg-card-alt);
-    padding: 12px;
-    border-radius: 6px;
-}
-
-.diff-item {
-    padding: 6px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-
-.divergence-item {
-    padding: 10px 12px;
-    margin-bottom: 8px;
-    background: var(--bg-card-alt);
-    border-radius: 4px;
-}
-
-.severity-badge {
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-size: 12px;
-    color: white;
-}
-
 .select-input {
     background: var(--bg-card-alt);
     color: var(--text-primary);
@@ -2419,3 +2394,33 @@ body {
 .coaching-report strong {
     color: var(--text-primary);
 }
+
+/* AI Coach Grades */
+.ai-grade {
+    font-size: 2.5rem;
+    font-weight: 700;
+    width: 4rem;
+    height: 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    flex-shrink: 0;
+}
+.ai-grade-small {
+    font-size: 0.875rem;
+    font-weight: 700;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.25rem;
+    flex-shrink: 0;
+}
+.grade-s { background: rgba(139, 92, 246, 0.3); color: #a78bfa; }
+.grade-a { background: rgba(52, 211, 153, 0.3); color: #6ee7b7; }
+.grade-b { background: rgba(251, 191, 36, 0.3); color: #fcd34d; }
+.grade-c { background: rgba(251, 146, 60, 0.3); color: #fdba74; }
+.grade-d { background: rgba(248, 113, 113, 0.3); color: #fca5a5; }
+

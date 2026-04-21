@@ -1,17 +1,15 @@
 """FastAPI routes for the Dota 2 match analysis API."""
 from __future__ import annotations
 
+import json
 import logging
 import shutil
-from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from .analyzer import full_analysis
-from .comparison import compare_laning, ComparisonResult
-from .config import DEFAULT_REPLAY, REPLAY_DIR
+from .config import COACH_CACHE_DIR, DEFAULT_REPLAY, REPLAY_DIR
 from .models import AnalysisResult, MatchData
 from .parser import ClarityParser, OpenDotaParser, get_parser
 
@@ -22,24 +20,40 @@ router = APIRouter(prefix="/api")
 # In-memory cache of parsed matches (analysis results)
 _match_cache: dict[str, dict] = {}
 
-# In-memory storage of parsed MatchData objects (for comparison features)
+# In-memory storage of parsed MatchData objects
 parsed_matches: dict[str, MatchData] = {}
 
-# In-memory storage of reference replay MatchData (for comparison)
-ref_matches: dict[str, MatchData] = {}
+
+# ---------------------------------------------------------------------------
+# Persistent coaching result cache
+# ---------------------------------------------------------------------------
+
+def _coach_cache_path(match_id: int, player_slot: int, lang: str = "zh") -> Path:
+    """Return the JSON cache file path for a coaching result."""
+    return COACH_CACHE_DIR / f"{match_id}_{player_slot}_{lang}.json"
 
 
-class CompareLaningRequest(BaseModel):
-    player_match_key: str
-    player_slot: int
-    ref_match_key: str
-    ref_slot: int
+def _load_coach_cache(match_id: int, player_slot: int, lang: str = "zh") -> dict | None:
+    """Load a cached coaching result from disk, or None if not found."""
+    path = _coach_cache_path(match_id, player_slot, lang)
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as exc:
+        logger.warning("Failed to load coaching cache %s: %s", path, exc)
+        return None
 
 
-class SelfCompareRequest(BaseModel):
-    match_key: str
-    player_slot: int
-    ref_slot: int
+def _save_coach_cache(match_id: int, player_slot: int, result: dict, lang: str = "zh") -> None:
+    """Save a coaching result to disk as JSON."""
+    path = _coach_cache_path(match_id, player_slot, lang)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        logger.warning("Failed to save coaching cache %s: %s", path, exc)
 
 
 @router.post("/upload")
@@ -128,8 +142,9 @@ async def get_demo_analysis():
 async def fetch_match_by_id(match_id: int):
     """Fetch match data from OpenDota API by match ID."""
     cache_key = f"opendota_{match_id}"
-    if cache_key in _match_cache:
-        return _match_cache[cache_key]
+    cached = _match_cache.get(cache_key)
+    if cached and cached.get("has_parsed_data"):
+        return cached
 
     parser = OpenDotaParser()
     try:
@@ -229,6 +244,45 @@ async def get_match_analysis(file_key: str):
     return _match_cache[file_key]
 
 
+@router.get("/match/{file_key}/ai-coach/{player_slot}")
+async def get_ai_coaching(file_key: str, player_slot: int, lang: str = Query("zh")):
+    """Generate AI coaching report for a specific player."""
+    # Validate lang
+    if lang not in ("zh", "en"):
+        lang = "zh"
+
+    # Check in-memory cache first
+    cache_key = f"{file_key}_coach_{player_slot}_{lang}"
+    if cache_key in _match_cache:
+        return _match_cache[cache_key]
+
+    if file_key not in parsed_matches:
+        raise HTTPException(404, "Match not found. Please upload the replay first.")
+
+    match_data = parsed_matches[file_key]
+    match_id = match_data.match_id
+
+    # Check persistent disk cache (survives server restarts)
+    cached = _load_coach_cache(match_id, player_slot, lang)
+    if cached is not None:
+        _match_cache[cache_key] = cached
+        return cached
+
+    try:
+        from .ai.coach import generate_coaching_report
+
+        report = await generate_coaching_report(match_data, player_slot, lang=lang)
+        result = report.to_dict()
+        _match_cache[cache_key] = result
+        _save_coach_cache(match_id, player_slot, result, lang)
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.exception("AI coaching failed for %s slot %d", file_key, player_slot)
+        raise HTTPException(500, f"AI coaching analysis failed: {e}")
+
+
 @router.get("/match/{file_key}/{section}")
 async def get_match_section(file_key: str, section: str):
     """Get a specific analysis section for a match."""
@@ -243,158 +297,35 @@ async def get_match_section(file_key: str, section: str):
     return {section: analysis[section]}
 
 
-# ── Laning Comparison Endpoints ────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Admin endpoints: game data management
+# ---------------------------------------------------------------------------
 
+@router.post("/admin/update-gamedata")
+async def update_gamedata(force: bool = False):
+    """Fetch latest game data from OpenDota API.
 
-@router.post("/compare/upload-ref")
-async def upload_reference_replay(file: UploadFile = File(...)):
-    """Upload a .dem replay file as a reference for laning comparison."""
-    if not file.filename or not file.filename.endswith(".dem"):
-        raise HTTPException(400, "Only .dem replay files are supported")
-
-    save_path = REPLAY_DIR / file.filename
-    with open(save_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    # Parse the replay
-    parser = get_parser("auto")
-    try:
-        match_data = await parser.parse(str(save_path))
-    except Exception as e:
-        raise HTTPException(500, f"Failed to parse reference replay: {e}")
-
-    ref_key = f"ref_{file.filename}"
-    ref_matches[ref_key] = match_data
-
-    # Build player list with lane info
-    players_info = [
-        {
-            "hero_name": p.hero_name,
-            "player_slot": p.player_slot,
-            "lane": p.lane,
-            "team": p.team,
-            "player_name": p.player_name,
-        }
-        for p in match_data.players
-    ]
-
-    return {
-        "status": "ok",
-        "ref_key": ref_key,
-        "match_id": match_data.match_id,
-        "parse_source": parser.name(),
-        "players": players_info,
-    }
-
-
-@router.post("/compare/laning")
-async def compare_laning_endpoint(req: CompareLaningRequest):
-    """Compare laning phase between a player and a reference player."""
-    # Look up player match data
-    if req.player_match_key in parsed_matches:
-        player_match = parsed_matches[req.player_match_key]
-    else:
-        raise HTTPException(404, f"Player match not found: {req.player_match_key}")
-
-    # Look up reference match data (check ref_matches first, then parsed_matches)
-    if req.ref_match_key in ref_matches:
-        ref_match = ref_matches[req.ref_match_key]
-    elif req.ref_match_key in parsed_matches:
-        ref_match = parsed_matches[req.ref_match_key]
-    else:
-        raise HTTPException(404, f"Reference match not found: {req.ref_match_key}")
+    This updates hero, ability, and item stats (Layer A).
+    Editorial coaching tips (Layer B) are never overwritten.
+    """
+    import asyncio
 
     try:
-        result = compare_laning(player_match, req.player_slot, ref_match, req.ref_slot)
+        from .ai.data_manager import fetch_and_save_gamedata
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: fetch_and_save_gamedata(force=force)
+        )
+        return result
     except Exception as e:
-        raise HTTPException(500, f"Comparison failed: {e}")
+        logger.exception("Game data update failed")
+        raise HTTPException(500, f"Update failed: {e}")
 
-    return asdict(result)
 
-
-@router.post("/compare/self")
-async def self_compare_endpoint(req: SelfCompareRequest):
-    """Compare two players within the same match (e.g., your mid vs enemy mid)."""
-    # Look up match data in both stores
-    if req.match_key in parsed_matches:
-        match_data = parsed_matches[req.match_key]
-    elif req.match_key in ref_matches:
-        match_data = ref_matches[req.match_key]
-    else:
-        raise HTTPException(404, f"Match not found: {req.match_key}")
-
+@router.get("/admin/gamedata-status")
+async def gamedata_status():
+    """Return current game data status (patch version, freshness, coverage)."""
     try:
-        result = compare_laning(match_data, req.player_slot, match_data, req.ref_slot)
-    except Exception as e:
-        raise HTTPException(500, f"Comparison failed: {e}")
-
-    return asdict(result)
-
-
-# ── AI Coaching Endpoints ──────────────────────────────────────────────
-
-
-class CoachingRequest(BaseModel):
-    player_match_key: str
-    player_slot: int
-    ref_match_key: str
-    ref_slot: int
-
-
-@router.post("/compare/coaching")
-async def get_coaching_report(req: SelfCompareRequest):
-    """Generate AI coaching report for a laning comparison."""
-    from .ai_coach import is_available, generate_coaching_report, generate_fallback_report
-    from .comparison import compare_laning
-
-    # Find match data
-    if req.match_key in parsed_matches:
-        match_data = parsed_matches[req.match_key]
-    elif req.match_key in ref_matches:
-        match_data = ref_matches[req.match_key]
-    else:
-        raise HTTPException(404, f"Match not found: {req.match_key}")
-
-    # Run comparison
-    result = compare_laning(match_data, req.player_slot, match_data, req.ref_slot)
-
-    # Generate report
-    if is_available():
-        report = await generate_coaching_report(result)
-    else:
-        report = generate_fallback_report(result)
-
-    return report
-
-
-@router.post("/compare/coaching-cross")
-async def get_coaching_report_cross(req: CoachingRequest):
-    """Generate AI coaching report comparing across matches."""
-    from .ai_coach import is_available, generate_coaching_report, generate_fallback_report
-    from .comparison import compare_laning
-
-    # Find player match
-    player_match = parsed_matches.get(req.player_match_key)
-    if not player_match:
-        raise HTTPException(404, f"Player match not found: {req.player_match_key}")
-
-    # Find ref match
-    ref_match = ref_matches.get(req.ref_match_key) or parsed_matches.get(req.ref_match_key)
-    if not ref_match:
-        raise HTTPException(404, f"Reference match not found: {req.ref_match_key}")
-
-    result = compare_laning(player_match, req.player_slot, ref_match, req.ref_slot)
-
-    if is_available():
-        report = await generate_coaching_report(result)
-    else:
-        report = generate_fallback_report(result)
-
-    return report
-
-
-@router.get("/ai-status")
-async def ai_status():
-    """Check if AI coaching is available."""
-    from .ai_coach import is_available
-    return {"available": is_available()}
+        from .ai.data_manager import get_meta
+        return get_meta()
+    except ImportError:
+        return {"status": "module_unavailable", "patch_version": "7.37"}

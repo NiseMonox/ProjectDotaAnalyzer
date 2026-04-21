@@ -28,5 +28,16 @@ HOST = "0.0.0.0"
 PORT = 8000
 DEBUG = True
 
+# AI coaching result cache
+COACH_CACHE_DIR = BASE_DIR / "cache" / "coaching"
+
+# Game data directories (auto-updated + editorial)
+DATA_DIR = BASE_DIR / "backend" / "data"
+GAMEDATA_DIR = DATA_DIR / "gamedata"
+EDITORIAL_DIR = DATA_DIR / "editorial"
+
 # Ensure directories exist
 REPLAY_DIR.mkdir(parents=True, exist_ok=True)
+COACH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+GAMEDATA_DIR.mkdir(parents=True, exist_ok=True)
+EDITORIAL_DIR.mkdir(parents=True, exist_ok=True)
