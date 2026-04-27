@@ -25,7 +25,10 @@ logger = logging.getLogger(__name__)
 # DeepSeek API configuration (OpenAI-compatible)
 # ---------------------------------------------------------------------------
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-MODEL = "deepseek-chat"
+# DeepSeek v4 is reasoning-by-default; v4-flash is the chat-equivalent (cheaper
+# than v4-pro but still reasons before answering). max_tokens must cover both
+# the hidden reasoning trace AND the final structured answer.
+MODEL = "deepseek-v4-flash"
 
 try:
     from openai import AsyncOpenAI
@@ -614,14 +617,14 @@ async def evaluate_decision(
         client = AsyncOpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com",
-            timeout=30.0,
+            timeout=120.0,
             max_retries=1,
         )
         prompt = _build_evaluation_prompt(context, knowledge, lang=lang)
 
         response = await client.chat.completions.create(
             model=MODEL,
-            max_tokens=800,
+            max_tokens=3000,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
         )
