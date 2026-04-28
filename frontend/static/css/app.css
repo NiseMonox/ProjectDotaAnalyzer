@@ -1106,6 +1106,30 @@ body {
     to { transform: rotate(360deg); }
 }
 
+.ai-coach-progress {
+    width: 360px;
+    max-width: 80%;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.ai-coach-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #f6e05e 0%, #ed8936 50%, #f56565 100%);
+    background-size: 200% 100%;
+    border-radius: 999px;
+    transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: ai-coach-progress-shimmer 2.4s linear infinite;
+    box-shadow: 0 0 8px rgba(237, 137, 54, 0.4);
+}
+@keyframes ai-coach-progress-shimmer {
+    from { background-position: 0% 0; }
+    to   { background-position: -200% 0; }
+}
+
 /* ================================================================
    Scrollbar
    ================================================================ */

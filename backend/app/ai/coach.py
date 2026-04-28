@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Awaitable, Callable, Optional
+
+ProgressCallback = Callable[[dict], Awaitable[None]]
 
 from ..models import MatchData, PlayerData
 from .models import (
@@ -557,6 +559,7 @@ def _generate_summary(
 
 async def generate_coaching_report(
     match: MatchData, player_slot: int, lang: str = "zh",
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> CoachingReport:
     """Generate a complete coaching report for a player in a match.
 
@@ -582,6 +585,16 @@ async def generate_coaching_report(
         The completed coaching report with evaluations, laning review,
         improvement areas, and strengths.
     """
+    async def _emit(stage: str, current: int = 0, total: int = 0) -> None:
+        if progress_callback is None:
+            return
+        try:
+            await progress_callback({"stage": stage, "current": current, "total": total})
+        except Exception as exc:  # never let progress reporting kill the pipeline
+            logger.debug("progress_callback raised: %s", exc)
+
+    await _emit("starting", 0, 1)
+
     player = _find_player(match, player_slot)
     if player is None:
         if lang == "en":
@@ -603,6 +616,7 @@ async def generate_coaching_report(
     # ------------------------------------------------------------------
     # Step 1: Detect decision points
     # ------------------------------------------------------------------
+    await _emit("detect", 0, 1)
     try:
         from .decision_detector import detect_decisions
 
@@ -617,6 +631,7 @@ async def generate_coaching_report(
     # ------------------------------------------------------------------
     # Step 1.5: Build causal chains for deaths
     # ------------------------------------------------------------------
+    await _emit("causal_chain", 0, max(1, len(deaths)))
     causal_chains: dict[int, CausalChain] = {}  # death_time -> chain
     try:
         from .causal_chain import build_causal_chain
@@ -634,6 +649,7 @@ async def generate_coaching_report(
     # ------------------------------------------------------------------
     # Step 2: Build contexts
     # ------------------------------------------------------------------
+    await _emit("context", 0, max(1, len(decisions)))
     contexts: list[DecisionContext] = []
     try:
         from .context_builder import build_context
@@ -698,32 +714,40 @@ async def generate_coaching_report(
             llm_batch = prioritized[:MAX_LLM_EVALS]
             rule_batch = prioritized[MAX_LLM_EVALS:]
 
-            # Sequential LLM calls; if first call fails, switch to all-fallback
-            api_failed = False
-            api_fail_count = 0
-            for ctx, know in llm_batch:
-                if api_failed:
-                    evaluations.append(evaluate_decision_fallback(ctx, lang=lang))
-                else:
-                    ev, used_api = await _safe_evaluate(ctx, know, lang=lang)
-                    evaluations.append(ev)
-                    if not used_api:
-                        api_fail_count += 1
-                        # If 2 consecutive API failures, give up on API
-                        if api_fail_count >= 2:
-                            api_failed = True
-                            logger.info("连续API调用失败，后续使用规则回退")
-                    else:
-                        api_fail_count = 0
+            await _emit("evaluate", 0, len(llm_batch))
 
-            # Rule-based for remaining
+            # Run all LLM evals concurrently; emit progress as each finishes.
+            # Order is restored after all complete. _safe_evaluate handles
+            # per-call failures by returning a rule-based fallback, so a few
+            # API errors do not require pessimistic early-abort logic.
+            async def _eval_with_index(idx: int, ctx: DecisionContext, know: str):
+                ev, _used_api = await _safe_evaluate(ctx, know, lang=lang)
+                return idx, ev
+
+            tasks = [
+                asyncio.create_task(_eval_with_index(i, ctx, know))
+                for i, (ctx, know) in enumerate(llm_batch)
+            ]
+            done_count = 0
+            indexed_results: list[tuple[int, Evaluation]] = []
+            for fut in asyncio.as_completed(tasks):
+                idx, ev = await fut
+                indexed_results.append((idx, ev))
+                done_count += 1
+                await _emit("evaluate", done_count, len(llm_batch))
+
+            # Restore original order so death/key-moment grouping stays stable.
+            indexed_results.sort(key=lambda t: t[0])
+            evaluations.extend(ev for _, ev in indexed_results)
+
+            # Rule-based for remaining (cheap, synchronous).
             for ctx, _know in rule_batch:
                 try:
                     evaluations.append(evaluate_decision_fallback(ctx, lang=lang))
                 except Exception as exc:
                     logger.error("evaluate_decision_fallback 失败: %s", exc)
         else:
-            logger.info("Anthropic API 不可用，使用规则回退评估")
+            logger.info("DeepSeek API 不可用，使用规则回退评估")
             for ctx, _know in prioritized:
                 try:
                     evaluations.append(evaluate_decision_fallback(ctx, lang=lang))
@@ -754,6 +778,7 @@ async def generate_coaching_report(
     # ------------------------------------------------------------------
     # Step 4.7: Professional pattern comparison
     # ------------------------------------------------------------------
+    await _emit("comparison", 0, 1)
     pro_comparison_data: dict = {}
     try:
         from .pro_patterns import compare_player, format_pro_comparison
@@ -767,6 +792,7 @@ async def generate_coaching_report(
     # ------------------------------------------------------------------
     # Step 5: Compile report
     # ------------------------------------------------------------------
+    await _emit("summary", 0, 1)
 
     # Separate death analyses from key moments
     death_analyses = [
@@ -792,7 +818,7 @@ async def generate_coaching_report(
         lang=lang,
     )
 
-    return CoachingReport(
+    report = CoachingReport(
         match_id=match.match_id,
         player_slot=player_slot,
         hero_name=hero_name,
@@ -805,6 +831,8 @@ async def generate_coaching_report(
         strengths=strengths,
         pro_comparison=pro_comparison_data,
     )
+    await _emit("done", 1, 1)
+    return report
 
 
 async def _safe_evaluate(

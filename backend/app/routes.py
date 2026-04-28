@@ -1,12 +1,14 @@
 """FastAPI routes for the Dota 2 match analysis API."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 from .analyzer import full_analysis
 from .config import COACH_CACHE_DIR, DEFAULT_REPLAY, REPLAY_DIR
@@ -281,6 +283,98 @@ async def get_ai_coaching(file_key: str, player_slot: int, lang: str = Query("zh
     except Exception as e:
         logger.exception("AI coaching failed for %s slot %d", file_key, player_slot)
         raise HTTPException(500, f"AI coaching analysis failed: {e}")
+
+
+@router.get("/match/{file_key}/ai-coach-stream/{player_slot}")
+async def stream_ai_coaching(file_key: str, player_slot: int, lang: str = Query("zh")):
+    """Stream AI coaching report progress via Server-Sent Events.
+
+    Each event is `data: <json>\\n\\n` with one of these shapes:
+    - {"type": "progress", "stage": "evaluate", "current": 3, "total": 8}
+    - {"type": "done", "data": <full report dict>}
+    - {"type": "error", "message": "..."}
+    """
+    if lang not in ("zh", "en"):
+        lang = "zh"
+
+    cache_key = f"{file_key}_coach_{player_slot}_{lang}"
+
+    async def event_generator():
+        def _pack(payload: dict) -> str:
+            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        # In-memory cache hit → emit one done event and exit.
+        if cache_key in _match_cache:
+            yield _pack({"type": "done", "data": _match_cache[cache_key]})
+            return
+
+        if file_key not in parsed_matches:
+            yield _pack({"type": "error", "message": "Match not found. Please upload the replay first."})
+            return
+
+        match_data = parsed_matches[file_key]
+
+        # Disk cache hit → also emit single done event.
+        cached = _load_coach_cache(match_data.match_id, player_slot, lang)
+        if cached is not None:
+            _match_cache[cache_key] = cached
+            yield _pack({"type": "done", "data": cached})
+            return
+
+        # Cold path: run generate_coaching_report with a progress callback that
+        # pushes events into a queue, drained by this generator.
+        queue: asyncio.Queue = asyncio.Queue()
+        SENTINEL = object()
+
+        async def progress_cb(payload: dict) -> None:
+            await queue.put({"type": "progress", **payload})
+
+        async def run_report() -> None:
+            try:
+                from .ai.coach import generate_coaching_report
+
+                report = await generate_coaching_report(
+                    match_data, player_slot, lang=lang,
+                    progress_callback=progress_cb,
+                )
+                result = report.to_dict()
+                _match_cache[cache_key] = result
+                _save_coach_cache(match_data.match_id, player_slot, result, lang)
+                await queue.put({"type": "done", "data": result})
+            except Exception as exc:
+                logger.exception("AI coach stream failed for %s slot %d", file_key, player_slot)
+                await queue.put({"type": "error", "message": f"AI coaching analysis failed: {exc}"})
+            finally:
+                await queue.put(SENTINEL)
+
+        worker = asyncio.create_task(run_report())
+
+        # Optimistic kick-off event so the client UI moves immediately.
+        yield _pack({"type": "progress", "stage": "starting", "current": 0, "total": 1})
+
+        try:
+            while True:
+                item = await queue.get()
+                if item is SENTINEL:
+                    break
+                yield _pack(item)
+        finally:
+            if not worker.done():
+                worker.cancel()
+            try:
+                await worker
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # disables nginx buffering when fronted later
+        },
+    )
 
 
 @router.get("/match/{file_key}/{section}")

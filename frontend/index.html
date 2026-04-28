@@ -1323,7 +1323,16 @@
                 <div v-if="aiCoachLoading" class="text-center py-12">
                     <div class="loading-spinner mx-auto"></div>
                     <p class="text-gray-400 mt-4">{{ t('ai_coach_loading') }}</p>
-                    <p class="text-gray-500 text-sm mt-1">{{ t('ai_coach_loading_detail') }}</p>
+                    <p class="text-gray-500 text-sm mt-1">
+                        {{ aiCoachStageLabel(aiCoachProgress.stage) }}
+                        <span v-if="aiCoachProgress.stage === 'evaluate' && aiCoachProgress.total > 0" class="text-gray-400 ml-1">
+                            ({{ aiCoachProgress.current }}/{{ aiCoachProgress.total }})
+                        </span>
+                    </p>
+                    <div class="ai-coach-progress mx-auto mt-4">
+                        <div class="ai-coach-progress-bar" :style="{ width: aiCoachProgress.percent + '%' }"></div>
+                    </div>
+                    <p class="text-gray-600 text-xs mt-2">{{ aiCoachProgress.percent }}%</p>
                 </div>
 
                 <!-- Error state -->
@@ -1510,7 +1519,7 @@
         </div><!-- /v-if="analysisData" -->
     </div><!-- /#app -->
 
-    <script src="/static/js/i18n.js?v=3"></script>
-    <script src="/static/js/app.js?v=3"></script>
+    <script src="/static/js/i18n.js?v=4"></script>
+    <script src="/static/js/app.js?v=4"></script>
 </body>
 </html>

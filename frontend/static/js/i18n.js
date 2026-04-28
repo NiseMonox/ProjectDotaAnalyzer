@@ -289,6 +289,16 @@ window.I18N_MESSAGES = {
         ai_coach_select_player: '选择要分析的玩家',
         ai_coach_loading: 'AI教练正在分析中，请稍候...',
         ai_coach_loading_detail: '正在分析关键决策点和死亡事件',
+
+        // Progress stage labels (used by SSE stream of /ai-coach-stream)
+        coach_stage_starting: '准备分析...',
+        coach_stage_detect: '识别关键决策点...',
+        coach_stage_causal_chain: '追溯死亡因果链...',
+        coach_stage_context: '构建场景上下文...',
+        coach_stage_evaluate: 'AI正在评估每个决策...',
+        coach_stage_comparison: '对比职业玩家数据...',
+        coach_stage_summary: '生成总结报告...',
+        coach_stage_done: '完成',
         ai_coach_overall: '总体评价',
         ai_coach_death_analysis: '死亡复盘',
         ai_coach_deaths_suffix: '次',
@@ -622,6 +632,16 @@ window.I18N_MESSAGES = {
         ai_coach_select_player: 'Select Player to Analyze',
         ai_coach_loading: 'AI Coach is analyzing, please wait...',
         ai_coach_loading_detail: 'Analyzing key decision points and deaths',
+
+        // Progress stage labels (used by SSE stream of /ai-coach-stream)
+        coach_stage_starting: 'Starting...',
+        coach_stage_detect: 'Detecting decision points...',
+        coach_stage_causal_chain: 'Tracing death causal chains...',
+        coach_stage_context: 'Building scene context...',
+        coach_stage_evaluate: 'AI evaluating decisions...',
+        coach_stage_comparison: 'Comparing with pro players...',
+        coach_stage_summary: 'Compiling final report...',
+        coach_stage_done: 'Done',
         ai_coach_overall: 'Overall Assessment',
         ai_coach_death_analysis: 'Death Analysis',
         ai_coach_deaths_suffix: 'deaths',

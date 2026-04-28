@@ -85,6 +85,34 @@ createApp({
         const aiCoachLoading = ref(false);
         const aiCoachError = ref('');
         const aiCoachPlayerSlot = ref(null);
+        // Progress state for the SSE stream of /ai-coach-stream/{slot}
+        const aiCoachProgress = ref({ stage: '', current: 0, total: 0, percent: 0 });
+        let aiCoachEventSource = null;
+
+        // Map a backend "stage" string to a localized loading label.
+        function aiCoachStageLabel(stage) {
+            if (!stage) return t('ai_coach_loading_detail');
+            return t('coach_stage_' + stage) || t('ai_coach_loading_detail');
+        }
+
+        // Roll-up percent across all stages so the bar moves smoothly even when
+        // an individual stage reports current=0/total=1.
+        const STAGE_WEIGHTS = {
+            starting: [0, 2],
+            detect: [2, 4],
+            causal_chain: [4, 8],
+            context: [8, 12],
+            evaluate: [12, 90],     // the slow LLM batch dominates the wait
+            comparison: [90, 95],
+            summary: [95, 99],
+            done: [99, 100],
+        };
+        function computeOverallPercent(stage, current, total) {
+            const span = STAGE_WEIGHTS[stage] || [0, 100];
+            const [lo, hi] = span;
+            const frac = total > 0 ? Math.min(1, current / total) : 0;
+            return Math.round(lo + (hi - lo) * frac);
+        }
 
         // New tab state
         const selectedLaningPlayer = ref(0);
@@ -717,23 +745,64 @@ createApp({
             }
         }
 
-        async function requestAiCoach(playerSlot) {
+        function closeAiCoachStream() {
+            if (aiCoachEventSource) {
+                try { aiCoachEventSource.close(); } catch (e) { /* ignore */ }
+                aiCoachEventSource = null;
+            }
+        }
+
+        function requestAiCoach(playerSlot) {
+            // Tear down any in-flight stream before starting a new one.
+            closeAiCoachStream();
             aiCoachLoading.value = true;
             aiCoachError.value = '';
             aiCoachPlayerSlot.value = playerSlot;
-            try {
-                const mk = matchKey.value || 'demo';
-                const resp = await fetch(`/api/match/${mk}/ai-coach/${playerSlot}?lang=${locale.value}`);
-                if (!resp.ok) {
-                    const err = await resp.json();
-                    throw new Error(err.detail || t('ai_coach_failed'));
+            aiCoachData.value = null;
+            aiCoachProgress.value = { stage: 'starting', current: 0, total: 1, percent: 0 };
+
+            const mk = matchKey.value || 'demo';
+            const url = `/api/match/${mk}/ai-coach-stream/${playerSlot}?lang=${locale.value}`;
+            const es = new EventSource(url);
+            aiCoachEventSource = es;
+
+            es.onmessage = (event) => {
+                let msg;
+                try { msg = JSON.parse(event.data); } catch (e) { return; }
+
+                if (msg.type === 'progress') {
+                    const total = msg.total || 1;
+                    const current = msg.current || 0;
+                    aiCoachProgress.value = {
+                        stage: msg.stage || '',
+                        current,
+                        total,
+                        percent: computeOverallPercent(msg.stage, current, total),
+                    };
+                } else if (msg.type === 'done') {
+                    aiCoachProgress.value = { stage: 'done', current: 1, total: 1, percent: 100 };
+                    aiCoachData.value = msg.data;
+                    aiCoachLoading.value = false;
+                    closeAiCoachStream();
+                } else if (msg.type === 'error') {
+                    aiCoachError.value = msg.message || t('ai_coach_failed');
+                    aiCoachLoading.value = false;
+                    closeAiCoachStream();
                 }
-                aiCoachData.value = await resp.json();
-            } catch (e) {
-                aiCoachError.value = e.message;
-            } finally {
-                aiCoachLoading.value = false;
-            }
+            };
+
+            es.onerror = () => {
+                // EventSource auto-reconnects on transient errors. If the
+                // connection truly dies (server closes without 'done'), we
+                // bail out so the user isn't stuck on the spinner.
+                if (es.readyState === EventSource.CLOSED) {
+                    if (aiCoachLoading.value && !aiCoachData.value) {
+                        aiCoachError.value = t('ai_coach_failed');
+                        aiCoachLoading.value = false;
+                    }
+                    closeAiCoachStream();
+                }
+            };
         }
 
         function resetAnalysis() {
@@ -759,6 +828,8 @@ createApp({
             aiCoachLoading.value = false;
             aiCoachError.value = '';
             aiCoachPlayerSlot.value = null;
+            aiCoachProgress.value = { stage: '', current: 0, total: 0, percent: 0 };
+            closeAiCoachStream();
         }
 
         function renderMarkdown(text) {
@@ -2043,6 +2114,7 @@ createApp({
             PLACEHOLDER_HERO, PLACEHOLDER_ITEM,
             renderMarkdown,
             aiCoachData, aiCoachLoading, aiCoachError, aiCoachPlayerSlot, requestAiCoach,
+            aiCoachProgress, aiCoachStageLabel,
             // New overview/header properties
             matchHeader, overviewRadiant, overviewDire, teamTotals,
             timeAgo, regionName, formatNetWorth, teamSum, getItemPurchaseTime,
