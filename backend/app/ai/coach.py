@@ -70,8 +70,10 @@ def _find_player(match: MatchData, player_slot: int) -> PlayerData | None:
 # ---------------------------------------------------------------------------
 
 _LANE_NAMES: dict[str, dict[int, str]] = {
-    "zh": {0: "游走", 1: "安全路", 2: "中路", 3: "劣势路", 4: "野区"},
-    "en": {0: "Roaming", 1: "Safe Lane", 2: "Mid Lane", 3: "Off Lane", 4: "Jungle"},
+    # OpenDota's lane_role=4 ("Jungle") is essentially extinct in modern Dota
+    # (post-7.20); ~95% of cases are roaming supports. Treat it as roaming.
+    "zh": {0: "游走", 1: "安全路", 2: "中路", 3: "劣势路", 4: "游走"},
+    "en": {0: "Roaming", 1: "Safe Lane", 2: "Mid Lane", 3: "Off Lane", 4: "Roaming"},
 }
 
 _LANE_RESULT_LABELS: dict[str, dict[str, str]] = {

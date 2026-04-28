@@ -208,7 +208,6 @@ window.I18N_MESSAGES = {
         lane_safe: '安全路',
         lane_mid: '中路',
         lane_off: '劣势路',
-        lane_jungle: '野区',
         lane_roaming: '游走',
         lane_unknown: '未知',
 
@@ -551,7 +550,6 @@ window.I18N_MESSAGES = {
         lane_safe: 'Safe Lane',
         lane_mid: 'Mid Lane',
         lane_off: 'Off Lane',
-        lane_jungle: 'Jungle',
         lane_roaming: 'Roaming',
         lane_unknown: 'Unknown',
 

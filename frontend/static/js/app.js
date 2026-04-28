@@ -23,7 +23,10 @@ createApp({
             '安全路': 'lane_safe',
             '中路': 'lane_mid',
             '劣势路': 'lane_off',
-            '野区': 'lane_jungle',
+            // Backend used to emit "野区" for lane_role=4 (OpenDota's "Jungle"
+            // bucket); now folded into "游走" since modern Dota has no
+            // dedicated junglers. Keep the legacy mapping for cached payloads.
+            '野区': 'lane_roaming',
             '游走': 'lane_roaming',
             '未知': 'lane_unknown',
         };
@@ -32,8 +35,10 @@ createApp({
             if (player.is_roaming) return t('lane_roaming');
             const raw = player.lane_name;
             if (raw && LANE_NAME_I18N[raw]) return t(LANE_NAME_I18N[raw]);
-            // Derive from numeric lane id when lane_name is missing/unknown
-            const laneMap = { 1: 'lane_safe', 2: 'lane_mid', 3: 'lane_off', 4: 'lane_jungle' };
+            // Derive from numeric lane id when lane_name is missing/unknown.
+            // lane=4 (OpenDota "Jungle") collapsed into "Roaming" — see
+            // LANE_NAME_I18N comment above.
+            const laneMap = { 1: 'lane_safe', 2: 'lane_mid', 3: 'lane_off', 4: 'lane_roaming' };
             const key = laneMap[player.lane];
             if (key) return t(key);
             return t('lane_unknown');

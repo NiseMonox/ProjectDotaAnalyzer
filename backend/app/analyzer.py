@@ -393,7 +393,10 @@ def analyze_abilities(match: MatchData) -> dict:
 
 def analyze_laning(match: MatchData) -> dict:
     """Analyze laning phase data for all players."""
-    LANE_NAMES = {1: "安全路", 2: "中路", 3: "劣势路", 4: "野区"}
+    # OpenDota's lane_role=4 is officially "Jungle", but in modern Dota
+    # (7.20+) dedicated jungling is dead — that bucket is mostly roaming
+    # supports / pushed-out offlaners. is_roaming below still overrides.
+    LANE_NAMES = {1: "安全路", 2: "中路", 3: "劣势路", 4: "游走"}
 
     players = []
     for p in match.players:
