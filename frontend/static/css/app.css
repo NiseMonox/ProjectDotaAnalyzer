@@ -2448,3 +2448,22 @@ body {
 .grade-c { background: rgba(251, 146, 60, 0.3); color: #fdba74; }
 .grade-d { background: rgba(248, 113, 113, 0.3); color: #fca5a5; }
 
+.ai-grade-sm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 0.25rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+/* Phase review left borders, color-coded by grade */
+.phase-border-s { border-color: #a78bfa; }
+.phase-border-a { border-color: #6ee7b7; }
+.phase-border-b { border-color: #fcd34d; }
+.phase-border-c { border-color: #fdba74; }
+.phase-border-d { border-color: #fca5a5; }
+

@@ -6,6 +6,7 @@ the API is unavailable.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -16,6 +17,7 @@ from .models import (
     Evaluation,
     EventEntry,
     HeroState,
+    PhaseReview,
     VisionAnalysis,
 )
 
@@ -1210,3 +1212,212 @@ def _evaluate_fight_engage(
             lesson = "除非有极大优势（装备/等级/位置），否则不要打人数劣势的团"
 
     return score, analysis, mistake, better_play, lesson
+
+
+# ---------------------------------------------------------------------------
+# Phase review (one LLM call per game-time phase)
+# ---------------------------------------------------------------------------
+
+_PHASE_LABELS_ZH = {
+    "laning":     "对线期",
+    "early_mid":  "前中期",
+    "mid_late":   "中后期",
+    "late":       "后期",
+    "ultra_late": "大后期",
+}
+_PHASE_LABELS_EN = {
+    "laning":     "Laning",
+    "early_mid":  "Early-Mid Game",
+    "mid_late":   "Mid-Late Game",
+    "late":       "Late Game",
+    "ultra_late": "Ultra-Late Game",
+}
+
+
+def _format_lead(value: int, lang: str) -> str:
+    if value == 0:
+        return "持平" if lang == "zh" else "even"
+    side = ("天辉" if value > 0 else "夜魇") if lang == "zh" else ("Radiant" if value > 0 else "Dire")
+    return f"{side} +{abs(value)}"
+
+
+def _build_phase_prompt(
+    *, hero_name: str, position_label: str, team: str,
+    phase_key: str, phase_stats: dict, lang: str,
+) -> str:
+    """Build a position-aware prompt for one phase review."""
+    if lang == "en":
+        phase_label = _PHASE_LABELS_EN.get(phase_key, phase_key)
+        team_label = "Radiant" if team == "radiant" else "Dire"
+        gold_lead = _format_lead(phase_stats.get("radiant_gold_lead", 0), "en")
+        xp_lead = _format_lead(phase_stats.get("radiant_xp_lead", 0), "en")
+        return (
+            f"You are a Dota 2 high-MMR coach. Evaluate one player in a single "
+            f"phase of one match.\n\n"
+            f"Player: hero={hero_name}, role={position_label}, team={team_label}\n"
+            f"Phase: {phase_label} ({phase_stats.get('time_range','')})\n\n"
+            f"Stats in this phase window:\n"
+            f"- KDA: {phase_stats.get('kills',0)}/"
+            f"{phase_stats.get('deaths',0)}/{phase_stats.get('assists',0)}\n"
+            f"- Last hits gained: {phase_stats.get('last_hits_delta',0)}\n"
+            f"- Gold gained: {phase_stats.get('gold_delta',0)} "
+            f"(GPM={phase_stats.get('gpm_in_phase',0)})\n"
+            f"- XP gained: {phase_stats.get('xp_delta',0)} "
+            f"(XPM={phase_stats.get('xpm_in_phase',0)})\n"
+            f"- Death timestamps (sec): {phase_stats.get('death_times',[])}\n"
+            f"- Teamfights involved: {phase_stats.get('teamfight_count',0)} "
+            f"(team won {phase_stats.get('teamfight_wins',0)})\n"
+            f"- Smokes by your team: {phase_stats.get('smokes_used_self_team',0)}\n"
+            f"- Towers taken (Radiant/Dire): "
+            f"{phase_stats.get('towers_taken_radiant',0)}/"
+            f"{phase_stats.get('towers_taken_dire',0)}\n"
+            f"- End-of-phase gold lead: {gold_lead}\n"
+            f"- End-of-phase XP lead: {xp_lead}\n\n"
+            f"Judge through the lens of role={position_label}. Different positions "
+            f"have different responsibilities each phase (Position 5 cares about "
+            f"wards/saves/pulls more than last hits; Position 1 cares about farm "
+            f"efficiency more than early kills).\n\n"
+            f"Output STRICT JSON only (no markdown, no prose), exactly this shape:\n"
+            f'{{"score":"S|A|B|C|D","summary":"<1-2 sentences>","highlights":["..."],"issues":["..."],"suggestions":["..."]}}'
+            f"\n\nKeep each list item under 30 words. Return [] for empty lists."
+        )
+
+    phase_label = _PHASE_LABELS_ZH.get(phase_key, phase_key)
+    team_label = "天辉" if team == "radiant" else "夜魇"
+    gold_lead = _format_lead(phase_stats.get("radiant_gold_lead", 0), "zh")
+    xp_lead = _format_lead(phase_stats.get("radiant_xp_lead", 0), "zh")
+    return (
+        f"你是一名 Dota 2 高分教练。请评价一名玩家在一场比赛的某个阶段的表现。\n\n"
+        f"玩家信息：英雄={hero_name}，位置={position_label}，队伍={team_label}\n"
+        f"阶段：{phase_label}（{phase_stats.get('time_range','')}）\n\n"
+        f"该阶段统计：\n"
+        f"- KDA：{phase_stats.get('kills',0)}/"
+        f"{phase_stats.get('deaths',0)}/{phase_stats.get('assists',0)}\n"
+        f"- 补刀增量：{phase_stats.get('last_hits_delta',0)}\n"
+        f"- 经济增量：{phase_stats.get('gold_delta',0)} "
+        f"（GPM={phase_stats.get('gpm_in_phase',0)}）\n"
+        f"- 经验增量：{phase_stats.get('xp_delta',0)} "
+        f"（XPM={phase_stats.get('xpm_in_phase',0)}）\n"
+        f"- 死亡时间点（秒）：{phase_stats.get('death_times',[])}\n"
+        f"- 参与团战：{phase_stats.get('teamfight_count',0)} 次"
+        f"（队伍赢 {phase_stats.get('teamfight_wins',0)}）\n"
+        f"- 队伍用雾次数：{phase_stats.get('smokes_used_self_team',0)}\n"
+        f"- 推塔（双方）：天辉 {phase_stats.get('towers_taken_radiant',0)} / "
+        f"夜魇 {phase_stats.get('towers_taken_dire',0)}\n"
+        f"- 阶段末经济差：{gold_lead}\n"
+        f"- 阶段末经验差：{xp_lead}\n\n"
+        f"请以该玩家的位置（{position_label}）的视角评价这段表现。"
+        f"不同位置在该阶段的关注点不同：5 号位重保人/插眼/拉野，1 号位重 farm 效率，"
+        f"3 号位重承伤换人头，2 号位重节奏，4 号位重游走 gank。\n\n"
+        f"请严格只输出下列 JSON 格式（不要 markdown 代码块、不要解释）：\n"
+        f'{{"score":"S|A|B|C|D","summary":"1-2 句中文","highlights":["..."],"issues":["..."],"suggestions":["..."]}}'
+        f"\n\n每条列表项不超过 30 字。空列表用 []。"
+    )
+
+
+def _parse_phase_response(text: str) -> dict:
+    """Parse the LLM's JSON output for a phase review."""
+    if not text:
+        return {}
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group(0))
+    except Exception:
+        return {}
+
+
+async def evaluate_phase(
+    *, hero_name: str, position_label: str, team: str,
+    phase_key: str, phase_time_range: str, phase_stats_dict: dict,
+    lang: str = "zh",
+) -> PhaseReview:
+    """Generate a per-phase review for one player; never raises."""
+    base = PhaseReview(
+        phase=phase_key,
+        time_range=phase_time_range,
+        stats=phase_stats_dict,
+    )
+
+    if not is_api_available():
+        return _phase_review_fallback(base, phase_stats_dict, lang=lang)
+
+    try:
+        from openai import AsyncOpenAI
+
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+        client = AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com",
+            timeout=120.0,
+            max_retries=1,
+        )
+        prompt = _build_phase_prompt(
+            hero_name=hero_name,
+            position_label=position_label,
+            team=team,
+            phase_key=phase_key,
+            phase_stats=phase_stats_dict,
+            lang=lang,
+        )
+        response = await client.chat.completions.create(
+            model=MODEL,
+            max_tokens=2200,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = (response.choices[0].message.content or "").strip()
+        parsed = _parse_phase_response(content)
+        if not parsed or "score" not in parsed:
+            logger.info("phase review: LLM output unparseable, falling back (phase=%s)", phase_key)
+            return _phase_review_fallback(base, phase_stats_dict, lang=lang)
+
+        score = str(parsed.get("score", "C"))[:1].upper() or "C"
+        base.score = score if score in ("S", "A", "B", "C", "D") else "C"
+        base.summary = parsed.get("summary", "") or ""
+        base.highlights = [str(x) for x in (parsed.get("highlights") or [])][:5]
+        base.issues = [str(x) for x in (parsed.get("issues") or [])][:5]
+        base.suggestions = [str(x) for x in (parsed.get("suggestions") or [])][:5]
+        base.used_llm = True
+        return base
+
+    except Exception as exc:
+        logger.warning("evaluate_phase 异常 (phase=%s): %s", phase_key, exc)
+        return _phase_review_fallback(base, phase_stats_dict, lang=lang)
+
+
+def _phase_review_fallback(base: PhaseReview, stats: dict, *, lang: str) -> PhaseReview:
+    """Rule-based phase review used when LLM is disabled or errors out."""
+    deaths = int(stats.get("deaths", 0))
+    kills = int(stats.get("kills", 0))
+    teamfight_count = int(stats.get("teamfight_count", 0))
+    teamfight_wins = int(stats.get("teamfight_wins", 0))
+
+    if deaths == 0 and kills >= 2:
+        score = "A"
+    elif deaths >= 3:
+        score = "D"
+    elif deaths >= 2:
+        score = "C"
+    elif kills > 0 and deaths == 0:
+        score = "B"
+    else:
+        score = "C"
+
+    if lang == "en":
+        base.summary = (
+            f"KDA {kills}/{deaths}/{stats.get('assists',0)}, "
+            f"teamfights {teamfight_wins}/{teamfight_count}."
+        )
+    else:
+        base.summary = (
+            f"KDA {kills}/{deaths}/{stats.get('assists',0)}，"
+            f"团战 {teamfight_wins}/{teamfight_count}。"
+        )
+    base.score = score
+    return base

@@ -105,11 +105,12 @@ createApp({
         const STAGE_WEIGHTS = {
             starting: [0, 2],
             detect: [2, 4],
-            causal_chain: [4, 8],
-            context: [8, 12],
-            evaluate: [12, 90],     // the slow LLM batch dominates the wait
-            comparison: [90, 95],
-            summary: [95, 99],
+            causal_chain: [4, 6],
+            context: [6, 9],
+            evaluate: [9, 70],      // sequential decision evals, dominant cost
+            comparison: [70, 72],
+            phases: [72, 96],       // 5 parallel phase LLM calls, ~quarter of wait
+            summary: [96, 99],
             done: [99, 100],
         };
         function computeOverallPercent(stage, current, total) {

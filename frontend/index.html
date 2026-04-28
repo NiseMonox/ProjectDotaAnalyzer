@@ -1346,11 +1346,63 @@
                     <div class="card mb-6">
                         <div class="flex items-center justify-between">
                             <div>
-                                <h3 class="text-xl font-bold mb-1">{{ aiCoachData.hero_name }} - {{ t('ai_coach_overall') }}</h3>
+                                <h3 class="text-xl font-bold mb-1">
+                                    {{ aiCoachData.hero_name }}
+                                    <span v-if="aiCoachData.position && aiCoachData.position.number"
+                                          class="ml-2 inline-block text-xs px-2 py-0.5 rounded bg-yellow-900 bg-opacity-40 text-yellow-300 align-middle">
+                                        {{ locale === 'en' ? aiCoachData.position.label_en : aiCoachData.position.label_zh }}
+                                    </span>
+                                    <span class="text-gray-400"> - {{ t('ai_coach_overall') }}</span>
+                                </h3>
                                 <p class="text-gray-300">{{ aiCoachData.summary }}</p>
                             </div>
                             <div class="ai-grade" :class="'grade-' + aiCoachData.overall_grade.toLowerCase()">
                                 {{ aiCoachData.overall_grade }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Phase Reviews -->
+                    <div v-if="aiCoachData.phase_reviews && aiCoachData.phase_reviews.length" class="card mb-6">
+                        <h3 class="card-title mb-4">{{ t('ai_coach_phase_reviews') }}</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div v-for="(p, idx) in aiCoachData.phase_reviews" :key="idx"
+                                 class="p-4 bg-gray-800 rounded-lg border-l-4"
+                                 :class="'phase-border-' + (p.score || 'C').toLowerCase()">
+                                <div class="flex items-baseline justify-between mb-2">
+                                    <h4 class="font-semibold">
+                                        {{ t('phase_' + p.phase) }}
+                                        <span class="text-gray-500 text-xs ml-1">({{ p.time_range }})</span>
+                                    </h4>
+                                    <span class="ai-grade-sm" :class="'grade-' + (p.score || 'C').toLowerCase()">
+                                        {{ p.score }}
+                                    </span>
+                                </div>
+                                <p class="text-gray-300 text-sm mb-2" v-if="p.summary">{{ p.summary }}</p>
+                                <div v-if="p.stats" class="text-xs text-gray-500 mb-3 grid grid-cols-2 gap-x-3 gap-y-1">
+                                    <span>KDA: <span class="text-gray-300">{{ p.stats.kills }}/{{ p.stats.deaths }}/{{ p.stats.assists }}</span></span>
+                                    <span>GPM: <span class="text-gray-300">{{ p.stats.gpm_in_phase }}</span></span>
+                                    <span>{{ t('ai_coach_phase_lh') }}: <span class="text-gray-300">+{{ p.stats.last_hits_delta }}</span></span>
+                                    <span>XPM: <span class="text-gray-300">{{ p.stats.xpm_in_phase }}</span></span>
+                                </div>
+                                <div v-if="p.highlights && p.highlights.length" class="text-xs mb-1">
+                                    <span class="text-green-400 font-medium">{{ t('ai_coach_phase_highlights') }}:</span>
+                                    <ul class="list-disc ml-4 mt-1 text-gray-300">
+                                        <li v-for="(h, hi) in p.highlights" :key="hi">{{ h }}</li>
+                                    </ul>
+                                </div>
+                                <div v-if="p.issues && p.issues.length" class="text-xs mb-1">
+                                    <span class="text-red-400 font-medium">{{ t('ai_coach_phase_issues') }}:</span>
+                                    <ul class="list-disc ml-4 mt-1 text-gray-300">
+                                        <li v-for="(it, ii) in p.issues" :key="ii">{{ it }}</li>
+                                    </ul>
+                                </div>
+                                <div v-if="p.suggestions && p.suggestions.length" class="text-xs">
+                                    <span class="text-blue-400 font-medium">{{ t('ai_coach_phase_suggestions') }}:</span>
+                                    <ul class="list-disc ml-4 mt-1 text-gray-300">
+                                        <li v-for="(s, si) in p.suggestions" :key="si">{{ s }}</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1519,7 +1571,7 @@
         </div><!-- /v-if="analysisData" -->
     </div><!-- /#app -->
 
-    <script src="/static/js/i18n.js?v=5"></script>
-    <script src="/static/js/app.js?v=5"></script>
+    <script src="/static/js/i18n.js?v=6"></script>
+    <script src="/static/js/app.js?v=6"></script>
 </body>
 </html>

@@ -616,6 +616,28 @@ async def generate_coaching_report(
     hero_name = player.hero_name
 
     # ------------------------------------------------------------------
+    # Step 0.5: Derive role/position (1-5) for the entire match
+    # ------------------------------------------------------------------
+    position_payload: dict = {}
+    position_label_text = "辅助" if lang == "zh" else "Support"
+    try:
+        from .positions import derive_match_positions
+
+        positions_map = derive_match_positions(match.players)
+        my_pos = positions_map.get(player_slot)
+        if my_pos:
+            position_label_text = my_pos.label(lang)
+            position_payload = {
+                "number": my_pos.number,
+                "label_zh": my_pos.label_zh,
+                "label_en": my_pos.label_en,
+                "confidence": my_pos.confidence,
+                "method": my_pos.method,
+            }
+    except Exception as exc:
+        logger.warning("position derivation failed: %s", exc)
+
+    # ------------------------------------------------------------------
     # Step 1: Detect decision points
     # ------------------------------------------------------------------
     await _emit("detect", 0, 1)
@@ -792,6 +814,48 @@ async def generate_coaching_report(
         logger.error("pro_patterns 对比失败: %s", exc)
 
     # ------------------------------------------------------------------
+    # Step 4.8: Per-phase reviews (laning / early-mid / mid-late / late /
+    # ultra-late). Each phase gets one LLM call, parallelized.
+    # ------------------------------------------------------------------
+    phase_reviews: list = []
+    try:
+        from .evaluator import evaluate_phase
+        from .phases import slice_player_phases
+
+        phase_stats_list = slice_player_phases(match, player)
+        if phase_stats_list:
+            await _emit("phases", 0, len(phase_stats_list))
+
+            async def _run_phase(idx: int, ps):
+                review = await evaluate_phase(
+                    hero_name=hero_name,
+                    position_label=position_label_text,
+                    team=player.team,
+                    phase_key=ps.phase,
+                    phase_time_range=ps.time_range,
+                    phase_stats_dict=ps.to_dict(),
+                    lang=lang,
+                )
+                return idx, review
+
+            tasks = [
+                asyncio.create_task(_run_phase(i, ps))
+                for i, ps in enumerate(phase_stats_list)
+            ]
+            indexed: list[tuple[int, object]] = []
+            done = 0
+            for fut in asyncio.as_completed(tasks):
+                idx, review = await fut
+                indexed.append((idx, review))
+                done += 1
+                await _emit("phases", done, len(phase_stats_list))
+            indexed.sort(key=lambda t: t[0])
+            phase_reviews = [r for _, r in indexed]
+    except Exception as exc:
+        logger.error("phase review pipeline failed: %s", exc, exc_info=True)
+        phase_reviews = []
+
+    # ------------------------------------------------------------------
     # Step 5: Compile report
     # ------------------------------------------------------------------
     await _emit("summary", 0, 1)
@@ -832,6 +896,8 @@ async def generate_coaching_report(
         improvement_areas=improvement_areas,
         strengths=strengths,
         pro_comparison=pro_comparison_data,
+        phase_reviews=phase_reviews,
+        position=position_payload,
     )
     await _emit("done", 1, 1)
     return report
