@@ -173,6 +173,7 @@ class Evaluation:
     lesson: str = ""        # general takeaway
     _parsed_ok: bool = True # whether LLM response was parsed successfully
     causal_chain_data: dict = field(default_factory=dict)  # serialized causal chain for frontend
+    agent_trace: list = field(default_factory=list)  # tool-calling investigation steps (agent mode)
 
 
 @dataclass
@@ -232,6 +233,7 @@ class CoachingReport:
                     "better_play": e.better_play,
                     "lesson": e.lesson,
                     "causal_chain": e.causal_chain_data if e.causal_chain_data else None,
+                    "agent_trace": e.agent_trace if e.agent_trace else None,
                 }
                 for e in self.death_analyses
             ],
@@ -247,6 +249,7 @@ class CoachingReport:
                     "mistake": e.mistake,
                     "better_play": e.better_play,
                     "lesson": e.lesson,
+                    "agent_trace": e.agent_trace if e.agent_trace else None,
                 }
                 for e in self.key_moments
             ],

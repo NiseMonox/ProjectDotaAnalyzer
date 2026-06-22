@@ -29,6 +29,12 @@ from .evaluator import (
     is_api_available,
 )
 
+try:
+    from .agent import run_decision_agent, is_agent_enabled
+    _HAS_AGENT = True
+except Exception:  # pragma: no cover - agent module optional
+    _HAS_AGENT = False
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -745,7 +751,7 @@ async def generate_coaching_report(
             # per-call failures by returning a rule-based fallback, so a few
             # API errors do not require pessimistic early-abort logic.
             async def _eval_with_index(idx: int, ctx: DecisionContext, know: str):
-                ev, _used_api = await _safe_evaluate(ctx, know, lang=lang)
+                ev, _used_api = await _safe_evaluate(ctx, know, lang=lang, match=match)
                 return idx, ev
 
             tasks = [
@@ -903,30 +909,53 @@ async def generate_coaching_report(
     return report
 
 
+def _fill_missing_fields(ev: Evaluation, context: DecisionContext, lang: str) -> Evaluation:
+    """Backfill empty structured fields from the rule-based evaluator.
+
+    The LLM (agent or single-prompt) often writes excellent free-form analysis
+    but does not always populate every structured field, so we top it up.
+    """
+    if ev.mistake and ev.better_play and ev.lesson:
+        return ev
+    fallback = evaluate_decision_fallback(context, lang=lang)
+    if not ev.mistake and fallback.mistake:
+        ev.mistake = fallback.mistake
+    if not ev.better_play and fallback.better_play:
+        ev.better_play = fallback.better_play
+    if not ev.lesson and fallback.lesson:
+        ev.lesson = fallback.lesson
+    return ev
+
+
 async def _safe_evaluate(
     context: DecisionContext, knowledge: str, lang: str = "zh",
+    match: MatchData | None = None,
 ) -> tuple[Evaluation, bool]:
     """Evaluate a decision, catching any exceptions so one failure
     does not block the entire pipeline.
 
+    Strategy: when enabled, run the tool-calling agent first; if it fails
+    (e.g. the endpoint rejects tool calls), fall back to the single-prompt
+    evaluator, and finally to the rule-based evaluator.
+
     Returns (Evaluation, used_api) where used_api is True if the LLM
     returned a successfully parsed evaluation.
     """
+    use_agent = _HAS_AGENT and match is not None and is_agent_enabled()
+
+    if use_agent:
+        try:
+            ev = await run_decision_agent(match, context, knowledge, lang=lang)
+            return _fill_missing_fields(ev, context, lang), True
+        except Exception as exc:
+            logger.warning(
+                "decision agent failed (time=%s), falling back to single-prompt: %s",
+                context.decision_point.time, exc,
+            )
+
     try:
         ev = await evaluate_decision(context, knowledge, lang=lang)
-        # Fill missing structured fields from rule-based fallback.
-        # Claude often writes excellent free-form analysis but doesn't
-        # always follow the exact structured format.
-        missing_fields = (not ev.mistake) or (not ev.better_play) or (not ev.lesson)
-        if missing_fields:
-            fallback = evaluate_decision_fallback(context, lang=lang)
-            if not ev.mistake and fallback.mistake:
-                ev.mistake = fallback.mistake
-            if not ev.better_play and fallback.better_play:
-                ev.better_play = fallback.better_play
-            if not ev.lesson and fallback.lesson:
-                ev.lesson = fallback.lesson
-        return ev, True
+        return _fill_missing_fields(ev, context, lang), True
     except Exception as exc:
         logger.error(
             "evaluate_decision 异常 (time=%s): %s",
