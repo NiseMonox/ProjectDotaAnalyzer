@@ -36,13 +36,12 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ..models import MatchData
-from .models import DecisionContext, Evaluation
+from .models import DecisionContext, Evaluation, is_time_unknown
 from . import evaluator as _ev
 
 logger = logging.getLogger(__name__)
 
 _VALID_SCORES = ("S", "A", "B", "C", "D")
-_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +401,12 @@ def _user_brief(context: DecisionContext, lang: str) -> str:
     t = _ev._PROMPT_TEMPLATES.get(lang, _ev._PROMPT_TEMPLATES["zh"])
     dp = context.decision_point
     mm, ss = dp.time // 60, dp.time % 60
+    # Some good_play points carry no timestamp (time=0); say the time is
+    # unknown instead of presenting a misleading 00:00.
+    if is_time_unknown(dp):
+        time_str = t["time_unknown"]
+    else:
+        time_str = f"{mm:02d}:{ss:02d} ({dp.time}s)" if lang == "en" else f"{mm:02d}:{ss:02d}（{dp.time}s）"
     phase_map = {
         "pregame": t["phase_pregame"],
         "laning": t["phase_laning"],
@@ -413,7 +418,7 @@ def _user_brief(context: DecisionContext, lang: str) -> str:
     if lang == "en":
         return (
             f"Decision point to investigate:\n"
-            f"- Time: {mm:02d}:{ss:02d} ({dp.time}s)\n"
+            f"- Time: {time_str}\n"
             f"- Type: {dp.point_type}\n"
             f"- Severity: {dp.severity}\n"
             f"- Phase: {phase_str}\n"
@@ -423,7 +428,7 @@ def _user_brief(context: DecisionContext, lang: str) -> str:
         )
     return (
         f"待调查的决策点：\n"
-        f"- 时间：{mm:02d}:{ss:02d}（{dp.time}s）\n"
+        f"- 时间：{time_str}\n"
         f"- 类型：{dp.point_type}\n"
         f"- 严重程度：{dp.severity}\n"
         f"- 阶段：{phase_str}\n"
@@ -529,15 +534,7 @@ async def run_decision_agent(
     if not _ev.is_api_available():
         raise RuntimeError("DeepSeek API not available")
 
-    from openai import AsyncOpenAI
-
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-    client = AsyncOpenAI(
-        api_key=api_key,
-        base_url=_DEEPSEEK_BASE_URL,
-        timeout=120.0,
-        max_retries=1,
-    )
+    client = _ev.get_shared_client()
 
     tc = _ToolCtx(match=match, context=context, knowledge=knowledge or "", lang=lang)
     dp = context.decision_point

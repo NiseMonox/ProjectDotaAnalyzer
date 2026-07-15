@@ -792,10 +792,14 @@ def _generate_laning_denies() -> list[LaningCreepKill]:
 def _generate_laning_damage_events(
     hero_idx: int, num_players: int,
 ) -> list[LaningDamageEvent]:
-    """Generate hero-vs-hero damage trades during laning phase."""
+    """Generate hero-vs-hero damage trades during laning phase.
+
+    target_idx is the index of the target in match.players (0-9), matching
+    the clarity Java analyzer output — NOT player_slot (dire slots are 128+).
+    """
     events = []
     num = random.randint(10, 30)
-    # Target indices from opposing team
+    # Target indices (into match.players) from opposing team
     if hero_idx < 5:
         possible_targets = list(range(5, num_players))
     else:
@@ -985,7 +989,7 @@ def generate_mock_match() -> MatchData:
         duration=duration,
         radiant_win=radiant_win,
         game_mode="All Pick",
-        start_time=1741024620,  # 2026-03-03 00:57 UTC+8
+        start_time=1741024620,  # 2025-03-03 17:57 UTC (2025-03-04 01:57 UTC+8)
         radiant_score=19,
         dire_score=51,
         players=players,

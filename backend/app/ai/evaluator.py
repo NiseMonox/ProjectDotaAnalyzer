@@ -10,7 +10,9 @@ import json
 import logging
 import os
 import re
+import threading
 
+from .context_builder import count_nearby_allies
 from .models import (
     DecisionContext,
     DecisionPoint,
@@ -19,6 +21,7 @@ from .models import (
     HeroState,
     PhaseReview,
     VisionAnalysis,
+    is_time_unknown,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,6 +30,7 @@ logger = logging.getLogger(__name__)
 # DeepSeek API configuration (OpenAI-compatible)
 # ---------------------------------------------------------------------------
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 # DeepSeek v4 is reasoning-by-default; v4-flash is the chat-equivalent (cheaper
 # than v4-pro but still reasons before answering). max_tokens must cover both
 # the hidden reasoning trace AND the final structured answer.
@@ -38,6 +42,34 @@ try:
     _HAS_OPENAI = True
 except ImportError:  # pragma: no cover
     _HAS_OPENAI = False
+
+# Shared AsyncOpenAI client, lazily created and reused by evaluate_decision,
+# evaluate_phase, and the tool-calling agent (avoids per-call construction).
+_shared_client = None
+_shared_client_key: str | None = None
+_shared_client_lock = threading.Lock()
+
+
+def get_shared_client():
+    """Return the lazily-created shared AsyncOpenAI client.
+
+    The client is rebuilt if DEEPSEEK_API_KEY changes (e.g. set after startup).
+    """
+    global _shared_client, _shared_client_key
+    if not _HAS_OPENAI:
+        raise RuntimeError("openai SDK is not installed")
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if _shared_client is None or _shared_client_key != api_key:
+        with _shared_client_lock:
+            if _shared_client is None or _shared_client_key != api_key:
+                _shared_client = AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=DEEPSEEK_BASE_URL,
+                    timeout=120.0,
+                    max_retries=1,
+                )
+                _shared_client_key = api_key
+    return _shared_client
 
 try:
     from .game_data import get_item_data
@@ -111,6 +143,7 @@ _PROMPT_TEMPLATES: dict[str, dict[str, str]] = {
         "phase_mid": "中期 (10-25分钟)",
         "phase_late": "后期 (25分钟+)",
         "phase_unknown": "未知",
+        "time_unknown": "未知（数据源未记录该事件的具体时间戳）",
         "label_player": "玩家",
         "label_ally": "队友",
         "label_enemy": "敌人",
@@ -205,6 +238,7 @@ _PROMPT_TEMPLATES: dict[str, dict[str, str]] = {
         "phase_mid": "Mid Game (10-25 min)",
         "phase_late": "Late Game (25+ min)",
         "phase_unknown": "Unknown",
+        "time_unknown": "Unknown (the data source recorded no exact timestamp for this event)",
         "label_player": "Player",
         "label_ally": "Ally",
         "label_enemy": "Enemy",
@@ -374,6 +408,12 @@ def _build_evaluation_prompt(context: DecisionContext, knowledge: str, lang: str
     dp = context.decision_point
     minutes = dp.time // 60
     seconds = dp.time % 60
+    # Some good_play points carry no timestamp (time=0); tell the LLM the
+    # time is unknown instead of presenting a misleading 00:00.
+    if is_time_unknown(dp):
+        time_str = t["time_unknown"]
+    else:
+        time_str = f"{minutes:02d}:{seconds:02d} ({dp.time}s)"
 
     # Game phase
     phase_map = {
@@ -441,7 +481,7 @@ def _build_evaluation_prompt(context: DecisionContext, knowledge: str, lang: str
     prompt = f"""{t['system_role']}
 
 ## {t['section_decision']}
-- {t['label_time']}: {minutes:02d}:{seconds:02d} ({dp.time}s)
+- {t['label_time']}: {time_str}
 - {t['label_type']}: {dp.point_type}
 - {t['label_severity']}: {dp.severity}
 - {t['label_brief']}: {dp.brief}
@@ -615,13 +655,7 @@ async def evaluate_decision(
         return evaluate_decision_fallback(context, lang=lang)
 
     try:
-        api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-        client = AsyncOpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com",
-            timeout=120.0,
-            max_retries=1,
-        )
+        client = get_shared_client()
         prompt = _build_evaluation_prompt(context, knowledge, lang=lang)
 
         response = await client.chat.completions.create(
@@ -707,19 +741,6 @@ def evaluate_decision_fallback(context: DecisionContext, lang: str = "zh") -> Ev
             mistake = "漏补了较多小兵"
             better_play = "注意小兵血量，提前准备攻击动画"
             lesson = "补刀是经济的基础，每个漏掉的兵都是金币损失"
-    elif dp.point_type == "no_retreat":
-        if lang == "en":
-            score = "D"
-            analysis = f"{dp.hero_name} failed to retreat in time from a dangerous situation."
-            mistake = "Lack of map awareness — did not back off when the situation called for retreat"
-            better_play = "Watch the minimap; be alert when vision is missing or enemy heroes disappear"
-            lesson = "Staying alive matters more than any potential gain — discretion is the better part of valor"
-        else:
-            score = "D"
-            analysis = f"{dp.hero_name}在危险局势下未能及时撤退。"
-            mistake = "缺乏对地图局势的判断，没有在该撤退时后退"
-            better_play = "关注小地图，当缺少视野或敌方英雄消失时保持警惕"
-            lesson = "活着比任何收益都重要，留得青山在不怕没柴烧"
     else:
         # Generic fallback for unknown types
         if lang == "en":
@@ -755,31 +776,56 @@ def _evaluate_pregame_death(
     death_event = dp.related_death
     killer = death_event.killer_hero if death_event else ("Unknown" if lang == "en" else "未知")
 
+    # enemy_states is already proximity-filtered to nearby enemies, but
+    # ally_states holds ALL 4 teammates regardless of position — compare
+    # against allies actually near the player, or the "outnumbered" branch
+    # can never trigger and the NvM headcount in the text is wrong.
     num_enemies = len(ctx.enemy_states)
-    num_allies = len(ctx.ally_states)
+    num_allies = count_nearby_allies(ps, ctx.ally_states, ctx.game_phase or "pregame")
+    outnumbered = num_enemies > num_allies + 1
 
-    # If outnumbered (enemies > allies + 1), still C but note the disadvantage
-    if num_enemies > num_allies + 1:
+    if outnumbered:
+        # Dying in a contested rune fight while outnumbered: the real mistake
+        # was contesting at all, but the death itself is understandable — C.
         score = "C"
+        if lang == "en":
+            analysis = (
+                f"{dp.hero_name} was killed by {killer} while contesting the bounty rune "
+                f"outnumbered ({num_allies + 1}v{num_enemies}). "
+                f"A bounty rune is worth ~40 gold, but dying costs 100+ gold plus lane time."
+            )
+            mistake = "Contested the bounty rune despite being outnumbered"
+            better_play = "When the enemy shows more numbers, abandon the bounty rune and go straight to lane"
+            lesson = "A bounty rune is not worth dying for — staying alive and getting to lane is more valuable"
+        else:
+            analysis = (
+                f"{dp.hero_name}在人数劣势（{num_allies + 1}v{num_enemies}）的赏金符争夺中被{killer}击杀。"
+                f"赏金符价值约40金，死亡代价远超此数。"
+            )
+            mistake = "在人数劣势下仍然争夺赏金符"
+            better_play = "看到敌方人多时应放弃赏金符，直接去线上"
+            lesson = "赏金符不值得用命换，保命上线更重要"
     else:
-        score = "C"
-
-    if lang == "en":
-        analysis = (
-            f"{dp.hero_name} was killed by {killer} during the bounty rune contest. "
-            f"A bounty rune is worth ~40 gold, but dying costs 100+ gold plus lane time."
-        )
-        mistake = "Contested the bounty rune in an unfavorable situation"
-        better_play = "When outnumbered, abandon the bounty rune and go straight to lane"
-        lesson = "A bounty rune is not worth dying for — staying alive and getting to lane is more valuable"
-    else:
-        analysis = (
-            f"{dp.hero_name}在赏金符争夺中被{killer}击杀。"
-            f"赏金符价值约40金，死亡代价远超此数。"
-        )
-        mistake = "在不利情况下争夺赏金符"
-        better_play = "看到敌方人多时应放弃赏金符，直接去线上"
-        lesson = "赏金符不值得用命换，保命上线更重要"
+        # Numbers were even or favorable and the player still died before the
+        # game even started — a careless death, graded more harshly — D.
+        score = "D"
+        if lang == "en":
+            analysis = (
+                f"{dp.hero_name} was killed by {killer} in the pregame phase even though "
+                f"the numbers were not unfavorable ({num_allies + 1}v{num_enemies}). "
+                f"A free death before creeps spawn costs 100+ gold plus lane time."
+            )
+            mistake = "Died carelessly in a pregame skirmish despite even or favorable numbers"
+            better_play = "Respect enemy level 1 damage and disables — keep full HP and stay with allies instead of face-checking"
+            lesson = "Even a winnable pregame fight is lost by careless positioning — never give away a free first blood"
+        else:
+            analysis = (
+                f"{dp.hero_name}在人数并不吃亏（{num_allies + 1}v{num_enemies}）的开局阶段"
+                f"被{killer}击杀。开局白送一次死亡损失100+金并耽误上线。"
+            )
+            mistake = "开局人数不亏却大意送出死亡"
+            better_play = "尊重敌方1级的伤害和控制，保持满血并与队友抱团，不要贸然探脸"
+            lesson = "开局团人数占优也可能因站位大意而翻车，绝不能白送一血"
 
     return score, analysis, mistake, better_play, lesson
 
@@ -1348,15 +1394,7 @@ async def evaluate_phase(
         return _phase_review_fallback(base, phase_stats_dict, lang=lang)
 
     try:
-        from openai import AsyncOpenAI
-
-        api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-        client = AsyncOpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com",
-            timeout=120.0,
-            max_retries=1,
-        )
+        client = get_shared_client()
         prompt = _build_phase_prompt(
             hero_name=hero_name,
             position_label=position_label,

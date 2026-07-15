@@ -23,6 +23,7 @@ from .models import (
     HeroState,
     VisionAnalysis,
     VisionTimeline,
+    is_time_unknown,
 )
 
 
@@ -91,19 +92,23 @@ def build_context(
         else:
             enemies.append(state)
 
+    # good_play points from multi-kill / kill-streak counters carry no
+    # timestamp (time=0); leave the phase unknown instead of misclassifying
+    # them as pregame and building a misleading 0:00 context.
+    game_phase = "" if is_time_unknown(decision_point) else _get_game_phase(t)
+
     # --- Proximity-based filtering for enemies ---
     # Split enemies into nearby vs distant based on game-unit distance.
     # During laning (< 10min), heroes are spread across lanes; only include
     # truly nearby enemies in the primary list.  Distant enemies get a
     # separate key so the LLM knows they exist but aren't at this location.
     nearby_enemies, distant_enemies = _split_by_proximity(
-        player_state, enemies, game_phase=_get_game_phase(t),
+        player_state, enemies, game_phase=game_phase,
     )
 
     map_state = _build_map_state(match, t)
 
     # --- Pregame context enrichment ---
-    game_phase = _get_game_phase(t)
     if game_phase == "pregame":
         # Add all 10 heroes' basic info for team composition analysis
         pregame_heroes = {"radiant": [], "dire": []}
@@ -229,6 +234,32 @@ def _split_by_proximity(
             distant.append(e)
 
     return nearby, distant
+
+
+def count_nearby_allies(
+    player: HeroState,
+    allies: list[HeroState],
+    game_phase: str,
+) -> int:
+    """Count living allies within the "nearby" radius of the player.
+
+    Missing-position semantics are the OPPOSITE of _split_by_proximity:
+    an ally with no valid position is NOT counted. For grading purposes,
+    assuming the player was alone is the lenient direction, and it keeps
+    position-less data sources (e.g. OpenDota) on the forgiving branch.
+    """
+    threshold = _NEARBY_LANING if game_phase in ("laning", "pregame") else _NEARBY_MID_LATE
+    px, py = player.x, player.y
+    if px == 0 and py == 0:
+        return 0
+    count = 0
+    for a in allies:
+        if not a.is_alive or (a.x == 0 and a.y == 0):
+            continue
+        dist = ((px - a.x) ** 2 + (py - a.y) ** 2) ** 0.5
+        if dist <= threshold:
+            count += 1
+    return count
 
 
 # ===================================================================

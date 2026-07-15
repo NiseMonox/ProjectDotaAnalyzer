@@ -106,11 +106,6 @@ def _format_range(start_sec: int, end_sec: int, open_ended: bool) -> str:
     return f"{start_min}+ min" if open_ended else f"{start_min}-{end_min} min"
 
 
-def _team_kills_at(match: MatchData, slot: int, t: int) -> bool:
-    """Approximate: did this player's team get a kill near time t?"""
-    return False  # unused; handled via teamfight + objectives below
-
-
 def applicable_phases(match_duration_sec: int) -> list[tuple[str, int, int | None]]:
     """Return only the phases this match actually reached."""
     out: list[tuple[str, int, int | None]] = []
@@ -121,14 +116,30 @@ def applicable_phases(match_duration_sec: int) -> list[tuple[str, int, int | Non
     return out
 
 
-def slice_player_phases(match: MatchData, player: PlayerData) -> list[PhaseStats]:
+def slice_player_phases(
+    match: MatchData,
+    player: PlayerData,
+    death_times: Iterable[int] | None = None,
+) -> list[PhaseStats]:
     """Build a PhaseStats per applicable phase for one player.
 
     Uses per-minute timeline series (gold_t / xp_t / lh_t) for delta math, and
     raw event lists (objectives, teamfights, smokes) for situational counts.
+
+    Parameters
+    ----------
+    death_times : Iterable[int] | None
+        Optional precise death timestamps (seconds) for this player, e.g. from
+        the decision detector's DeathEvents. When provided they are used for
+        per-phase death counting; otherwise falls back to scanning
+        ``match.objectives`` (whose format varies by dump and often lacks
+        ``target_slot``).
     """
     duration = match.duration or 0
     out: list[PhaseStats] = []
+
+    # Normalize once so a generator input is not exhausted mid-loop.
+    known_death_times = sorted(death_times) if death_times is not None else None
 
     # Pre-index helpful lookups.
     obj_events = match.objectives or []
@@ -160,22 +171,25 @@ def slice_player_phases(match: MatchData, player: PlayerData) -> list[PhaseStats
         # is overkill; fall back to player.level when phase covers end of game.
         level_at_end = player.level if open_ended or end >= duration else 0
 
-        # Deaths in window — derive from team kills counter? we don't have a
-        # per-second death log on PlayerData, so use teamfights as proxy plus
-        # per-minute stuns/buyback markers if needed. Simpler: scan
+        # Deaths in window — prefer the precise death times detected upstream
+        # (decision_detector DeathEvents passed in by coach). Fallback: scan
         # `match.objectives` for CHAT_MESSAGE_HERO_KILL with this slot as
-        # target (OpenDota emits these).
+        # target (OpenDota emits these, but the format varies by dump and
+        # target_slot is often absent, silently yielding 0 deaths).
         deaths_here: list[int] = []
-        for obj in obj_events:
-            t = obj.get("time", 0)
-            if not (start <= t < end):
-                continue
-            if obj.get("type") in ("CHAT_MESSAGE_HERO_KILL", "hero_kill"):
-                # This event format varies; some OpenDota dumps put the
-                # killed hero in "key", and the killer slot in "slot".
-                target_slot = obj.get("target_slot")
-                if target_slot == player.player_slot:
-                    deaths_here.append(t)
+        if known_death_times is not None:
+            deaths_here = [dt for dt in known_death_times if start <= dt < end]
+        else:
+            for obj in obj_events:
+                t = obj.get("time", 0)
+                if not (start <= t < end):
+                    continue
+                if obj.get("type") in ("CHAT_MESSAGE_HERO_KILL", "hero_kill"):
+                    # This event format varies; some OpenDota dumps put the
+                    # killed hero in "key", and the killer slot in "slot".
+                    target_slot = obj.get("target_slot")
+                    if target_slot == player.player_slot:
+                        deaths_here.append(t)
 
         # Kills in window — use teamfights (most reliable structured data).
         kills_here = 0

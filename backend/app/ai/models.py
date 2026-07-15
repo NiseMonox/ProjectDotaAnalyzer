@@ -21,13 +21,23 @@ class DeathEvent:
 class DecisionPoint:
     """A moment where player made a significant decision."""
     time: int               # game second
-    point_type: str         # "death", "bad_trade", "missed_cs", "no_retreat",
+    point_type: str         # "death", "bad_trade", "missed_cs",
                             # "fight_engage", "overextend", "good_play"
     player_slot: int
     hero_name: str
     severity: str           # "critical", "major", "minor", "positive"
     brief: str              # one-line summary (Chinese)
     related_death: DeathEvent | None = None
+
+
+def is_time_unknown(dp: DecisionPoint) -> bool:
+    """Whether this decision point's timestamp is unknown.
+
+    good_play points built from multi-kill / kill-streak counters carry no
+    timestamp in the source data (time=0); treat their time as unknown so
+    downstream context/prompt builders do not misclassify them as pregame.
+    """
+    return dp.point_type == "good_play" and dp.time <= 0
 
 
 @dataclass

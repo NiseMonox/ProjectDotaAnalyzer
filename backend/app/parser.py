@@ -7,6 +7,7 @@ Supports multiple parser backends:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import subprocess
@@ -37,6 +38,28 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Static hero data shared by all parsers
+HEROES_JSON_PATH = Path(__file__).parent.parent.parent / "frontend" / "static" / "data" / "heroes.json"
+
+# game_mode id -> display name (shared by all parsers)
+GAME_MODES = {
+    1: "All Pick", 2: "Captain's Mode", 3: "Random Draft",
+    4: "Single Draft", 5: "All Random", 22: "All Pick (Ranked)",
+    23: "Turbo",
+}
+
+
+def load_hero_map() -> dict[int, dict]:
+    """Load hero id -> {name, slug} map from static data."""
+    if not HEROES_JSON_PATH.exists():
+        return {}
+    with open(HEROES_JSON_PATH) as f:
+        data = json.load(f)
+    result = {}
+    for hid, info in data.get("by_id", {}).items():
+        result[int(hid)] = {"name": info.get("name", ""), "slug": info.get("slug", "")}
+    return result
 
 
 class ReplayParser(ABC):
@@ -80,18 +103,6 @@ class ClarityParser(ReplayParser):
     def name(self) -> str:
         return "clarity"
 
-    def _load_hero_map(self) -> dict[int, dict]:
-        """Load hero id -> {name, slug} map from static data."""
-        heroes_path = Path(__file__).parent.parent.parent / "frontend" / "static" / "data" / "heroes.json"
-        if not heroes_path.exists():
-            return {}
-        with open(heroes_path) as f:
-            data = json.load(f)
-        result = {}
-        for hid, info in data.get("by_id", {}).items():
-            result[int(hid)] = {"name": info.get("name", ""), "slug": info.get("slug", "")}
-        return result
-
     def _load_slug_to_hero(self) -> dict[str, dict]:
         """Load slug/internal_name -> {id, name, slug} reverse mapping.
 
@@ -100,10 +111,9 @@ class ClarityParser(ReplayParser):
         heroes.json. This map lets us look up hero_id and display name
         from that internal name.
         """
-        heroes_path = Path(__file__).parent.parent.parent / "frontend" / "static" / "data" / "heroes.json"
-        if not heroes_path.exists():
+        if not HEROES_JSON_PATH.exists():
             return {}
-        with open(heroes_path) as f:
+        with open(HEROES_JSON_PATH) as f:
             data = json.load(f)
         slug_to_hero: dict[str, dict] = {}
         for hid, info in data.get("by_id", {}).items():
@@ -135,9 +145,12 @@ class ClarityParser(ReplayParser):
             ) from e
 
     async def parse(self, file_path: str) -> MatchData:
-        self._check_requirements()
+        # Blocking calls (java -version probe, replay parse subprocess) run in
+        # a worker thread so they don't stall the uvicorn event loop.
+        await asyncio.to_thread(self._check_requirements)
 
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             [
                 self.java_path,
                 "-jar",
@@ -161,7 +174,7 @@ class ClarityParser(ReplayParser):
         all_wards: list[WardEvent] = []
         all_ability_events: list[AbilityEvent] = []
 
-        hero_map = self._load_hero_map()
+        hero_map = load_hero_map()
         slug_to_hero = self._load_slug_to_hero()
 
         # Consumable items to exclude when approximating final items
@@ -170,12 +183,6 @@ class ClarityParser(ReplayParser):
             "ward_observer", "ward_sentry", "dust", "smoke_of_deceit",
             "tome_of_knowledge", "tp_scroll", "tpscroll", "town_portal_scroll",
             "ward_dispenser", "infused_raindrop",
-        }
-
-        GAME_MODES = {
-            1: "All Pick", 2: "Captain's Mode", 3: "Random Draft",
-            4: "Single Draft", 5: "All Random", 22: "All Pick (Ranked)",
-            23: "Turbo",
         }
 
         for p in raw.get("players", []):
@@ -376,6 +383,9 @@ class ClarityParser(ReplayParser):
             ))
 
         # Smokes
+        # Note: the Java clarity analyzer only emits result values
+        # "no_contact" / "kill" / "traded" and provides no objective_taken
+        # field, so SmokeEvent.objective_taken stays None for clarity data.
         smokes = [
             SmokeEvent(
                 time=s["time"],
@@ -515,11 +525,6 @@ class OpenDotaParser(ReplayParser):
 
     API_BASE = "https://api.opendota.com/api"
     HEADERS = {"User-Agent": "DotaAnalyzer/1.0"}
-    GAME_MODES = {
-        1: "All Pick", 2: "Captain's Mode", 3: "Random Draft",
-        4: "Single Draft", 5: "All Random", 22: "All Pick (Ranked)",
-        23: "Turbo",
-    }
 
     def name(self) -> str:
         return "opendota"
@@ -552,22 +557,12 @@ class OpenDotaParser(ReplayParser):
             result[info["id"]] = (info["name"], info["key"])
         return result
 
-    def _load_hero_map(self) -> dict[int, dict]:
-        """Load hero id -> {name, slug} map from static data."""
-        heroes_path = Path(__file__).parent.parent.parent / "frontend" / "static" / "data" / "heroes.json"
-        if not heroes_path.exists():
-            return {}
-        with open(heroes_path) as f:
-            data = json.load(f)
-        result = {}
-        for hid, info in data.get("by_id", {}).items():
-            result[int(hid)] = {"name": info.get("name", ""), "slug": info.get("slug", "")}
-        return result
-
     async def parse(self, match_id_str: str) -> MatchData:
         match_id = int(match_id_str)
-        raw = self._api_get(f"/matches/{match_id}")
-        hero_map = self._load_hero_map()
+        # Synchronous urllib call runs in a worker thread so it doesn't
+        # stall the uvicorn event loop.
+        raw = await asyncio.to_thread(self._api_get, f"/matches/{match_id}")
+        hero_map = load_hero_map()
         item_map = self._load_item_map()
         return self._transform(raw, hero_map, item_map)
 
@@ -918,7 +913,7 @@ class OpenDotaParser(ReplayParser):
         patch_num = raw.get("patch", 0) or 0
 
         game_mode_id = raw.get("game_mode", 0)
-        game_mode = self.GAME_MODES.get(game_mode_id, f"Mode {game_mode_id}")
+        game_mode = GAME_MODES.get(game_mode_id, f"Mode {game_mode_id}")
 
         return MatchData(
             match_id=raw.get("match_id", 0),

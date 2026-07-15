@@ -77,7 +77,7 @@ def _player_team(player_slot: int) -> str:
     return "radiant" if player_slot < 128 else "dire"
 
 
-def _dist(x1: float, y1: float, x2: float, y2: float) -> float:
+def map_dist(x1: float, y1: float, x2: float, y2: float) -> float:
     """Euclidean distance in map-percentage space."""
     return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
@@ -87,10 +87,10 @@ def _nearest_allied_tower_dist(x: float, y: float, team: str) -> float:
     towers = RADIANT_TOWERS if team == "radiant" else DIRE_TOWERS
     if not towers:
         return 999.0
-    return min(_dist(x, y, tx, ty) for tx, ty in towers)
+    return min(map_dist(x, y, tx, ty) for tx, ty in towers)
 
 
-def _game_to_map(game_x: float, game_y: float) -> tuple[float, float]:
+def game_to_map(game_x: float, game_y: float) -> tuple[float, float]:
     """Convert game coordinates (-4000..3875) to map percentage (0..100).
 
     Uses the OpenDota formula: (coord + 4000) / 7937.5 * 100.
@@ -101,6 +101,11 @@ def _game_to_map(game_x: float, game_y: float) -> tuple[float, float]:
     mx = (game_x + 4000) / 7937.5 * 100
     my = (game_y + 4000) / 7937.5 * 100
     return mx, my
+
+
+# Backward-compat aliases (these helpers were previously module-private).
+_dist = map_dist
+_game_to_map = game_to_map
 
 
 def _game_phase(time: int) -> str:
@@ -180,7 +185,7 @@ def _detect_teamfight_deaths(
                     if killer:
                         break
 
-                mx, my = _game_to_map(tfp.x, tfp.y)
+                mx, my = game_to_map(tfp.x, tfp.y)
                 deaths.append(DeathEvent(
                     time=death_time,
                     player_slot=player.player_slot,
@@ -230,7 +235,7 @@ def _detect_laning_deaths(
 
         if is_death:
             # Death probably happened just before or at this snapshot
-            mx, my = _game_to_map(curr.x, curr.y)
+            mx, my = game_to_map(curr.x, curr.y)
             deaths.append(DeathEvent(
                 time=curr.time,
                 player_slot=player.player_slot,
@@ -325,7 +330,7 @@ def _detect_deaths_from_ability_events(
             last_event = cluster[-1]
             x, y = 0.0, 0.0
             if last_event.x is not None and last_event.y is not None:
-                x, y = _game_to_map(last_event.x, last_event.y)
+                x, y = game_to_map(last_event.x, last_event.y)
             deaths.append(DeathEvent(
                 time=last_event.time,
                 player_slot=player.player_slot,
@@ -892,7 +897,7 @@ def _detect_laning_overextend(
             continue
 
         hp_ratio = snap.hp / snap.max_hp
-        mx, my = _game_to_map(snap.x, snap.y)
+        mx, my = game_to_map(snap.x, snap.y)
         tower_dist = _nearest_allied_tower_dist(mx, my, team)
 
         # Far from tower AND low HP (but not already a death)

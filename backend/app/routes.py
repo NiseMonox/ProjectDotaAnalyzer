@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import shutil
+from collections import OrderedDict
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -12,18 +13,41 @@ from fastapi.responses import StreamingResponse
 
 from .analyzer import full_analysis
 from .config import COACH_CACHE_DIR, DEFAULT_REPLAY, REPLAY_DIR
-from .models import AnalysisResult, MatchData
+from .models import MatchData
 from .parser import ClarityParser, OpenDotaParser, get_parser
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
-# In-memory cache of parsed matches (analysis results)
-_match_cache: dict[str, dict] = {}
+# Max entries kept in each in-memory cache (LRU eviction beyond this)
+_CACHE_MAX_ENTRIES = 12
 
-# In-memory storage of parsed MatchData objects
-parsed_matches: dict[str, MatchData] = {}
+# In-memory cache of parsed matches (analysis results), LRU-evicted
+_match_cache: OrderedDict[str, dict] = OrderedDict()
+
+# In-memory storage of parsed MatchData objects, LRU-evicted
+parsed_matches: OrderedDict[str, MatchData] = OrderedDict()
+
+# In-memory AI coach reports, LRU-evicted. Kept separate from _match_cache so
+# per-(player, lang) coach fetches cannot evict a match's analysis entry.
+_coach_report_cache: OrderedDict[str, dict] = OrderedDict()
+
+
+def _cache_get(cache: OrderedDict, key: str):
+    """Return the cached value (marking it most-recently-used), or None."""
+    value = cache.get(key)
+    if value is not None:
+        cache.move_to_end(key)
+    return value
+
+
+def _cache_put(cache: OrderedDict, key: str, value) -> None:
+    """Insert a value, evicting the least-recently-used entries when full."""
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > _CACHE_MAX_ENTRIES:
+        cache.popitem(last=False)
 
 
 # ---------------------------------------------------------------------------
@@ -61,10 +85,12 @@ def _save_coach_cache(match_id: int, player_slot: int, result: dict, lang: str =
 @router.post("/upload")
 async def upload_replay(file: UploadFile = File(...)):
     """Upload a .dem replay file for analysis."""
-    if not file.filename or not file.filename.endswith(".dem"):
+    # Sanitize: strip client-supplied directory components (path traversal)
+    safe_name = Path(file.filename).name if file.filename else ""
+    if not safe_name or not safe_name.endswith(".dem"):
         raise HTTPException(400, "Only .dem replay files are supported")
 
-    save_path = REPLAY_DIR / file.filename
+    save_path = REPLAY_DIR / safe_name
     with open(save_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -77,13 +103,13 @@ async def upload_replay(file: UploadFile = File(...)):
 
     # Run analysis
     analysis = full_analysis(match_data)
-    file_key = file.filename
-    _match_cache[file_key] = {
+    file_key = safe_name
+    _cache_put(_match_cache, file_key, {
         "analysis": analysis,
         "parse_source": parser.name(),
         "_match_key": file_key,
-    }
-    parsed_matches[file_key] = match_data
+    })
+    _cache_put(parsed_matches, file_key, match_data)
 
     return {
         "status": "ok",
@@ -99,7 +125,8 @@ async def get_demo_analysis():
 
     Priority: ClarityParser (real .dem) → OpenDota API → MockParser
     """
-    if "demo" not in _match_cache:
+    cached = _cache_get(_match_cache, "demo")
+    if cached is None:
         parse_source = "mock"
         match_data = None
 
@@ -107,11 +134,11 @@ async def get_demo_analysis():
         if DEFAULT_REPLAY.exists():
             try:
                 clarity = ClarityParser()
-                clarity._check_requirements()
+                await asyncio.to_thread(clarity._check_requirements)
                 match_data = await clarity.parse(str(DEFAULT_REPLAY))
                 parse_source = "clarity"
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Clarity parse failed for default replay %s: %s", DEFAULT_REPLAY, exc)
 
         # Fallback: fetch from OpenDota using match ID from filename
         if match_data is None and DEFAULT_REPLAY.exists():
@@ -120,31 +147,33 @@ async def get_demo_analysis():
                 parser = OpenDotaParser()
                 match_data = await parser.parse(match_id)
                 parse_source = "opendota"
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("OpenDota fallback failed for match %s: %s", DEFAULT_REPLAY.stem, exc)
 
         # Final fallback: mock data
         if match_data is None:
+            logger.warning("Falling back to mock data for /api/demo")
             parser = get_parser("mock")
             match_data = await parser.parse("")
             parse_source = "mock"
 
         analysis = full_analysis(match_data)
-        _match_cache["demo"] = {
+        cached = {
             "analysis": analysis,
             "parse_source": parse_source,
             "_match_key": "demo",
         }
-        parsed_matches["demo"] = match_data
+        _cache_put(_match_cache, "demo", cached)
+        _cache_put(parsed_matches, "demo", match_data)
 
-    return _match_cache["demo"]
+    return cached
 
 
 @router.get("/fetch/{match_id}")
 async def fetch_match_by_id(match_id: int):
     """Fetch match data from OpenDota API by match ID."""
     cache_key = f"opendota_{match_id}"
-    cached = _match_cache.get(cache_key)
+    cached = _cache_get(_match_cache, cache_key)
     if cached and cached.get("has_parsed_data"):
         return cached
 
@@ -157,15 +186,16 @@ async def fetch_match_by_id(match_id: int):
     analysis = full_analysis(match_data)
     has_parsed = bool(match_data.gold_xp_timeline)
 
-    _match_cache[cache_key] = {
+    result = {
         "analysis": analysis,
         "parse_source": "opendota",
         "has_parsed_data": has_parsed,
         "_match_key": cache_key,
     }
-    parsed_matches[cache_key] = match_data
+    _cache_put(_match_cache, cache_key, result)
+    _cache_put(parsed_matches, cache_key, match_data)
 
-    return _match_cache[cache_key]
+    return result
 
 
 @router.post("/request-parse/{match_id}")
@@ -173,7 +203,8 @@ async def request_parse(match_id: int):
     """Request OpenDota to parse a match replay."""
     parser = OpenDotaParser()
     try:
-        result = parser.request_parse(match_id)
+        # Synchronous urllib call runs in a worker thread (keeps loop free)
+        result = await asyncio.to_thread(parser.request_parse, match_id)
         # Clear cache so next fetch gets fresh data
         cache_key = f"opendota_{match_id}"
         _match_cache.pop(cache_key, None)
@@ -199,8 +230,9 @@ async def parse_local_replay(filename: str):
         raise HTTPException(404, f"Replay file not found: {safe_name} (looked in {REPLAY_DIR})")
 
     cache_key = f"local_{safe_name}"
-    if cache_key in _match_cache:
-        return _match_cache[cache_key]
+    cached = _cache_get(_match_cache, cache_key)
+    if cached is not None:
+        return cached
 
     # Try ClarityParser first, fall back to OpenDota by match ID
     match_data = None
@@ -208,7 +240,7 @@ async def parse_local_replay(filename: str):
 
     try:
         clarity = ClarityParser()
-        clarity._check_requirements()
+        await asyncio.to_thread(clarity._check_requirements)
         match_data = await clarity.parse(str(replay_path))
         parse_source = "clarity"
     except Exception as e:
@@ -216,34 +248,42 @@ async def parse_local_replay(filename: str):
 
     if match_data is None:
         # Try OpenDota using filename stem as match ID
+        match_id = replay_path.stem
         try:
-            match_id = replay_path.stem
             int(match_id)  # Validate it's numeric
+        except ValueError:
+            raise HTTPException(
+                400,
+                f"Cannot fall back to OpenDota: filename {safe_name} is not a numeric match ID",
+            )
+        try:
             parser = OpenDotaParser()
             match_data = await parser.parse(match_id)
             parse_source = "opendota"
-        except (ValueError, Exception) as e:
+        except Exception as e:
             raise HTTPException(500, f"Failed to parse replay {safe_name}: {e}")
 
     analysis = full_analysis(match_data)
-    _match_cache[cache_key] = {
+    result = {
         "analysis": analysis,
         "parse_source": parse_source,
         "filename": safe_name,
         "_match_key": cache_key,
     }
-    parsed_matches[cache_key] = match_data
+    _cache_put(_match_cache, cache_key, result)
+    _cache_put(parsed_matches, cache_key, match_data)
 
-    return _match_cache[cache_key]
+    return result
 
 
 @router.get("/match/{file_key}")
 async def get_match_analysis(file_key: str):
     """Get analysis results for a previously uploaded match."""
-    if file_key not in _match_cache:
+    cached = _cache_get(_match_cache, file_key)
+    if cached is None:
         raise HTTPException(404, "Match not found. Please upload the replay first.")
 
-    return _match_cache[file_key]
+    return cached
 
 
 @router.get("/match/{file_key}/ai-coach/{player_slot}")
@@ -255,19 +295,20 @@ async def get_ai_coaching(file_key: str, player_slot: int, lang: str = Query("zh
 
     # Check in-memory cache first
     cache_key = f"{file_key}_coach_{player_slot}_{lang}"
-    if cache_key in _match_cache:
-        return _match_cache[cache_key]
+    coach_cached = _cache_get(_coach_report_cache, cache_key)
+    if coach_cached is not None:
+        return coach_cached
 
-    if file_key not in parsed_matches:
+    match_data = _cache_get(parsed_matches, file_key)
+    if match_data is None:
         raise HTTPException(404, "Match not found. Please upload the replay first.")
 
-    match_data = parsed_matches[file_key]
     match_id = match_data.match_id
 
     # Check persistent disk cache (survives server restarts)
     cached = _load_coach_cache(match_id, player_slot, lang)
     if cached is not None:
-        _match_cache[cache_key] = cached
+        _cache_put(_coach_report_cache, cache_key, cached)
         return cached
 
     try:
@@ -275,7 +316,7 @@ async def get_ai_coaching(file_key: str, player_slot: int, lang: str = Query("zh
 
         report = await generate_coaching_report(match_data, player_slot, lang=lang)
         result = report.to_dict()
-        _match_cache[cache_key] = result
+        _cache_put(_coach_report_cache, cache_key, result)
         _save_coach_cache(match_id, player_slot, result, lang)
         return result
     except ValueError as e:
@@ -304,20 +345,20 @@ async def stream_ai_coaching(file_key: str, player_slot: int, lang: str = Query(
             return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
         # In-memory cache hit → emit one done event and exit.
-        if cache_key in _match_cache:
-            yield _pack({"type": "done", "data": _match_cache[cache_key]})
+        coach_cached = _cache_get(_coach_report_cache, cache_key)
+        if coach_cached is not None:
+            yield _pack({"type": "done", "data": coach_cached})
             return
 
-        if file_key not in parsed_matches:
+        match_data = _cache_get(parsed_matches, file_key)
+        if match_data is None:
             yield _pack({"type": "error", "message": "Match not found. Please upload the replay first."})
             return
-
-        match_data = parsed_matches[file_key]
 
         # Disk cache hit → also emit single done event.
         cached = _load_coach_cache(match_data.match_id, player_slot, lang)
         if cached is not None:
-            _match_cache[cache_key] = cached
+            _cache_put(_coach_report_cache, cache_key, cached)
             yield _pack({"type": "done", "data": cached})
             return
 
@@ -338,7 +379,7 @@ async def stream_ai_coaching(file_key: str, player_slot: int, lang: str = Query(
                     progress_callback=progress_cb,
                 )
                 result = report.to_dict()
-                _match_cache[cache_key] = result
+                _cache_put(_coach_report_cache, cache_key, result)
                 _save_coach_cache(match_data.match_id, player_slot, result, lang)
                 await queue.put({"type": "done", "data": result})
             except Exception as exc:
@@ -380,10 +421,11 @@ async def stream_ai_coaching(file_key: str, player_slot: int, lang: str = Query(
 @router.get("/match/{file_key}/{section}")
 async def get_match_section(file_key: str, section: str):
     """Get a specific analysis section for a match."""
-    if file_key not in _match_cache:
+    cached = _cache_get(_match_cache, file_key)
+    if cached is None:
         raise HTTPException(404, "Match not found")
 
-    analysis = _match_cache[file_key]["analysis"]
+    analysis = cached["analysis"]
     if section not in analysis:
         valid = list(analysis.keys())
         raise HTTPException(400, f"Invalid section. Valid: {valid}")

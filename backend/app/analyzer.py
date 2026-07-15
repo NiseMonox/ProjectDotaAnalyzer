@@ -10,8 +10,6 @@ Provides higher-level analysis on top of parsed match data:
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from .models import MatchData
 
 
@@ -399,7 +397,7 @@ def analyze_laning(match: MatchData) -> dict:
     LANE_NAMES = {1: "安全路", 2: "中路", 3: "劣势路", 4: "游走"}
 
     players = []
-    for p in match.players:
+    for idx, p in enumerate(match.players):
         lane = p.lane or 0
         lane_role = p.lane_role or 0
         lane_name = LANE_NAMES.get(lane, "未知")
@@ -412,10 +410,13 @@ def analyze_laning(match: MatchData) -> dict:
         xp_ten = p.xp_t[10] if len(p.xp_t) > 10 else p.xp_t[-1] if p.xp_t else 0
 
         # Computed laning stats
+        # target_idx is the index of the target in match.players (0-9, as
+        # emitted by the clarity Java analyzer and mock data), NOT player_slot
+        # (dire slots are 128+), so match against the list index here.
         total_damage_taken_laning = sum(
             e.damage for other_p in match.players
             for e in other_p.laning_damage_events
-            if e.target_idx == p.player_slot
+            if e.target_idx == idx
         )
 
         players.append({
@@ -455,7 +456,12 @@ def analyze_combat(match: MatchData) -> dict:
     heroes = [p.hero_name for p in match.players]
     slug_to_idx = {}
     for i, p in enumerate(match.players):
-        slug_to_idx[p.hero_slug] = i
+        # Fall back to hero_name when hero_slug is empty (possible on
+        # ClarityParser fallback, where hero_name holds the internal name)
+        # so matrix rows are never silently dropped.
+        key = p.hero_slug or p.hero_name
+        if key:
+            slug_to_idx.setdefault(key, i)
 
     num = len(match.players)
 
@@ -716,17 +722,16 @@ def analyze_benchmarks(match: MatchData) -> dict:
 
 
 def _load_hero_id_map() -> dict[int, dict]:
-    """Load hero_id -> {name, slug} from static heroes.json."""
-    import json
-    heroes_path = Path(__file__).parent.parent.parent / "frontend" / "static" / "data" / "heroes.json"
-    if not heroes_path.exists():
-        return {}
-    with open(heroes_path) as f:
-        data = json.load(f)
-    result = {}
-    for hid, info in data.get("by_id", {}).items():
-        result[int(hid)] = {"hero_name": info.get("name", ""), "hero_slug": info.get("slug", "")}
-    return result
+    """Load hero_id -> {hero_name, hero_slug} from static heroes.json.
+
+    Thin wrapper over the shared parser helper (single heroes.json loader);
+    only remaps the key names used by the draft analysis below.
+    """
+    from .parser import load_hero_map
+    return {
+        hid: {"hero_name": info.get("name", ""), "hero_slug": info.get("slug", "")}
+        for hid, info in load_hero_map().items()
+    }
 
 
 def analyze_draft(match: MatchData) -> dict:

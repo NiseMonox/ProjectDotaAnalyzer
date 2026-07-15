@@ -124,7 +124,7 @@ class LaningCreepKill(BaseModel):
 class LaningDamageEvent(BaseModel):
     """Hero-vs-hero damage event during laning."""
     time: int = 0
-    target_idx: int = 0
+    target_idx: int = 0  # index of the target in match.players (0-9), NOT player_slot
     damage: int = 0
     inflictor: str = ""
 
@@ -271,8 +271,3 @@ class MatchData(BaseModel):
     # Region/patch
     region: int = 0
     patch: str = ""
-
-
-class AnalysisResult(BaseModel):
-    match: MatchData
-    parse_source: str  # "clarity", "mock", etc.
