@@ -15,12 +15,15 @@
     --text-primary: rgba(255, 255, 255, 0.87);
     --text-muted: rgba(255, 255, 255, 0.6);
     --text-heading: rgba(255, 255, 255, 0.87);
+    /* Aliases used by AI-coach markup (renderMarkdown inline styles) */
+    --text-secondary: var(--text-muted);
 
     --color-radiant: #66BB6A;
     --color-dire: #ff4c4c;
     --color-net-worth: #ecc94b;
     --color-link: #66bbff;
     --color-accent: #66bbff;
+    --accent: var(--color-accent);
     --color-gold: rgb(201, 175, 29);
 
     --border-subtle: rgba(255, 255, 255, 0.12);
@@ -1130,6 +1133,18 @@ body {
     to   { background-position: -200% 0; }
 }
 
+/* Indeterminate upload bar (total size unknown, e.g. proxy stripped
+   Content-Length): a 40%-wide segment sweeps back and forth. */
+.ai-coach-progress-bar.progress-indeterminate {
+    animation: progress-indeterminate-slide 1.4s ease-in-out infinite,
+               ai-coach-progress-shimmer 2.4s linear infinite;
+}
+@keyframes progress-indeterminate-slide {
+    0%   { margin-left: 0; }
+    50%  { margin-left: 60%; }
+    100% { margin-left: 0; }
+}
+
 /* ================================================================
    Scrollbar
    ================================================================ */
@@ -1150,6 +1165,10 @@ body {
 /* ================================================================
    Hover Utility
    ================================================================ */
+
+.bg-gray-750 {
+    background: rgba(255, 255, 255, 0.06);
+}
 
 .hover\:bg-gray-750:hover {
     background: rgba(255, 255, 255, 0.06);
@@ -2364,59 +2383,30 @@ body {
 }
 
 /* ================================================================
-   Pro Compare Tab
+   AI Coach Tab
    ================================================================ */
 
-.select-input {
-    background: var(--bg-card-alt);
-    color: var(--text-primary);
+/* Plain container for tab bodies that lay out their own cards */
+.tab-content {
+    display: block;
+}
+
+/* Card blocks used by the AI coach report (panel design language) */
+.card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
     border: 1px solid var(--border-subtle);
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.btn {
-    background: var(--bg-card-alt);
-    color: var(--text-muted);
-    border: 1px solid var(--border-subtle);
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    transition: all 0.15s;
-}
-
-.btn:hover {
-    color: var(--text-primary);
-    border-color: var(--color-accent);
-}
-
-.btn-active {
-    background: var(--color-accent);
-    color: #fff;
-    border-color: var(--color-accent);
-}
-
-.coaching-report {
-    padding: 16px;
-    background: var(--bg-card-alt);
-    border-radius: 6px;
-    line-height: 1.6;
-    color: var(--text-secondary);
-}
-
-.coaching-report h3, .coaching-report h4 {
-    margin-top: 16px;
-    margin-bottom: 8px;
-}
-
-.coaching-report li {
-    margin-left: 20px;
-}
-
-.coaching-report strong {
-    color: var(--text-primary);
+.card-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-heading);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 /* AI Coach Grades */
@@ -2447,6 +2437,7 @@ body {
 .grade-b { background: rgba(251, 191, 36, 0.3); color: #fcd34d; }
 .grade-c { background: rgba(251, 146, 60, 0.3); color: #fdba74; }
 .grade-d { background: rgba(248, 113, 113, 0.3); color: #fca5a5; }
+.grade-f { background: rgba(185, 28, 28, 0.35); color: #f87171; }
 
 .ai-grade-sm {
     display: inline-flex;

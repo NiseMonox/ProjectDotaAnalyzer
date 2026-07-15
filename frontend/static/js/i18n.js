@@ -22,6 +22,9 @@ window.I18N_MESSAGES = {
         upload_opendota_hint: '通过 OpenDota API 获取比赛数据，无需上传录像文件',
         upload_demo_btn: '加载演示数据',
         upload_parsing: '正在解析录像文件...',
+        upload_uploading: '正在上传录像',
+        upload_cancel: '取消上传',
+        upload_slow_hint: '上传速度较慢。.dem 文件较大（通常 50–200MB），跨境网络可能要等很久。可以试试输入比赛 ID 直接拉取数据。',
 
         // Navigation
         back: '返回',
@@ -306,11 +309,11 @@ window.I18N_MESSAGES = {
         ai_coach_phase_issues: '问题',
         ai_coach_phase_suggestions: '建议',
         ai_coach_phase_lh: '补刀',
-        phase_laning: '对线期',
-        phase_early_mid: '前中期',
-        phase_mid_late: '中后期',
-        phase_late: '后期',
-        phase_ultra_late: '大后期',
+        coach_phase_laning: '对线期',
+        coach_phase_early_mid: '前中期',
+        coach_phase_mid_late: '中后期',
+        coach_phase_late: '后期',
+        coach_phase_ultra_late: '大后期',
         ai_coach_overall: '总体评价',
         ai_coach_death_analysis: '死亡复盘',
         ai_coach_deaths_suffix: '次',
@@ -344,8 +347,6 @@ window.I18N_MESSAGES = {
 
         // Chart labels
         chart_game_time: '游戏时间 (分钟)',
-        chart_gold_diff: '经济差',
-        chart_xp_diff: '经验差',
 
         // Error messages
         error_invalid_format: '请上传 .dem 格式的录像文件',
@@ -353,9 +354,6 @@ window.I18N_MESSAGES = {
         error_demo_failed: '加载演示数据失败',
         error_fetch_failed: '获取比赛数据失败',
         error_basic_data_fetched: '已获取基础数据。详细数据（眼位/团战/经济曲线）需要等待 OpenDota 解析完成后重新获取。已自动请求解析。',
-
-        // Empty state generic
-        empty_local_parse_hint: '本地解析暂不提供此数据，请通过 OpenDota API 获取完整数据',
     },
 
     en: {
@@ -377,6 +375,9 @@ window.I18N_MESSAGES = {
         upload_opendota_hint: 'Fetch match data via OpenDota API, no replay file needed',
         upload_demo_btn: 'Load Demo Data',
         upload_parsing: 'Parsing replay file...',
+        upload_uploading: 'Uploading replay',
+        upload_cancel: 'Cancel upload',
+        upload_slow_hint: 'Upload is slow. .dem files are typically 50–200 MB and cross-border networks can be sluggish. Consider entering the Match ID instead — much faster.',
 
         // Navigation
         back: 'Back',
@@ -661,11 +662,11 @@ window.I18N_MESSAGES = {
         ai_coach_phase_issues: 'Issues',
         ai_coach_phase_suggestions: 'Suggestions',
         ai_coach_phase_lh: 'LH',
-        phase_laning: 'Laning',
-        phase_early_mid: 'Early-Mid',
-        phase_mid_late: 'Mid-Late',
-        phase_late: 'Late',
-        phase_ultra_late: 'Ultra-Late',
+        coach_phase_laning: 'Laning',
+        coach_phase_early_mid: 'Early-Mid',
+        coach_phase_mid_late: 'Mid-Late',
+        coach_phase_late: 'Late',
+        coach_phase_ultra_late: 'Ultra-Late',
         ai_coach_overall: 'Overall Assessment',
         ai_coach_death_analysis: 'Death Analysis',
         ai_coach_deaths_suffix: 'deaths',
@@ -699,8 +700,6 @@ window.I18N_MESSAGES = {
 
         // Chart labels
         chart_game_time: 'Game Time (minutes)',
-        chart_gold_diff: 'Gold Diff',
-        chart_xp_diff: 'XP Diff',
 
         // Error messages
         error_invalid_format: 'Please upload a .dem replay file',
@@ -708,8 +707,5 @@ window.I18N_MESSAGES = {
         error_demo_failed: 'Failed to load demo data',
         error_fetch_failed: 'Failed to fetch match data',
         error_basic_data_fetched: 'Basic data fetched. Detailed data (wards/teamfights/economy) requires OpenDota parsing. Parse requested automatically.',
-
-        // Empty state generic
-        empty_local_parse_hint: 'Local parsing does not provide this data. Use OpenDota API for full data.',
     },
 };

@@ -50,13 +50,27 @@ createApp({
         const parseSource = ref('');
         const uploading = ref(false);
         const uploadError = ref('');
+        const uploadProgress = ref({
+            phase: '',          // 'uploading' | 'parsing' | ''
+            percent: 0,
+            loaded: 0,
+            total: 0,
+            speed: 0,           // bytes/sec
+            eta: 0,             // seconds remaining for upload
+            label: '',          // pre-formatted label for the progress row
+            indeterminate: false, // true when total size is unknown (no Content-Length)
+        });
+        // Below this upload speed (bytes/sec) the UI shows the slow-upload hint
+        const SLOW_UPLOAD_SPEED = 200000; // 200 KB/s
+        const uploadIsSlow = computed(() =>
+            uploadProgress.value.speed > 0 && uploadProgress.value.speed < SLOW_UPLOAD_SPEED
+        );
         const activeTab = ref('overview');
         const showAbilityBuilds = ref(false);
         const selectedTeamfight = ref(1);
 
-        // Hero/item lookup data (loaded from static JSON)
+        // Hero lookup data (loaded from static JSON)
         const heroData = ref(null);
-        const itemData = ref(null);
 
         const wardFilters = ref({
             observers: true, sentries: true,
@@ -296,173 +310,7 @@ createApp({
         // Chat data
         const chatMessages = computed(() => analysisData.value?.chat_analysis?.messages || []);
 
-        // --- Game mode mapping ---
-        const GAME_MODE_NAMES = {
-            0: 'Unknown', 1: 'All Pick', 2: 'Captain\'s Mode', 3: 'Random Draft',
-            4: 'Single Draft', 5: 'All Random', 6: 'Intro', 7: 'Diretide',
-            8: 'Reverse Captain\'s Mode', 9: 'Greeviling', 10: 'Tutorial',
-            11: 'Mid Only', 12: 'Least Played', 13: 'Limited Heroes',
-            14: 'Compendium', 15: 'Custom', 16: 'Captain\'s Draft',
-            17: 'Balanced Draft', 18: 'Ability Draft', 19: 'Event',
-            20: 'All Random Deathmatch', 21: '1v1 Mid', 22: 'All Draft',
-            23: 'Turbo', 24: 'Mutation',
-        };
-
-        // --- Match Header computed ---
-        const matchHeader = computed(() => {
-            const ov = overview.value;
-            if (!ov || !ov.match_id) return null;
-            const radiantWin = ov.radiant_win;
-            const dur = ov.duration || 0;
-            const mins = Math.floor(dur / 60);
-            const secs = dur % 60;
-            // Determine game_mode: could be string name or numeric id
-            let gameMode = ov.game_mode || '';
-            if (typeof gameMode === 'number') {
-                gameMode = GAME_MODE_NAMES[gameMode] || 'Unknown';
-            }
-            return {
-                winner: radiantWin ? 'radiant' : 'dire',
-                winnerText: radiantWin ? 'Radiant Victory' : 'Dire Victory',
-                radiantScore: ov.radiant_score || 0,
-                direScore: ov.dire_score || 0,
-                duration: `${mins}:${String(secs).padStart(2, '0')}`,
-                gameMode,
-                matchId: ov.match_id,
-                endedAgo: timeAgo(ov.start_time),
-                region: regionName(ov.region),
-            };
-        });
-
-        // --- Overview scoreboard helpers ---
-        function buildOverviewRow(player) {
-            const itemBuilds = analysisData.value?.item_builds || [];
-            const playerBuild = itemBuilds.find(b => b.player_slot === player.player_slot);
-
-            // Build final 6 items with purchase times
-            const finalKeys = player.final_item_keys || [];
-            const items = finalKeys.slice(0, 6).map(key => {
-                let time_str = '';
-                // Look up purchase time from item_builds phases or purchase_log
-                if (playerBuild) {
-                    // Search all phases for this item key
-                    for (const phase of ['starting', 'early', 'mid', 'late']) {
-                        const phaseItems = playerBuild.item_phases?.[phase] || [];
-                        const found = phaseItems.find(i => i.item_key === key);
-                        if (found) {
-                            time_str = found.time_str || '';
-                            break;
-                        }
-                    }
-                }
-                // Fallback: search purchase_log
-                if (!time_str && player.purchase_log) {
-                    const logEntry = player.purchase_log.find(e => e.key === key);
-                    if (logEntry) {
-                        time_str = formatGameTime(logEntry.time);
-                    }
-                }
-                return { key, time_str };
-            });
-
-            // Pad to 6 slots
-            while (items.length < 6) {
-                items.push({ key: '', time_str: '' });
-            }
-
-            // Backpack items
-            const backpack = (player.backpack || []).map(key => ({ key }));
-
-            const nw = player.net_worth || 0;
-            const hd = player.hero_damage || 0;
-            const td = player.tower_damage || 0;
-            const hh = player.hero_healing || 0;
-
-            return {
-                hero_slug: player.hero_slug || '',
-                hero_name: player.hero_name || '',
-                player_name: player.player_name || '',
-                level: player.level || 0,
-                kills: player.kills || 0,
-                deaths: player.deaths || 0,
-                assists: player.assists || 0,
-                lh_dn: `${player.last_hits || 0}/${player.denies || 0}`,
-                net_worth: nw,
-                net_worth_k: formatNumber(nw),
-                gpm_xpm: `${player.gold_per_min || 0}/${player.xp_per_min || 0}`,
-                hero_damage: hd,
-                hero_damage_k: formatNumber(hd),
-                tower_damage: td,
-                tower_damage_k: formatNumber(td),
-                hero_healing: hh,
-                hero_healing_k: formatNumber(hh),
-                items,
-                backpack,
-                player_slot: player.player_slot,
-            };
-        }
-
-        const overviewRadiant = computed(() => {
-            return radiantPlayers.value.map(p => buildOverviewRow(p));
-        });
-
-        const overviewDire = computed(() => {
-            return direPlayers.value.map(p => buildOverviewRow(p));
-        });
-
-        // --- Team Totals computed ---
-        function computeTeamTotal(rows) {
-            const totals = {
-                kills: 0, deaths: 0, assists: 0,
-                lh: 0, dn: 0,
-                net_worth: 0,
-                gpm: 0, xpm: 0,
-                hd: 0, td: 0, hh: 0,
-            };
-            rows.forEach(r => {
-                totals.kills += r.kills;
-                totals.deaths += r.deaths;
-                totals.assists += r.assists;
-                const parts = r.lh_dn.split('/');
-                totals.lh += parseInt(parts[0]) || 0;
-                totals.dn += parseInt(parts[1]) || 0;
-                totals.net_worth += r.net_worth;
-                const gx = r.gpm_xpm.split('/');
-                totals.gpm += parseInt(gx[0]) || 0;
-                totals.xpm += parseInt(gx[1]) || 0;
-                totals.hd += r.hero_damage;
-                totals.td += r.tower_damage;
-                totals.hh += r.hero_healing;
-            });
-            return {
-                kills: totals.kills,
-                deaths: totals.deaths,
-                assists: totals.assists,
-                lh_dn: `${totals.lh}/${totals.dn}`,
-                net_worth_k: formatNumber(totals.net_worth),
-                gpm_xpm: `${totals.gpm}/${totals.xpm}`,
-                hd_k: formatNumber(totals.hd),
-                td_k: formatNumber(totals.td),
-                hh_k: formatNumber(totals.hh),
-            };
-        }
-
-        const teamTotals = computed(() => {
-            return {
-                radiant: computeTeamTotal(overviewRadiant.value),
-                dire: computeTeamTotal(overviewDire.value),
-            };
-        });
-
         // --- Data availability checks for graceful degradation ---
-        const parseSourceLabel = computed(() => {
-            const src = parseSource.value;
-            if (src === 'clarity') return t('source_clarity_short');
-            if (src === 'opendota') return t('source_opendota');
-            if (src === 'mock') return t('source_mock');
-            return src || '';
-        });
-
         const hasSkillBuilds = computed(() => {
             const builds = analysisData.value?.skill_builds;
             return builds && builds.length > 0 && builds.some(p => p.skill_order && p.skill_order.length > 0);
@@ -651,15 +499,6 @@ createApp({
             return entry ? entry.time_str : '';
         }
 
-        function shortAbility(name) {
-            if (name.startsWith('talent_')) {
-                return name.includes('left') ? 'T-L' : 'T-R';
-            }
-            const words = name.split(' ');
-            if (words.length === 1) return name.slice(0, 4);
-            return words.map(w => w[0]).join('').toUpperCase();
-        }
-
         function getSkillColor(ability, heroName) {
             const player = analysisData.value?.skill_builds?.find(p => p.hero_name === heroName);
             if (!player) return 'skill-q';
@@ -672,6 +511,9 @@ createApp({
         // --- File Handling ---
         async function handleFileSelect(e) {
             const file = e.target.files[0];
+            // Clear the input so re-selecting the same file (e.g. retry after
+            // cancel) still fires a change event.
+            e.target.value = '';
             if (file) await uploadFile(file);
         }
 
@@ -680,30 +522,160 @@ createApp({
             if (file) await uploadFile(file);
         }
 
-        async function uploadFile(file) {
-            if (!file.name.endsWith('.dem')) {
-                uploadError.value = t('error_invalid_format');
-                return;
+        function _formatBytes(b) {
+            if (b < 1024) return Math.round(b) + ' B';
+            if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+            if (b < 1024 * 1024 * 1024) return (b / (1024 * 1024)).toFixed(1) + ' MB';
+            return (b / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+        }
+        function _formatEta(seconds) {
+            if (!isFinite(seconds) || seconds < 0) return '--';
+            // Round the total first so 119.7s becomes "2m 0s", not "1m 60s"
+            const total = Math.round(seconds);
+            if (total < 60) return total + 's';
+            return `${Math.floor(total / 60)}m ${total % 60}s`;
+        }
+
+        let _uploadXhr = null;
+
+        function _resetUploadProgress() {
+            uploadProgress.value = { phase: '', percent: 0, loaded: 0, total: 0, speed: 0, eta: 0, label: '', indeterminate: false };
+        }
+
+        function cancelUpload() {
+            if (_uploadXhr) {
+                try { _uploadXhr.abort(); } catch (e) { /* ignore */ }
+                _uploadXhr = null;
             }
-            uploading.value = true;
-            uploadError.value = '';
-            const formData = new FormData();
-            formData.append('file', file);
-            try {
-                const res = await fetch('/api/upload', { method: 'POST', body: formData });
-                if (!res.ok) throw new Error((await res.json()).detail || t('error_upload_failed'));
-                const data = await res.json();
-                parseSource.value = data.parse_source;
-                matchKey.value = data._match_key || data.file_key || '';
-                const aRes = await fetch(`/api/match/${data.file_key}`);
-                const aData = await aRes.json();
-                analysisData.value = aData.analysis;
-                if (aData._match_key) matchKey.value = aData._match_key;
-            } catch (e) {
-                uploadError.value = e.message;
-            } finally {
-                uploading.value = false;
-            }
+            uploading.value = false;
+            _resetUploadProgress();
+        }
+
+        function uploadFile(file) {
+            return new Promise((resolve, reject) => {
+                if (!file.name.endsWith('.dem')) {
+                    uploadError.value = t('error_invalid_format');
+                    return reject(new Error('format'));
+                }
+                // The upload zone stays clickable during an upload; ignore a
+                // second file until the first finishes or is cancelled, so
+                // Cancel always targets the one visible transfer.
+                if (_uploadXhr) {
+                    return reject(new Error('busy'));
+                }
+                uploading.value = true;
+                uploadError.value = '';
+                uploadProgress.value = { phase: 'uploading', percent: 0, loaded: 0, total: file.size, speed: 0, eta: 0, label: '', indeterminate: false };
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const xhr = new XMLHttpRequest();
+                _uploadXhr = xhr;
+                const startedAt = performance.now();
+                let lastSampleAt = startedAt;
+                let lastSampleLoaded = 0;
+
+                xhr.upload.onprogress = (ev) => {
+                    const now = performance.now();
+                    const dt = (now - lastSampleAt) / 1000;
+                    let speed = uploadProgress.value.speed;
+                    if (dt > 0.4) {
+                        const dBytes = ev.loaded - lastSampleLoaded;
+                        speed = dBytes / dt;
+                        lastSampleAt = now;
+                        lastSampleLoaded = ev.loaded;
+                    }
+                    if (!ev.lengthComputable) {
+                        // Proxies may strip Content-Length; show transferred
+                        // bytes with an indeterminate bar instead of frozen 0%
+                        uploadProgress.value = {
+                            phase: 'uploading',
+                            percent: 0,
+                            loaded: ev.loaded,
+                            total: 0,
+                            speed,
+                            eta: 0,
+                            label: `${_formatBytes(ev.loaded)} · ${_formatBytes(speed)}/s`,
+                            indeterminate: true,
+                        };
+                        return;
+                    }
+                    const remaining = speed > 0 ? (ev.total - ev.loaded) / speed : 0;
+                    uploadProgress.value = {
+                        phase: 'uploading',
+                        percent: Math.round(ev.loaded / ev.total * 100),
+                        loaded: ev.loaded,
+                        total: ev.total,
+                        speed,
+                        eta: remaining,
+                        label: `${_formatBytes(ev.loaded)} / ${_formatBytes(ev.total)} · ${_formatBytes(speed)}/s · ${_formatEta(remaining)}`,
+                        indeterminate: false,
+                    };
+                };
+
+                xhr.upload.onload = () => {
+                    // The v-else branch of the progress UI renders its own
+                    // "parsing" text, so no label is needed here.
+                    uploadProgress.value = {
+                        ...uploadProgress.value,
+                        phase: 'parsing',
+                        percent: 100,
+                    };
+                };
+
+                xhr.onload = async () => {
+                    if (_uploadXhr === xhr) _uploadXhr = null;
+                    if (xhr.status < 200 || xhr.status >= 300) {
+                        let detail = t('error_upload_failed');
+                        try { detail = JSON.parse(xhr.responseText).detail || detail; } catch (e) { /* ignore */ }
+                        uploadError.value = detail;
+                        uploading.value = false;
+                        _resetUploadProgress();
+                        return reject(new Error(detail));
+                    }
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        parseSource.value = data.parse_source;
+                        matchKey.value = data._match_key || data.file_key || '';
+                        const aRes = await fetch(`/api/match/${data.file_key}`);
+                        const aData = await aRes.json();
+                        analysisData.value = aData.analysis;
+                        if (aData._match_key) matchKey.value = aData._match_key;
+                        resolve(data);
+                    } catch (e) {
+                        uploadError.value = e.message || t('error_upload_failed');
+                        reject(e);
+                    } finally {
+                        uploading.value = false;
+                        _resetUploadProgress();
+                    }
+                };
+
+                xhr.onerror = () => {
+                    if (_uploadXhr === xhr) _uploadXhr = null;
+                    uploadError.value = t('error_upload_failed');
+                    uploading.value = false;
+                    _resetUploadProgress();
+                    reject(new Error('network'));
+                };
+                xhr.onabort = () => {
+                    if (_uploadXhr === xhr) _uploadXhr = null;
+                    uploading.value = false;
+                    // Settle the promise so callers awaiting uploadFile()
+                    // don't hang forever after a user-initiated cancel.
+                    reject(new Error('cancelled'));
+                };
+
+                xhr.open('POST', '/api/upload');
+                xhr.send(formData);
+            }).catch((e) => {
+                // Errors already surface via uploadError ('cancelled' and
+                // 'busy' are clean no-ops); swallow to avoid console noise.
+                if (e && e.message && !['format', 'network', 'cancelled', 'busy'].includes(e.message)) {
+                    console.error('upload', e);
+                }
+            });
         }
 
         const matchIdInput = ref('');
@@ -838,14 +810,29 @@ createApp({
             closeAiCoachStream();
         }
 
+        // Escape HTML entities so LLM-generated text can't inject markup
+        // through the v-html bindings below.
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function renderMarkdown(text) {
             if (!text) return '';
-            return text
+            // Escape first, then apply markdown transforms so the only HTML
+            // in the output is what we generate here.
+            return escapeHtml(text)
                 .replace(/^### (.*$)/gm, '<h4 style="color: var(--accent); margin: 12px 0 6px;">$1</h4>')
                 .replace(/^## (.*$)/gm, '<h3 style="color: var(--text-primary); margin: 16px 0 8px;">$1</h3>')
                 .replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-primary);">$1</strong>')
                 .replace(/^\- (.*$)/gm, '<li style="color: var(--text-secondary); margin: 2px 0;">$1</li>')
                 .replace(/^\d+\. (.*$)/gm, '<li style="color: var(--text-secondary); margin: 2px 0;">$1</li>')
+                // Wrap consecutive <li> lines in a <ul> so lists render properly
+                .replace(/((?:^<li[^\n]*<\/li>\n?)+)/gm, m => '<ul style="margin: 4px 0; padding-left: 20px;">' + m.replace(/\n/g, '') + '</ul>\n')
                 .replace(/\n\n/g, '<br><br>')
                 .replace(/\n/g, '<br>');
         }
@@ -1904,7 +1891,7 @@ createApp({
         // --- Watchers ---
         watch(activeTab, async (tab, oldTab) => {
             // Dispose stale chart instances (v-if destroys DOM, old instances become invalid)
-            if ((oldTab === 'economy' || oldTab === 'graphs') && economyChartInstance) { economyChartInstance.dispose(); economyChartInstance = null; }
+            if (oldTab === 'economy' && economyChartInstance) { economyChartInstance.dispose(); economyChartInstance = null; }
             if ((oldTab === 'wards') && wardChartInstance) { wardChartInstance.dispose(); wardChartInstance = null; }
             if (oldTab === 'smokes' || oldTab === 'wards') {
                 if (smokeMapInstance) { smokeMapInstance.dispose(); smokeMapInstance = null; }
@@ -1922,7 +1909,7 @@ createApp({
             }
 
             await nextTick();
-            if (tab === 'economy' || tab === 'graphs') renderEconomyChart();
+            if (tab === 'economy') renderEconomyChart();
             if (tab === 'wards') { renderWardMap(); renderSmokeMap(); renderSmokeTimeline(); }
             if (tab === 'smokes') { renderSmokeMap(); renderSmokeTimeline(); }
             if (tab === 'teamfights') renderTeamfightMap();
@@ -1960,7 +1947,7 @@ createApp({
 
         // Economy chart mode watcher
         watch(economyMode, () => {
-            if (activeTab.value === 'economy' || activeTab.value === 'graphs') renderEconomyChart();
+            if (activeTab.value === 'economy') renderEconomyChart();
         });
 
         // Teamfight replay debounced watcher
@@ -2015,16 +2002,12 @@ createApp({
 
         // --- Init ---
         onMounted(async () => {
-            // Load hero/item data for icon lookups
+            // Load hero data for icon lookups
             try {
-                const [hRes, iRes] = await Promise.all([
-                    fetch('/static/data/heroes.json'),
-                    fetch('/static/data/items.json'),
-                ]);
+                const hRes = await fetch('/static/data/heroes.json');
                 heroData.value = await hRes.json();
-                itemData.value = await iRes.json();
             } catch (e) {
-                console.warn('Failed to load hero/item data:', e);
+                console.warn('Failed to load hero data:', e);
             }
 
             window.addEventListener('resize', () => {
@@ -2038,10 +2021,6 @@ createApp({
                 laningHpTimelineInstance?.resize();
                 farmReasonChartInstance?.resize();
                 farmLhChartInstance?.resize();
-                proLaningCsChart?.resize();
-                proLaningGoldChart?.resize();
-                proMidgameFarmChart?.resize();
-                proLategameRadarChart?.resize();
             });
         });
 
@@ -2068,9 +2047,10 @@ createApp({
             return 'text-red-400';
         }
 
-        // Update document title and re-render charts on locale change
+        // Update document title/lang and re-render charts on locale change
         watch(locale, async () => {
             document.title = t('app_title');
+            document.documentElement.lang = locale.value === 'en' ? 'en' : 'zh-CN';
             // Re-render active charts with new locale strings
             await nextTick();
             const tab = activeTab.value;
@@ -2085,12 +2065,13 @@ createApp({
             }
         });
 
-        // Set initial document title
+        // Set initial document title and language
         document.title = t('app_title');
+        document.documentElement.lang = locale.value === 'en' ? 'en' : 'zh-CN';
 
         return {
             locale, t, onLocaleChange, translateLaneName,
-            analysisData, parseSource, parseSourceLabel, uploading, uploadError,
+            analysisData, parseSource, uploading, uploadError,
             activeTab, showAbilityBuilds, selectedTeamfight, wardFilters,
             wardTimelineEnabled, wardTimelineTime, wardShowVision,
             wardMatchDuration, timelineWards,
@@ -2102,9 +2083,10 @@ createApp({
             overview, radiantPlayers, direPlayers,
             smokeData, teamfightData, currentTeamfight,
             wardStats, filteredWards,
-            formatNumber, formatGameTime, shortAbility, getSkillColor,
+            formatNumber, formatGameTime, getSkillColor,
             matchIdInput, fetchMatchById,
             handleFileSelect, handleDrop, loadDemo, resetAnalysis,
+            uploadProgress, uploadIsSlow, cancelUpload,
             toggleTeamfightPlay, toggleSmokeSelect, clearSmokeSelection,
             smokeResultLabel, smokeResultColor, benchmarkColor,
             heroIcon, heroImg, itemIcon, heroIconByName, abilityIcon, heroSlugByName,
@@ -2121,8 +2103,6 @@ createApp({
             renderMarkdown,
             aiCoachData, aiCoachLoading, aiCoachError, aiCoachPlayerSlot, requestAiCoach,
             aiCoachProgress, aiCoachStageLabel,
-            // New overview/header properties
-            matchHeader, overviewRadiant, overviewDire, teamTotals,
             timeAgo, regionName, formatNetWorth, teamSum, getItemPurchaseTime,
         };
     },
