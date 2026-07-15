@@ -214,12 +214,12 @@ def _generate_laning_review(
         opponents = []
         if player.laning_snapshots and len(player.laning_snapshots) > 5:
             # Find enemies whose laning snapshots are closest to ours
-            from .decision_detector import _game_to_map, _dist
+            from .decision_detector import game_to_map, map_dist
             my_snaps = player.laning_snapshots[5:15]  # samples from 25s-75s
             if my_snaps:
                 avg_x = sum(s.x for s in my_snaps) / len(my_snaps)
                 avg_y = sum(s.y for s in my_snaps) / len(my_snaps)
-                mx, my = _game_to_map(avg_x, avg_y)
+                mx, my = game_to_map(avg_x, avg_y)
                 for p in match.players:
                     if p.team == player.team or not p.laning_snapshots:
                         continue
@@ -227,8 +227,8 @@ def _generate_laning_review(
                     if e_snaps:
                         ex = sum(s.x for s in e_snaps) / len(e_snaps)
                         ey = sum(s.y for s in e_snaps) / len(e_snaps)
-                        emx, emy = _game_to_map(ex, ey)
-                        if _dist(mx, my, emx, emy) < 30:
+                        emx, emy = game_to_map(ex, ey)
+                        if map_dist(mx, my, emx, emy) < 30:
                             opponents.append(p.hero_name)
 
     unknown_opp = _UNKNOWN_OPPONENT.get(lang, "未知对手")
@@ -376,7 +376,6 @@ def _generate_laning_review(
 _CATEGORY_MAP: dict[str, str] = {
     "death": "地图意识",
     "overextend": "地图意识",
-    "no_retreat": "地图意识",
     "bad_trade": "对线能力",
     "missed_cs": "对线能力",
     "fight_engage": "团战参与",
@@ -434,13 +433,6 @@ def _detect_improvement_areas(
     # Sort by severity (lowest avg score first)
     areas.sort(key=lambda a: _SCORE_TO_NUM.get(a["avg_score"], 2))
     return areas
-
-
-def _improvement_suggestion(category: str, lang: str = "zh") -> str:
-    """Return a general improvement suggestion for a category."""
-    suggestions = _IMPROVEMENT_SUGGESTIONS.get(lang, _IMPROVEMENT_SUGGESTIONS["zh"])
-    default = _DEFAULT_IMPROVEMENT.get(lang, _DEFAULT_IMPROVEMENT["zh"])
-    return suggestions.get(category, default)
 
 
 def _detect_strengths(
@@ -691,6 +683,9 @@ async def generate_coaching_report(
                 if dp.point_type == "death" and dp.related_death:
                     chain = causal_chains.get(dp.related_death.time)
                 ctx = build_context(match, dp, causal_chain=chain, lang=lang)
+                # Position 1-5 lets knowledge retrieval add a role: query tag
+                if position_payload.get("number"):
+                    ctx.match_context["player_position"] = position_payload["number"]
                 contexts.append(ctx)
             except Exception as exc:
                 logger.error(
@@ -828,7 +823,12 @@ async def generate_coaching_report(
         from .evaluator import evaluate_phase
         from .phases import slice_player_phases
 
-        phase_stats_list = slice_player_phases(match, player)
+        # Prefer the precise death times detected in Step 1 over the
+        # objectives-based fallback inside slice_player_phases.
+        phase_stats_list = slice_player_phases(
+            match, player,
+            death_times=[d.time for d in deaths] if deaths else None,
+        )
         if phase_stats_list:
             await _emit("phases", 0, len(phase_stats_list))
 

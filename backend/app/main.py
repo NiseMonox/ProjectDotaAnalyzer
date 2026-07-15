@@ -1,5 +1,6 @@
 """Dota 2 Match Analyzer - FastAPI Application."""
 import logging
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -13,11 +14,21 @@ from .routes import router
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """App lifespan (replaces deprecated @app.on_event('startup'))."""
+    await _check_and_update_gamedata()
+    await _check_and_start_learning()
+    yield
+
+
 app = FastAPI(
     title="Dota 2 Match Analyzer",
     description="Analyze Dota 2 replay files for item builds, skill builds, "
                 "ward placements, smoke usage, teamfights, and ability usage.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -30,7 +41,6 @@ app.add_middleware(
 app.include_router(router)
 
 
-@app.on_event("startup")
 async def _check_and_update_gamedata():
     """Check game data version on startup; auto-update in background if needed.
 
@@ -96,6 +106,47 @@ async def _check_and_update_gamedata():
         logger.debug("data_manager not available, using hardcoded game data")
     except Exception as e:
         logger.warning("Failed to check game data status: %s", e)
+
+
+async def _check_and_start_learning():
+    """Kick off the AI coach self-learning pipeline in the background if due.
+
+    Controlled by AI_COACH_AUTO_LEARN (default on; set to "0" to disable).
+    Never blocks startup: the run itself happens in a background task, and
+    any failure here only logs a warning.
+    """
+    import asyncio
+    import os
+
+    if os.environ.get("AI_COACH_AUTO_LEARN", "1") == "0":
+        logger.info("AI coach auto-learning disabled (AI_COACH_AUTO_LEARN=0)")
+        return
+    try:
+        from .ai.learning.pipeline import should_learn
+        if not should_learn():
+            logger.info("Learned knowledge is fresh, skipping learning run")
+            return
+        logger.info("Learning run due, starting in background...")
+        asyncio.create_task(_bg_run_learning())
+    except ImportError:
+        logger.debug("learning pipeline not available")
+    except Exception as e:
+        logger.warning("Failed to check learning status: %s", e)
+
+
+async def _bg_run_learning():
+    """Background task: run the self-learning pipeline without blocking requests."""
+    import asyncio
+    try:
+        from .ai.learning.pipeline import run_learning
+        summary = await asyncio.to_thread(run_learning)
+        logger.info(
+            "Learning run finished in background: %d chunks written (patch %s)",
+            summary.get("total_chunks_written", 0),
+            summary.get("patch") or "unknown",
+        )
+    except Exception as e:
+        logger.warning("Background learning run failed: %s", e)
 
 
 async def _bg_update_gamedata():

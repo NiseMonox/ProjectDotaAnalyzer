@@ -36,8 +36,13 @@ DATA_DIR = BASE_DIR / "backend" / "data"
 GAMEDATA_DIR = DATA_DIR / "gamedata"
 EDITORIAL_DIR = DATA_DIR / "editorial"
 
+# Self-learned knowledge chunks (output of the ai.learning pipeline).
+# Canonical path — ai/learning/base.py re-exports it as LEARNED_DIR.
+LEARNED_DATA_DIR = DATA_DIR / "learned"
+
 # Ensure directories exist
 REPLAY_DIR.mkdir(parents=True, exist_ok=True)
 COACH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 GAMEDATA_DIR.mkdir(parents=True, exist_ok=True)
 EDITORIAL_DIR.mkdir(parents=True, exist_ok=True)
+LEARNED_DATA_DIR.mkdir(parents=True, exist_ok=True)

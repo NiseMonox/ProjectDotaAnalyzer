@@ -5,18 +5,32 @@ damage, item timings, ward placement, and kill participation. Compares
 individual player performance against these benchmarks and produces
 language-aware reports.
 
+Self-updating values: the learning pipeline (``learning/stats_learner.py``)
+writes per-hero OpenDota percentiles to ``backend/data/learned/
+_benchmarks_raw.json``. When that file is present, hero-specific GPM and
+hero-damage-per-minute percentiles (p90/p50/p10 -> good/average/poor) overlay
+the hardcoded role tables below; the hardcoded values remain the fallback
+when the file or a hero entry is missing. CS, deaths, wards, kill
+participation and item timing tables stay hardcoded: OpenDota's whole-game
+global percentiles do not map cleanly onto those role/minute-specific curves.
+
 Patch reference: 7.37
 """
 from __future__ import annotations
 
+import json
+import logging
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..models import MatchData, PlayerData
 
 from .knowledge_base import HERO_DATA
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "PATCH_VERSION",
@@ -47,6 +61,84 @@ def _resolve_patch_version() -> str:
         return "7.37"
 
 PATCH_VERSION = _resolve_patch_version()
+
+# ===================================================================
+# Learned benchmark overlay (written by learning/stats_learner.py)
+# ===================================================================
+
+# Metrics for which per-hero OpenDota percentiles genuinely map onto a
+# good/average/poor table (higher is better, whole-game per-minute rates).
+_LEARNED_OVERLAY_METRICS: set[str] = {"gold_per_min", "hero_damage_per_min"}
+
+_learned_bench_cache: dict[str, dict] = {}
+_learned_bench_mtime: float | None = None
+
+
+def _learned_benchmarks_path() -> Path:
+    try:
+        from .learning.base import LEARNED_DIR
+        return LEARNED_DIR / "_benchmarks_raw.json"
+    except Exception:
+        return Path(__file__).resolve().parents[2] / "data" / "learned" / "_benchmarks_raw.json"
+
+
+def _learned_hero_slug(name: str) -> str:
+    """Hero name -> slug; must match learning.stats_learner._slug."""
+    return name.lower().replace(" ", "_").replace("'", "").replace("-", "_")
+
+
+def _load_learned_benchmarks() -> dict[str, dict]:
+    """Lazily load per-hero percentiles, re-reading when the file changes."""
+    global _learned_bench_cache, _learned_bench_mtime
+    path = _learned_benchmarks_path()
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        _learned_bench_cache, _learned_bench_mtime = {}, None
+        return {}
+    if _learned_bench_mtime == mtime:
+        return _learned_bench_cache
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        heroes = payload.get("heroes", {})
+        _learned_bench_cache = heroes if isinstance(heroes, dict) else {}
+        logger.info(
+            "Learned benchmarks loaded: %d heroes overlay hardcoded tables",
+            len(_learned_bench_cache),
+        )
+    except Exception as exc:
+        logger.warning("Failed to load learned benchmarks: %s", exc)
+        _learned_bench_cache = {}
+    _learned_bench_mtime = mtime
+    return _learned_bench_cache
+
+
+def _learned_metric_bench(hero_name: str, metric: str) -> dict | None:
+    """Hero-specific {good, average, poor} from learned percentiles, or None.
+
+    p90 -> good, p50 -> average, p10 -> poor. Returns None when the learned
+    file, hero, or metric is missing so callers fall back to the hardcoded
+    role tables.
+    """
+    if metric not in _LEARNED_OVERLAY_METRICS:
+        return None
+    entry = _load_learned_benchmarks().get(_learned_hero_slug(hero_name))
+    if not isinstance(entry, dict):
+        return None
+    values = entry.get(metric)
+    if not isinstance(values, dict):
+        return None
+    p50, p90 = values.get("p50"), values.get("p90")
+    if p50 is None or p90 is None:
+        return None
+    p10 = values.get("p10")
+    return {
+        "good": int(round(p90)),
+        "average": int(round(p50)),
+        "poor": int(round(p10)) if p10 is not None else None,
+    }
+
 
 # ===================================================================
 # Role label map (multilingual)
@@ -435,14 +527,14 @@ def get_benchmark_context(hero_name: str, role: str, game_time: int, lang: str =
         if hero_name in CS_HERO_OVERRIDES:
             hero_cs = _interpolate_cs(CS_HERO_OVERRIDES[hero_name], minute)
             lines.append(f"- Pro-level CS for {hero_name} at {minute} min: ~{int(hero_cs)}")
-        gpm_data = GPM_BENCHMARKS.get(effective_role)
+        gpm_data = _learned_metric_bench(hero_name, "gold_per_min") or GPM_BENCHMARKS.get(effective_role)
         if gpm_data:
             lines.append(f"- Expected GPM: {gpm_data['average']}+")
         deaths_data = DEATHS_PER_30MIN.get(effective_role)
         if deaths_data:
             scaled = deaths_data["average"] * minute / 30 if minute > 0 else 0
             lines.append(f"- Expected deaths by {minute} min: <={scaled:.1f}")
-        dmg_data = DAMAGE_PER_MIN.get(effective_role)
+        dmg_data = _learned_metric_bench(hero_name, "hero_damage_per_min") or DAMAGE_PER_MIN.get(effective_role)
         if dmg_data:
             lines.append(f"- Expected damage per minute: {dmg_data['average']}+")
     else:
@@ -452,14 +544,14 @@ def get_benchmark_context(hero_name: str, role: str, game_time: int, lang: str =
         if hero_name in CS_HERO_OVERRIDES:
             hero_cs = _interpolate_cs(CS_HERO_OVERRIDES[hero_name], minute)
             lines.append(f"- 职业选手该英雄{minute}分钟补刀: ~{int(hero_cs)}")
-        gpm_data = GPM_BENCHMARKS.get(effective_role)
+        gpm_data = _learned_metric_bench(hero_name, "gold_per_min") or GPM_BENCHMARKS.get(effective_role)
         if gpm_data:
             lines.append(f"- 预期GPM: {gpm_data['average']}+")
         deaths_data = DEATHS_PER_30MIN.get(effective_role)
         if deaths_data:
             scaled = deaths_data["average"] * minute / 30 if minute > 0 else 0
             lines.append(f"- 该时间点预期死亡次数: <={scaled:.1f}")
-        dmg_data = DAMAGE_PER_MIN.get(effective_role)
+        dmg_data = _learned_metric_bench(hero_name, "hero_damage_per_min") or DAMAGE_PER_MIN.get(effective_role)
         if dmg_data:
             lines.append(f"- 预期每分钟伤害: {dmg_data['average']}+")
 
@@ -566,9 +658,9 @@ def compare_player(player: PlayerData, match: MatchData, lang: str = "zh") -> Pr
         ))
 
     # ------------------------------------------------------------------
-    # 3. GPM comparison
+    # 3. GPM comparison (learned hero-specific values overlay role table)
     # ------------------------------------------------------------------
-    gpm_bench = GPM_BENCHMARKS.get(effective_role)
+    gpm_bench = _learned_metric_bench(hero_name, "gold_per_min") or GPM_BENCHMARKS.get(effective_role)
     if gpm_bench:
         gpm = player.gold_per_min
         rating = _rate_higher_is_better(
@@ -591,9 +683,9 @@ def compare_player(player: PlayerData, match: MatchData, lang: str = "zh") -> Pr
         ))
 
     # ------------------------------------------------------------------
-    # 4. Hero damage per minute
+    # 4. Hero damage per minute (learned hero-specific values overlay)
     # ------------------------------------------------------------------
-    dmg_bench = DAMAGE_PER_MIN.get(effective_role)
+    dmg_bench = _learned_metric_bench(hero_name, "hero_damage_per_min") or DAMAGE_PER_MIN.get(effective_role)
     if dmg_bench:
         dpm = player.hero_damage / duration_min if duration_min > 0 else 0
         rating = _rate_higher_is_better(

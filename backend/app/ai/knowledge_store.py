@@ -96,6 +96,31 @@ class SimpleBM25:
 
 
 # ---------------------------------------------------------------------------
+# Tag helpers
+# ---------------------------------------------------------------------------
+
+def _query_slug(name: str) -> str:
+    """Normalize a hero/item name into the tag slug convention.
+
+    Must stay in sync with the chunk producers (knowledge_chunks._hero_slug,
+    the learning package): lowercase, spaces and hyphens to underscores,
+    apostrophes stripped — otherwise query tags like "hero:anti-mage" never
+    match chunks tagged "hero:anti_mage".
+    """
+    return name.lower().replace(" ", "_").replace("-", "_").replace("'", "")
+
+
+# Position number (1-5) -> role tag used by the chunk producers
+_POSITION_ROLE_TAGS = {
+    1: "role:carry",
+    2: "role:mid",
+    3: "role:offlane",
+    4: "role:support_4",
+    5: "role:support_5",
+}
+
+
+# ---------------------------------------------------------------------------
 # KnowledgeChunk
 # ---------------------------------------------------------------------------
 
@@ -214,11 +239,7 @@ class KnowledgeStore:
         tags: set[str] = set()
 
         # Hero
-        hero_slug = (
-            ctx.player_state.hero_name.lower()
-            .replace(" ", "_")
-            .replace("'", "")
-        )
+        hero_slug = _query_slug(ctx.player_state.hero_name)
         tags.add(f"hero:{hero_slug}")
 
         # Phase
@@ -228,24 +249,21 @@ class KnowledgeStore:
         # Situation
         tags.add(f"situation:{ctx.decision_point.point_type}")
 
+        # Player role (position 1-5, injected by coach via match_context)
+        position = (ctx.match_context or {}).get("player_position")
+        role_tag = _POSITION_ROLE_TAGS.get(position)
+        if role_tag:
+            tags.add(role_tag)
+
         # Enemy heroes
         for enemy in ctx.enemy_states:
-            e_slug = (
-                enemy.hero_name.lower()
-                .replace(" ", "_")
-                .replace("'", "")
-            )
+            e_slug = _query_slug(enemy.hero_name)
             tags.add(f"hero:{e_slug}")
             tags.add(f"matchup:{hero_slug}:{e_slug}")
 
         # Items
         for item in ctx.player_state.items:
-            item_slug = (
-                item.lower()
-                .replace(" ", "_")
-                .replace("'", "")
-            )
-            tags.add(f"item:{item_slug}")
+            tags.add(f"item:{_query_slug(item)}")
 
         # Mechanic tags based on situation type
         if ctx.decision_point.point_type in ("death", "overextend"):

@@ -10,6 +10,7 @@ that provide coaching knowledge text for LLM context.
 from __future__ import annotations
 
 import logging
+import threading
 
 from .models import DecisionContext
 
@@ -31,16 +32,30 @@ except ImportError:
 
 # RAG knowledge store (lazy initialized)
 _knowledge_store = None
+# Guards the lazy build below: concurrent first requests (e.g. parallel
+# evaluations) must not build the same per-language store twice.
+_knowledge_store_lock = threading.Lock()
 
 
 def _get_knowledge_store(lang: str = "zh"):
-    """Get or create a per-language knowledge store."""
+    """Get or create a per-language knowledge store (thread-safe)."""
     global _knowledge_store
-    # Use a dict keyed by lang for per-language stores
-    if _knowledge_store is None or not isinstance(_knowledge_store, dict):
-        _knowledge_store = {}
-    if lang in _knowledge_store:
+    # Fast path: store for this language already built (dict reads are atomic).
+    if isinstance(_knowledge_store, dict) and lang in _knowledge_store:
         return _knowledge_store[lang]
+    with _knowledge_store_lock:
+        # Use a dict keyed by lang for per-language stores
+        if _knowledge_store is None or not isinstance(_knowledge_store, dict):
+            _knowledge_store = {}
+        # Double-check after acquiring the lock: another thread may have
+        # finished building while we were waiting.
+        if lang in _knowledge_store:
+            return _knowledge_store[lang]
+        return _build_knowledge_store(lang)
+
+
+def _build_knowledge_store(lang: str):
+    """Build and cache the store for one language (caller holds the lock)."""
     try:
         from .knowledge_store import KnowledgeStore
         store = KnowledgeStore()
@@ -62,6 +77,31 @@ def _get_knowledge_store(lang: str = "zh"):
         except Exception as e:
             logger.warning("Failed to load game data chunks: %s", e)
 
+        # Load learned-layer chunks (self-learning pipeline output).
+        # Problems in the learned layer must never break startup or coaching.
+        try:
+            from .knowledge_store import KnowledgeChunk
+            from .learning.base import load_learned_chunks
+            learned_count = 0
+            for item in load_learned_chunks(lang):
+                if not item.get("chunk_id"):
+                    continue
+                store.add_chunk(KnowledgeChunk(
+                    chunk_id=item["chunk_id"],
+                    content=item["content"],
+                    category=item.get("category", "learned"),
+                    tags=set(item.get("tags", [])),
+                    priority=item.get("priority", 2),
+                    source=item.get("source", "learned"),
+                    patch_version=item.get("patch_version", ""),
+                ))
+                learned_count += 1
+            logger.info("Learned RAG chunks loaded (%s): %d", lang, learned_count)
+        except ImportError:
+            logger.debug("learning package not available")
+        except Exception as e:
+            logger.warning("Failed to load learned chunks: %s", e)
+
         # Try loading user knowledge from data directory
         import os
         knowledge_dir = os.path.join(
@@ -81,6 +121,21 @@ def _get_knowledge_store(lang: str = "zh"):
         logger.info("knowledge_store module not available, using legacy knowledge injection")
         _knowledge_store[lang] = None  # keep None to trigger fallback
     return _knowledge_store.get(lang)
+
+
+def reset_knowledge_stores() -> None:
+    """Drop all cached per-language RAG stores so they rebuild on next use.
+
+    Called after a learning run (see ai.learning.pipeline) so fresh learned
+    chunks are picked up without restarting the server.
+    """
+    global _knowledge_store
+    with _knowledge_store_lock:
+        if isinstance(_knowledge_store, dict):
+            _knowledge_store.clear()
+        else:
+            _knowledge_store = None
+    logger.info("Knowledge stores reset; they will rebuild on next request")
 
 # ===================================================================
 # Hero knowledge database (fallback + file-backed)
@@ -1155,67 +1210,6 @@ def get_ability_item_knowledge(ctx: DecisionContext, lang: str = "zh") -> str:
     return f"{lbl_section_header}\n\n" + "\n\n".join(parts)
 
 
-def analyze_level1_team_strength(match, player_slot: int, lang: str = "zh") -> str:
-    """Compare both teams' level 1 fight capability."""
-    _ensure_hero_data_loaded()
-
-    player_team = "radiant" if player_slot < 128 else "dire"
-    teams = {"radiant": [], "dire": []}
-
-    for p in match.players:
-        hero_info = get_hero_info(p.hero_name, lang=lang)
-        strength = hero_info.get("level1_strength", "average")
-        teams[p.team].append({
-            "hero": p.hero_name,
-            "strength": strength,
-            "attack_type": hero_info.get("attack_type", "unknown"),
-        })
-
-    def team_score(heroes):
-        score_map = {"strong": 3, "average": 2, "weak": 1}
-        return sum(score_map.get(h["strength"], 2) for h in heroes)
-
-    ally_score = team_score(teams[player_team])
-    enemy_team = "dire" if player_team == "radiant" else "radiant"
-    enemy_score = team_score(teams[enemy_team])
-
-    ally_strong = [h["hero"] for h in teams[player_team] if h["strength"] == "strong"]
-    enemy_strong = [h["hero"] for h in teams[enemy_team] if h["strength"] == "strong"]
-    ally_melee = sum(1 for h in teams[player_team] if h["attack_type"] == "melee")
-    enemy_melee = sum(1 for h in teams[enemy_team] if h["attack_type"] == "melee")
-
-    if lang == "en":
-        lines = ["## Level 1 Team Comparison"]
-        if ally_strong:
-            lines.append(f"- Allied strong level 1 heroes: {', '.join(ally_strong)}")
-        if enemy_strong:
-            lines.append(f"- Enemy strong level 1 heroes: {', '.join(enemy_strong)}")
-        lines.append(f"- Allied team score: {ally_score}/15, Enemy team score: {enemy_score}/15")
-        if ally_score > enemy_score + 2:
-            lines.append("- Assessment: YOUR TEAM is stronger at level 1 — favorable rune contest")
-        elif enemy_score > ally_score + 2:
-            lines.append("- Assessment: ENEMY TEAM is stronger at level 1 — avoid rune contest, go to lane")
-        else:
-            lines.append("- Assessment: Teams are roughly even at level 1 — contest depends on numbers at the rune spot")
-        lines.append(f"- Bounty rune value: ~40 gold. Death cost: 100+ gold + missed lane XP/gold")
-    else:
-        lines = ["## 1级团战能力对比"]
-        if ally_strong:
-            lines.append(f"- 己方1级强势英雄：{'、'.join(ally_strong)}")
-        if enemy_strong:
-            lines.append(f"- 敌方1级强势英雄：{'、'.join(enemy_strong)}")
-        lines.append(f"- 己方团队评分：{ally_score}/15，敌方团队评分：{enemy_score}/15")
-        if ally_score > enemy_score + 2:
-            lines.append("- 评估：己方1级更强——适合争夺赏金符")
-        elif enemy_score > ally_score + 2:
-            lines.append("- 评估：敌方1级更强——应避免争夺，直接去线上")
-        else:
-            lines.append("- 评估：双方1级实力接近——取决于赏金符点的人数")
-        lines.append("- 赏金符价值约40金。死亡代价：100+金 + 错过的线上经验和金钱")
-
-    return "\n".join(lines)
-
-
 def get_knowledge_for_context(ctx: DecisionContext, lang: str = "zh") -> str:
     """Assemble knowledge text for a decision context.
 
@@ -1248,7 +1242,7 @@ def _rag_knowledge(ctx: DecisionContext, store, lang: str = "zh") -> str:
         from .pro_patterns import get_benchmark_context, resolve_role
         hero_name = ctx.player_state.hero_name
         role = resolve_role(None, hero_name)
-        benchmark_text = get_benchmark_context(hero_name, role, ctx.decision_point.time)
+        benchmark_text = get_benchmark_context(hero_name, role, ctx.decision_point.time, lang=lang)
         if benchmark_text:
             sections.append(benchmark_text)
     except (ImportError, Exception):
@@ -1368,7 +1362,7 @@ def _legacy_knowledge(context: DecisionContext, lang: str = "zh") -> str:
 
     # --- Vision principles for deaths, overextensions, and dangerous situations ---
     vision_injected = False
-    if dp.point_type in ("death", "overextend", "no_retreat"):
+    if dp.point_type in ("death", "overextend"):
         sections.append(get_vision_principles(lang=lang))
         vision_injected = True
 
@@ -1382,7 +1376,7 @@ def _legacy_knowledge(context: DecisionContext, lang: str = "zh") -> str:
         from .pro_patterns import get_benchmark_context, resolve_role
         _pro_hero = context.player_state.hero_name
         _pro_role = resolve_role(None, _pro_hero)  # resolve from hero data only (no player obj here)
-        benchmark_text = get_benchmark_context(_pro_hero, _pro_role, context.decision_point.time)
+        benchmark_text = get_benchmark_context(_pro_hero, _pro_role, context.decision_point.time, lang=lang)
         if benchmark_text:
             sections.append(benchmark_text)
     except ImportError:
