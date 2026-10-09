@@ -7,10 +7,17 @@ Zero LLM cost. For every hero it pulls three aggregate endpoints:
   before a given time bucket
 - ``/heroes/{id}/matchups``        -> per-opponent win rates
 
-and renders them into bilingual template chunks (one LearnedChunk per
-language). Raw percentile values are additionally persisted to
-``LEARNED_DIR / "_benchmarks_raw.json"`` in machine-readable form so that
+and renders them into bilingual chunks (one LearnedChunk per language) that
+state *statistics* only — they are labelled as such when injected and are
+merged into the editorial matchup tip for the same pair instead of competing
+with it. Raw percentile values are additionally persisted to
+``<output_dir> / "_benchmarks_raw.json"`` in machine-readable form so that
 ``pro_patterns`` can overlay live values onto its hardcoded benchmark tables.
+
+The hero list comes from ``data_manager.get_hero_catalog()``, which works
+without fetched game data (the frontend catalog is committed), so a
+concurrent / failed game-data update can no longer leave this learner
+without heroes.
 
 Budget: ~3 API calls per hero; a full run over ~125 heroes is ~375 calls
 (~7 minutes with the 1.1s rate floor in ``opendota_get``). Use
@@ -21,23 +28,26 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
-from ...config import GAMEDATA_DIR
-from ..data_manager import load_heroes, load_items
+from .. import data_manager
 from .base import (
     LEARNED_DIR,
     LearnedChunk,
     current_patch_version,
+    load_learned_file,
     opendota_get,
     save_learned_file,
+    write_json_atomic,
 )
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["learn_stats", "BENCHMARKS_RAW_FILE"]
+__all__ = ["learn_stats", "BENCHMARKS_RAW_FILE", "LEARNED_FILE_NAME"]
 
 # Machine-readable percentile values consumed by pro_patterns (not chunks)
 BENCHMARKS_RAW_FILE = "_benchmarks_raw.json"
+LEARNED_FILE_NAME = "stats_opendota"
 
 _MIN_ITEM_GAMES = 30       # itemTimings rows below this sample size are noise
 _MIN_MATCHUP_GAMES = 50    # matchup rows below this sample size are noise
@@ -59,8 +69,13 @@ _BENCH_METRICS: list[tuple[str, str, str, int]] = [
 # Small helpers
 # ---------------------------------------------------------------------------
 
-def _slug(name: str) -> str:
-    """Hero name -> tag slug; must match knowledge_chunks._hero_slug."""
+def _tag_slug(name: str) -> str:
+    """Canonical hero tag slug (shared with the knowledge store)."""
+    return data_manager.hero_slug(name)
+
+
+def _bench_key(name: str) -> str:
+    """Key of a hero in _benchmarks_raw.json; must match pro_patterns' lookup."""
     return name.lower().replace(" ", "_").replace("'", "").replace("-", "_")
 
 
@@ -95,38 +110,27 @@ def _percentile_value(rows: list[dict], target: float) -> float | None:
 
 
 def _hero_catalog() -> list[tuple[int, str, str]]:
-    """Return [(hero_id, localized_name, slug)] sorted by hero id.
-
-    Names come from data_manager.load_heroes(); ids from the raw gamedata
-    file (load_heroes drops them). Empty list when gamedata is unavailable.
-    """
+    """Return ``[(hero_id, display_name, tag_slug)]`` sorted by hero id."""
     try:
-        heroes = load_heroes()
-        with open(GAMEDATA_DIR / "heroes.json", "r", encoding="utf-8") as f:
-            raw = json.load(f)
+        return [(h["id"], h["name"], h["slug"]) for h in data_manager.get_hero_catalog()]
     except Exception as exc:
-        logger.warning("Hero catalog unavailable (run data update first): %s", exc)
+        logger.warning("Hero catalog unavailable: %s", exc)
         return []
-    catalog: list[tuple[int, str, str]] = []
-    for name in heroes:
-        hero_id = (raw.get(name) or {}).get("id")
-        if isinstance(hero_id, int):
-            catalog.append((hero_id, name, _slug(name)))
-    catalog.sort(key=lambda t: t[0])
-    return catalog
 
 
-def _item_display_map() -> dict[str, str]:
+def _item_display_name(key: str) -> str:
     """internal item key (e.g. 'bfury') -> display name (e.g. 'Battle Fury')."""
     try:
-        return {
-            data["key"]: name
-            for name, data in load_items().items()
-            if data.get("key")
-        }
-    except Exception as exc:
-        logger.warning("Item name map unavailable, using raw keys: %s", exc)
-        return {}
+        name = data_manager.resolve_item_name(key)
+    except Exception:
+        name = None
+    return name or key.replace("_", " ").title()
+
+
+def _chunk_hero(chunk_id: str) -> str:
+    """Hero slug encoded in a stats chunk id ("learned:<kind>:<hero>:...")."""
+    parts = chunk_id.split(":")
+    return parts[2] if len(parts) > 2 else ""
 
 
 # ---------------------------------------------------------------------------
@@ -165,25 +169,17 @@ def _benchmark_chunks(
             if not m:
                 continue
             if lang == "en":
-                parts.append(
-                    f"median {en_label} {_fmt(m['p50'], nd)}, "
-                    f"top 10% reach {_fmt(m['p90'], nd)}"
-                )
+                parts.append(f"median {en_label} {_fmt(m['p50'], nd)}, top 10% {_fmt(m['p90'], nd)}")
             else:
-                parts.append(
-                    f"{zh_label}中位数 {_fmt(m['p50'], nd)}，"
-                    f"前10%玩家达到 {_fmt(m['p90'], nd)}"
-                )
+                parts.append(f"{zh_label}中位数 {_fmt(m['p50'], nd)}，前10%达到 {_fmt(m['p90'], nd)}")
         if lang == "en":
             content = (
-                f"{hero_name} performance benchmarks (OpenDota aggregate stats): "
-                + "; ".join(parts)
+                f"{hero_name} performance benchmarks (all ranks): " + "; ".join(parts)
                 + ". A metric clearly below the median is the first thing to improve."
             )
         else:
             content = (
-                f"{hero_name} 数据基准（OpenDota 全量统计）："
-                + "；".join(parts)
+                f"{hero_name} 数据基准（全分段）：" + "；".join(parts)
                 + "。某项数据明显低于中位数时，应将其作为优先改进方向。"
             )
         chunks.append(LearnedChunk(
@@ -205,7 +201,6 @@ def _item_timing_chunks(
     slug: str,
     hero_id: int,
     rows: list[dict],
-    item_names: dict[str, str],
     patch: str,
     langs: tuple[str, ...],
 ) -> list[LearnedChunk]:
@@ -213,6 +208,8 @@ def _item_timing_chunks(
     # Best (win rate, sample) time bucket per item, min sample size applied
     best_by_item: dict[str, tuple[float, int, int]] = {}  # item -> (wr, games, time)
     for row in rows or []:
+        if not isinstance(row, dict):
+            continue
         try:
             item = str(row.get("item") or "")
             games = int(row.get("games") or 0)
@@ -228,32 +225,31 @@ def _item_timing_chunks(
             best_by_item[item] = (winrate, games, bucket)
 
     top = sorted(
-        best_by_item.items(), key=lambda kv: (kv[1][0], kv[1][1]), reverse=True
+        best_by_item.items(), key=lambda kv: (kv[1][0], kv[1][1], kv[0]), reverse=True
     )[:_TOP_ITEM_INSIGHTS]
 
     chunks: list[LearnedChunk] = []
     for item, (winrate, games, bucket) in top:
-        display = item_names.get(item) or item.replace("_", " ").title()
+        item_slug = data_manager.item_key(item)
+        display = _item_display_name(item_slug)
         minutes = _fmt_minutes(bucket)
         for lang in langs:
             if lang == "en":
                 content = (
-                    f"{hero_name}: completing {display} before {minutes} min "
-                    f"gives a {winrate:.1f}% win rate ({games} games, OpenDota). "
-                    f"Plan your farming route around hitting this timing."
+                    f"{hero_name}: games where {display} was completed before {minutes} min "
+                    f"had a {winrate:.1f}% win rate ({games} games)."
                 )
             else:
                 content = (
-                    f"{hero_name}：{display} 在 {minutes} 分钟前做出时"
-                    f"胜率 {winrate:.1f}%（样本 {games} 场，OpenDota 统计）。"
-                    f"规划打钱路线时尽量卡住这个装备时间点。"
+                    f"{hero_name}：{minutes} 分钟前做出 {display} 的对局胜率 "
+                    f"{winrate:.1f}%（样本 {games} 场）。"
                 )
             chunks.append(LearnedChunk(
-                chunk_id=f"learned:item_timing:{slug}:{item}",
+                chunk_id=f"learned:item_timing:{slug}:{item_slug}",
                 content=content,
                 lang=lang,
                 category="item_coaching",
-                tags=[f"hero:{slug}", f"item:{item}"],
+                tags=[f"hero:{slug}", f"item:{item_slug}"],
                 priority=2,
                 source="opendota_stats",
                 patch_version=patch,
@@ -276,9 +272,11 @@ def _matchup_chunks(
     patch: str,
     langs: tuple[str, ...],
 ) -> list[LearnedChunk]:
-    """Render /heroes/{id}/matchups into worst-3 / best-3 matchup chunks."""
+    """Render /heroes/{id}/matchups into worst-3 / best-3 matchup statistics."""
     ranked: list[tuple[float, int, int]] = []  # (winrate, games, opponent_id)
     for row in rows or []:
+        if not isinstance(row, dict):
+            continue
         try:
             opponent_id = int(row.get("hero_id") or 0)
             games = int(row.get("games_played") or 0)
@@ -288,7 +286,7 @@ def _matchup_chunks(
         if games < _MIN_MATCHUP_GAMES or opponent_id not in id_map:
             continue
         ranked.append((wins / games * 100, games, opponent_id))
-    ranked.sort(key=lambda t: (t[0], t[1]))
+    ranked.sort(key=lambda t: (t[0], t[1], t[2]))
 
     worst = ranked[:_TOP_MATCHUPS]
     remaining = ranked[_TOP_MATCHUPS:]
@@ -300,42 +298,23 @@ def _matchup_chunks(
             opp_name, opp_slug = id_map[opponent_id]
             for lang in langs:
                 if lang == "en":
-                    if kind == "worst":
-                        content = (
-                            f"{hero_name} vs {opp_name}: only a {winrate:.1f}% win rate "
-                            f"({games} games, OpenDota) — an unfavorable matchup. Avoid "
-                            f"solo trades in lane, ask teammates to rotate, or consider "
-                            f"a lane swap."
-                        )
-                    else:
-                        content = (
-                            f"{hero_name} vs {opp_name}: a {winrate:.1f}% win rate "
-                            f"({games} games, OpenDota) — a favorable matchup. Play "
-                            f"proactively and press the advantage."
-                        )
+                    verdict = "unfavorable" if kind == "worst" else "favorable"
+                    content = (
+                        f"{hero_name} vs {opp_name}: {winrate:.1f}% win rate over {games} games "
+                        f"({verdict} matchup)."
+                    )
                 else:
-                    if kind == "worst":
-                        content = (
-                            f"{hero_name} 对阵 {opp_name} 胜率仅 {winrate:.1f}%"
-                            f"（样本 {games} 场，OpenDota 统计），属于劣势对局："
-                            f"对线期避免单独硬拼，优先叫队友游走支援或考虑换线。"
-                        )
-                    else:
-                        content = (
-                            f"{hero_name} 对阵 {opp_name} 胜率达 {winrate:.1f}%"
-                            f"（样本 {games} 场，OpenDota 统计），属于优势对局："
-                            f"可以更主动地压制对方、扩大优势。"
-                        )
+                    verdict = "劣势" if kind == "worst" else "优势"
+                    content = (
+                        f"{hero_name} 对阵 {opp_name}：胜率 {winrate:.1f}%（样本 {games} 场，"
+                        f"统计上属于{verdict}对局）。"
+                    )
                 chunks.append(LearnedChunk(
                     chunk_id=f"learned:matchup:{slug}:{opp_slug}",
                     content=content,
                     lang=lang,
                     category="hero_matchup",
-                    tags=[
-                        f"hero:{slug}",
-                        f"hero:{opp_slug}",
-                        f"matchup:{slug}:{opp_slug}",
-                    ],
+                    tags=[f"matchup:{slug}:{opp_slug}"],
                     priority=2,
                     source="opendota_stats",
                     patch_version=patch,
@@ -353,20 +332,28 @@ def _matchup_chunks(
 # Raw benchmark persistence (for pro_patterns overlay)
 # ---------------------------------------------------------------------------
 
-def _write_benchmarks_raw(raw: dict[str, dict], patch: str) -> None:
-    """Write machine-readable percentiles to LEARNED_DIR/_benchmarks_raw.json."""
-    path = LEARNED_DIR / BENCHMARKS_RAW_FILE
+def _write_benchmarks_raw(raw: dict[str, dict], patch: str, output_dir: Path) -> None:
+    """Merge machine-readable percentiles into <output_dir>/_benchmarks_raw.json."""
+    path = output_dir / BENCHMARKS_RAW_FILE
+    merged: dict[str, dict] = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            previous = json.load(f).get("heroes") or {}
+        if isinstance(previous, dict):
+            merged.update(previous)
+    except (OSError, ValueError, AttributeError):
+        pass
+    merged.update(raw)
     payload = {
         "meta": {
             "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "patch": patch,
-            "hero_count": len(raw),
+            "hero_count": len(merged),
         },
-        "heroes": raw,
+        "heroes": merged,
     }
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=1)
-    logger.info("Raw benchmarks written: %s (%d heroes)", path.name, len(raw))
+    write_json_atomic(path, payload)
+    logger.info("Raw benchmarks written: %s (%d heroes)", path.name, len(merged))
 
 
 # ---------------------------------------------------------------------------
@@ -376,27 +363,30 @@ def _write_benchmarks_raw(raw: dict[str, dict], patch: str) -> None:
 def learn_stats(
     langs: tuple[str, ...] = ("zh", "en"),
     heroes_limit: int | None = None,
+    output_dir: Path | None = None,
 ) -> dict:
-    """Learn benchmark / item timing / matchup knowledge from OpenDota.
+    """Learn benchmark / item timing / matchup statistics from OpenDota.
 
-    Returns ``{"chunks_written": int, "heroes": int, "api_calls": int}``.
-    Degrades gracefully: on missing gamedata or network failure it logs a
-    warning and returns a 0-chunk summary without touching previous output.
+    Returns ``{"chunks_written": int, "heroes": int, "api_calls": int}`` plus
+    ``"error"`` when nothing could be learned. Heroes that were not
+    refreshed this run keep their previous chunks (a partially failed run
+    never shrinks the stored knowledge). Never raises.
     """
-    summary = {"chunks_written": 0, "heroes": 0, "api_calls": 0}
+    output_dir = output_dir or LEARNED_DIR
+    summary: dict = {"chunks_written": 0, "heroes": 0, "api_calls": 0}
     try:
-        catalog = _hero_catalog()
-        if not catalog:
+        full_catalog = _hero_catalog()
+        if not full_catalog:
             logger.warning("learn_stats: no hero catalog available, skipping run")
+            summary["error"] = "no_hero_catalog"
             return summary
-        id_map = {hid: (name, slug) for hid, name, slug in catalog}
-        if heroes_limit is not None:
-            catalog = catalog[:heroes_limit]
+        id_map = {hid: (name, slug) for hid, name, slug in full_catalog}
+        catalog = full_catalog[:heroes_limit] if heroes_limit is not None else full_catalog
 
-        item_names = _item_display_map()
         patch = current_patch_version()
         chunks: list[LearnedChunk] = []
         raw_benchmarks: dict[str, dict] = {}
+        refreshed: set[str] = set()
         consecutive_errors = 0
 
         for hero_id, hero_name, slug in catalog:
@@ -406,18 +396,20 @@ def learn_stats(
                     consecutive_errors,
                 )
                 break
+            hero_chunks: list[LearnedChunk] = []
             hero_ok = False
 
             # a) percentile benchmarks
             try:
                 summary["api_calls"] += 1
                 data = opendota_get("benchmarks", {"hero_id": hero_id})
+                result = data.get("result") if isinstance(data, dict) else None
                 bench_chunks, metrics = _benchmark_chunks(
-                    hero_name, slug, hero_id, data.get("result") or {}, patch, langs
+                    hero_name, slug, hero_id, result or {}, patch, langs
                 )
-                chunks.extend(bench_chunks)
+                hero_chunks.extend(bench_chunks)
                 if metrics:
-                    raw_benchmarks[slug] = {
+                    raw_benchmarks[_bench_key(hero_name)] = {
                         "hero": hero_name,
                         "hero_id": hero_id,
                         **metrics,
@@ -432,8 +424,8 @@ def learn_stats(
             try:
                 summary["api_calls"] += 1
                 rows = opendota_get("scenarios/itemTimings", {"hero_id": hero_id})
-                chunks.extend(_item_timing_chunks(
-                    hero_name, slug, hero_id, rows, item_names, patch, langs
+                hero_chunks.extend(_item_timing_chunks(
+                    hero_name, slug, hero_id, rows if isinstance(rows, list) else [], patch, langs
                 ))
                 consecutive_errors = 0
                 hero_ok = True
@@ -445,8 +437,9 @@ def learn_stats(
             try:
                 summary["api_calls"] += 1
                 rows = opendota_get(f"heroes/{hero_id}/matchups")
-                chunks.extend(_matchup_chunks(
-                    hero_name, slug, hero_id, rows, id_map, patch, langs
+                hero_chunks.extend(_matchup_chunks(
+                    hero_name, slug, hero_id, rows if isinstance(rows, list) else [],
+                    id_map, patch, langs,
                 ))
                 consecutive_errors = 0
                 hero_ok = True
@@ -456,31 +449,40 @@ def learn_stats(
 
             if hero_ok:
                 summary["heroes"] += 1
+                if hero_chunks:
+                    refreshed.add(slug)
+                    chunks.extend(hero_chunks)
 
         if not chunks:
-            logger.warning(
-                "learn_stats: produced no chunks, keeping previous learned files"
-            )
+            logger.warning("learn_stats: produced no chunks, keeping previous learned files")
+            summary["error"] = "no_data"
             return summary
 
-        save_learned_file("stats_opendota", chunks, meta={
+        # Keep previous chunks of heroes that were not refreshed this run.
+        kept = [
+            c for c in load_learned_file(LEARNED_FILE_NAME, output_dir)
+            if _chunk_hero(c.chunk_id) not in refreshed
+        ]
+        save_learned_file(LEARNED_FILE_NAME, kept + chunks, meta={
             "patch": patch,
-            "heroes": summary["heroes"],
+            "heroes_refreshed": len(refreshed),
             "api_calls": summary["api_calls"],
             "langs": list(langs),
-        })
+        }, output_dir=output_dir)
         if raw_benchmarks:
-            _write_benchmarks_raw(raw_benchmarks, patch)
+            _write_benchmarks_raw(raw_benchmarks, patch, output_dir)
         summary["chunks_written"] = len(chunks)
         return summary
     except Exception as exc:
         logger.warning("learn_stats failed: %s", exc)
+        summary["error"] = "unexpected_error"
         return summary
 
 
-if __name__ == "__main__":  # pragma: no cover — manual CLI, run from backend/
+if __name__ == "__main__":  # pragma: no cover — manual CLI, run from the project root
     import sys
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     limit = int(sys.argv[1]) if len(sys.argv) > 1 else 3
-    print(learn_stats(heroes_limit=limit))
+    from .base import SMOKE_DIR
+    print(learn_stats(heroes_limit=limit, output_dir=SMOKE_DIR))

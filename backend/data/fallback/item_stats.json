@@ -1,0 +1,570 @@
+{
+  "_comment": "Minimal item fallback (cost/cooldown/category) used when backend/data/gamedata/ is missing; 'category' is also merged into fetched data. Coaching text lives in backend/data/editorial/.",
+  "items": {
+    "phase_boots": {
+      "item_name": "Phase Boots",
+      "cost": 1500,
+      "is_active": true,
+      "cooldown": 8,
+      "duration": 3,
+      "category": "boots"
+    },
+    "power_treads": {
+      "item_name": "Power Treads",
+      "cost": 1400,
+      "is_active": true,
+      "cooldown": 0,
+      "category": "boots"
+    },
+    "arcane_boots": {
+      "item_name": "Arcane Boots",
+      "cost": 1300,
+      "is_active": true,
+      "cooldown": 55,
+      "category": "boots"
+    },
+    "tranquil_boots": {
+      "item_name": "Tranquil Boots",
+      "cost": 925,
+      "is_active": false,
+      "category": "boots"
+    },
+    "travel_boots": {
+      "item_name": "Boots of Travel",
+      "cost": 2500,
+      "is_active": true,
+      "cooldown": 80,
+      "category": "boots"
+    },
+    "guardian_greaves": {
+      "item_name": "Guardian Greaves",
+      "cost": 5375,
+      "is_active": true,
+      "cooldown": 40,
+      "category": "boots"
+    },
+    "black_king_bar": {
+      "item_name": "Black King Bar",
+      "cost": 4050,
+      "is_active": true,
+      "cooldown": 75,
+      "duration": "10/9/8/7/6/6",
+      "category": "defense"
+    },
+    "glimmer_cape": {
+      "item_name": "Glimmer Cape",
+      "cost": 1950,
+      "is_active": true,
+      "cooldown": 14,
+      "duration": 5,
+      "category": "defense"
+    },
+    "ghost": {
+      "item_name": "Ghost Scepter",
+      "cost": 1500,
+      "is_active": true,
+      "cooldown": 22,
+      "duration": 4,
+      "category": "defense"
+    },
+    "force_staff": {
+      "item_name": "Force Staff",
+      "cost": 2200,
+      "is_active": true,
+      "cooldown": 19,
+      "category": "defense"
+    },
+    "cyclone": {
+      "item_name": "Eul's Scepter",
+      "cost": 2725,
+      "is_active": true,
+      "cooldown": 23,
+      "duration": 2.5,
+      "category": "defense"
+    },
+    "sphere": {
+      "item_name": "Linken's Sphere",
+      "cost": 4600,
+      "is_active": true,
+      "cooldown": 12,
+      "category": "defense"
+    },
+    "lotus_orb": {
+      "item_name": "Lotus Orb",
+      "cost": 3850,
+      "is_active": true,
+      "cooldown": 15,
+      "duration": 6,
+      "category": "defense"
+    },
+    "aeon_disk": {
+      "item_name": "Aeon Disk",
+      "cost": 3000,
+      "is_active": false,
+      "cooldown": 105,
+      "category": "defense"
+    },
+    "pipe": {
+      "item_name": "Pipe of Insight",
+      "cost": 3475,
+      "is_active": true,
+      "cooldown": 60,
+      "duration": 12,
+      "category": "defense"
+    },
+    "mekansm": {
+      "item_name": "Mekansm",
+      "cost": 1875,
+      "is_active": true,
+      "cooldown": 50,
+      "category": "defense"
+    },
+    "crimson_guard": {
+      "item_name": "Crimson Guard",
+      "cost": 3600,
+      "is_active": true,
+      "cooldown": 35,
+      "duration": 12,
+      "category": "defense"
+    },
+    "heavens_halberd": {
+      "item_name": "Heaven's Halberd",
+      "cost": 3550,
+      "is_active": true,
+      "cooldown": 18,
+      "duration": "3 (melee) / 5 (ranged)",
+      "category": "defense"
+    },
+    "spirit_vessel": {
+      "item_name": "Spirit Vessel",
+      "cost": 2980,
+      "is_active": true,
+      "cooldown": 7,
+      "category": "utility"
+    },
+    "desolator": {
+      "item_name": "Desolator",
+      "cost": 3500,
+      "is_active": false,
+      "category": "offense"
+    },
+    "greater_crit": {
+      "item_name": "Daedalus",
+      "cost": 5150,
+      "is_active": false,
+      "category": "offense"
+    },
+    "monkey_king_bar": {
+      "item_name": "Monkey King Bar",
+      "cost": 4975,
+      "is_active": false,
+      "category": "offense"
+    },
+    "butterfly": {
+      "item_name": "Butterfly",
+      "cost": 4975,
+      "is_active": true,
+      "cooldown": 25,
+      "category": "offense"
+    },
+    "assault": {
+      "item_name": "Assault Cuirass",
+      "cost": 5125,
+      "is_active": false,
+      "category": "offense"
+    },
+    "skadi": {
+      "item_name": "Eye of Skadi",
+      "cost": 5300,
+      "is_active": false,
+      "category": "offense"
+    },
+    "heart": {
+      "item_name": "Heart of Tarrasque",
+      "cost": 5200,
+      "is_active": false,
+      "category": "offense"
+    },
+    "satanic": {
+      "item_name": "Satanic",
+      "cost": 5050,
+      "is_active": true,
+      "cooldown": 30,
+      "duration": 6,
+      "category": "offense"
+    },
+    "nullifier": {
+      "item_name": "Nullifier",
+      "cost": 4725,
+      "is_active": true,
+      "cooldown": 11,
+      "duration": 6,
+      "category": "offense"
+    },
+    "bloodthorn": {
+      "item_name": "Bloodthorn",
+      "cost": 6800,
+      "is_active": true,
+      "cooldown": 15,
+      "duration": 5,
+      "category": "offense"
+    },
+    "rapier": {
+      "item_name": "Divine Rapier",
+      "cost": 5950,
+      "is_active": false,
+      "category": "offense"
+    },
+    "mjollnir": {
+      "item_name": "Mjollnir",
+      "cost": 5600,
+      "is_active": true,
+      "cooldown": 35,
+      "category": "offense"
+    },
+    "radiance": {
+      "item_name": "Radiance",
+      "cost": 5150,
+      "is_active": true,
+      "cooldown": 45,
+      "category": "offense"
+    },
+    "diffusal_blade": {
+      "item_name": "Diffusal Blade",
+      "cost": 2500,
+      "is_active": true,
+      "cooldown": 15,
+      "duration": 4,
+      "category": "offense"
+    },
+    "silver_edge": {
+      "item_name": "Silver Edge",
+      "cost": 5450,
+      "is_active": true,
+      "cooldown": 22,
+      "duration": 14,
+      "category": "offense"
+    },
+    "blink": {
+      "item_name": "Blink Dagger",
+      "cost": 2250,
+      "is_active": true,
+      "cooldown": 15,
+      "disabled_on_damage": 3,
+      "category": "utility"
+    },
+    "invis_sword": {
+      "item_name": "Shadow Blade",
+      "cost": 3000,
+      "is_active": true,
+      "cooldown": 25,
+      "duration": 14,
+      "category": "utility"
+    },
+    "ultimate_scepter": {
+      "item_name": "Aghanim's Scepter",
+      "cost": 4200,
+      "is_active": false,
+      "category": "utility"
+    },
+    "aghanims_shard": {
+      "item_name": "Aghanim's Shard",
+      "cost": 1400,
+      "is_active": false,
+      "category": "utility"
+    },
+    "refresher": {
+      "item_name": "Refresher Orb",
+      "cost": 5000,
+      "is_active": true,
+      "cooldown": 160,
+      "category": "utility"
+    },
+    "sheepstick": {
+      "item_name": "Scythe of Vyse",
+      "cost": 5675,
+      "is_active": true,
+      "cooldown": 22,
+      "duration": 3.5,
+      "category": "utility"
+    },
+    "rod_of_atos": {
+      "item_name": "Rod of Atos",
+      "cost": 2750,
+      "is_active": true,
+      "cooldown": 18,
+      "duration": 2,
+      "category": "utility"
+    },
+    "orchid": {
+      "item_name": "Orchid Malevolence",
+      "cost": 3475,
+      "is_active": true,
+      "cooldown": 18,
+      "duration": 5,
+      "category": "utility"
+    },
+    "shivas_guard": {
+      "item_name": "Shiva's Guard",
+      "cost": 4850,
+      "is_active": true,
+      "cooldown": 27,
+      "category": "defense"
+    },
+    "manta": {
+      "item_name": "Manta Style",
+      "cost": 4600,
+      "is_active": true,
+      "cooldown": 30,
+      "category": "utility"
+    },
+    "ethereal_blade": {
+      "item_name": "Ethereal Blade",
+      "cost": 4650,
+      "is_active": true,
+      "cooldown": 20,
+      "category": "utility"
+    },
+    "aether_lens": {
+      "item_name": "Aether Lens",
+      "cost": 2275,
+      "is_active": false,
+      "category": "utility"
+    },
+    "wind_waker": {
+      "item_name": "Wind Waker",
+      "cost": 6825,
+      "is_active": true,
+      "cooldown": 23,
+      "category": "utility"
+    },
+    "gungir": {
+      "item_name": "Gleipnir",
+      "cost": 6150,
+      "is_active": true,
+      "cooldown": 18,
+      "duration": 2,
+      "category": "utility"
+    },
+    "ancient_janggo": {
+      "item_name": "Drum of Endurance",
+      "cost": 1700,
+      "is_active": true,
+      "cooldown": 26,
+      "category": "utility"
+    },
+    "holy_locket": {
+      "item_name": "Holy Locket",
+      "cost": 2400,
+      "is_active": true,
+      "cooldown": 13,
+      "category": "support"
+    },
+    "veil_of_discord": {
+      "item_name": "Veil of Discord",
+      "cost": 1525,
+      "is_active": true,
+      "cooldown": 22,
+      "duration": 16,
+      "category": "utility"
+    },
+    "abyssal_blade": {
+      "item_name": "Abyssal Blade",
+      "cost": 6250,
+      "is_active": true,
+      "category": "offense"
+    },
+    "bfury": {
+      "item_name": "Battle Fury",
+      "cost": 3900,
+      "is_active": false,
+      "category": "offense"
+    },
+    "armlet": {
+      "item_name": "Armlet of Mordiggian",
+      "cost": 2500,
+      "is_active": true,
+      "category": "offense"
+    },
+    "echo_sabre": {
+      "item_name": "Echo Sabre",
+      "cost": 2700,
+      "is_active": false,
+      "category": "offense"
+    },
+    "hand_of_midas": {
+      "item_name": "Hand of Midas",
+      "cost": 2200,
+      "is_active": true,
+      "category": "utility"
+    },
+    "blade_mail": {
+      "item_name": "Blade Mail",
+      "cost": 2300,
+      "is_active": true,
+      "category": "defense"
+    },
+    "dagon": {
+      "item_name": "Dagon",
+      "cost": 2800,
+      "is_active": true,
+      "category": "offense"
+    },
+    "maelstrom": {
+      "item_name": "Maelstrom",
+      "cost": 2950,
+      "is_active": false,
+      "category": "offense"
+    },
+    "angels_demise": {
+      "item_name": "Khanda",
+      "cost": 5600,
+      "is_active": false,
+      "category": "offense"
+    },
+    "disperser": {
+      "item_name": "Disperser",
+      "cost": 6100,
+      "is_active": true,
+      "category": "utility"
+    },
+    "harpoon": {
+      "item_name": "Harpoon",
+      "cost": 4700,
+      "is_active": true,
+      "category": "utility"
+    },
+    "devastator": {
+      "item_name": "Parasma",
+      "cost": 5975,
+      "is_active": false,
+      "category": "offense"
+    },
+    "basher": {
+      "item_name": "Skull Basher",
+      "cost": 2875,
+      "is_active": false,
+      "category": "offense"
+    },
+    "eternal_shroud": {
+      "item_name": "Eternal Shroud",
+      "cost": 3700,
+      "is_active": true,
+      "category": "defense"
+    },
+    "mage_slayer": {
+      "item_name": "Mage Slayer",
+      "cost": 2800,
+      "is_active": false,
+      "category": "defense"
+    },
+    "bloodstone": {
+      "item_name": "Bloodstone",
+      "cost": 4350,
+      "is_active": true,
+      "category": "utility"
+    },
+    "wraith_pact": {
+      "item_name": "Wraith Pact",
+      "cost": 3800,
+      "is_active": true,
+      "category": "support"
+    },
+    "hurricane_pike": {
+      "item_name": "Hurricane Pike",
+      "cost": 4450,
+      "is_active": true,
+      "category": "defense"
+    },
+    "solar_crest": {
+      "item_name": "Solar Crest",
+      "cost": 2575,
+      "is_active": true,
+      "category": "support"
+    },
+    "meteor_hammer": {
+      "item_name": "Meteor Hammer",
+      "cost": 2850,
+      "is_active": true,
+      "category": "utility"
+    },
+    "octarine_core": {
+      "item_name": "Octarine Core",
+      "cost": 4900,
+      "is_active": false,
+      "category": "utility"
+    },
+    "moon_shard": {
+      "item_name": "Moon Shard",
+      "cost": 4000,
+      "is_active": false,
+      "category": "offense"
+    },
+    "vladmir": {
+      "item_name": "Vladmir's Offering",
+      "cost": 2200,
+      "is_active": false,
+      "category": "support"
+    },
+    "helm_of_the_overlord": {
+      "item_name": "Helm of the Overlord",
+      "cost": 5650,
+      "is_active": true,
+      "category": "utility"
+    },
+    "boots_of_bearing": {
+      "item_name": "Boots of Bearing",
+      "cost": 4225,
+      "is_active": true,
+      "category": "boots"
+    },
+    "witch_blade": {
+      "item_name": "Witch Blade",
+      "cost": 2775,
+      "is_active": false,
+      "category": "offense"
+    },
+    "phylactery": {
+      "item_name": "Phylactery",
+      "cost": 2600,
+      "is_active": false,
+      "category": "utility"
+    },
+    "kaya_and_sange": {
+      "item_name": "Kaya and Sange",
+      "cost": 4200,
+      "is_active": false,
+      "category": "offense"
+    },
+    "sange_and_yasha": {
+      "item_name": "Sange and Yasha",
+      "cost": 4200,
+      "is_active": false,
+      "category": "offense"
+    },
+    "yasha_and_kaya": {
+      "item_name": "Yasha and Kaya",
+      "cost": 4200,
+      "is_active": false,
+      "category": "offense"
+    },
+    "arcane_blink": {
+      "item_name": "Arcane Blink",
+      "cost": 6800,
+      "is_active": true,
+      "category": "utility"
+    },
+    "overwhelming_blink": {
+      "item_name": "Overwhelming Blink",
+      "cost": 6800,
+      "is_active": true,
+      "category": "utility"
+    },
+    "swift_blink": {
+      "item_name": "Swift Blink",
+      "cost": 6800,
+      "is_active": true,
+      "category": "utility"
+    }
+  }
+}

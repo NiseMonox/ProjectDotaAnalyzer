@@ -139,7 +139,7 @@
     "coaching_tip": "Great for pushing towers since the armor reduction applies to buildings. Core physical damage item for mid-game timing pushes. Works well with other physical damage dealers on your team.",
     "is_active": false
   },
-  "daedalus": {
+  "greater_crit": {
     "heroes": ["all"],
     "item_name": "Daedalus",
     "description": "+88 damage. 30% chance for 225% critical strike.",
@@ -244,7 +244,7 @@
     "coaching_tip": "Core initiation item for nearly every hero. It is disabled by player damage, so it is not a reliable escape tool in combat. Initiate with Blink before the enemy can damage you.",
     "is_active": true
   },
-  "shadow_blade": {
+  "invis_sword": {
     "heroes": ["all"],
     "item_name": "Shadow Blade",
     "description": "Active: 14s invisibility with +20% move speed. Breaking invisibility with an attack deals +175 bonus damage.",
@@ -291,7 +291,12 @@
     "item_name": "Orchid Malevolence",
     "description": "Active: Silence target for 5s, taking 30% of total damage dealt at the end as bonus magic damage. +40 damage, +30 attack speed.",
     "coaching_tip": "Rush it against spell-dependent heroes like Storm Spirit, Puck, Anti-Mage, or Ember Spirit. The 30% damage amp at the end is significant burst. Upgrade to Bloodthorn for even more damage.",
-    "is_active": true
+    "is_active": true,
+    "counter_tips": {
+      "Storm Spirit": "Orchid Malevolence silences Storm Spirit and prevents Ball Lightning, effectively rooting one of the most mobile heroes in the game. The damage amplification from Soul Burn can burst Storm before the silence ends. Storm must buy Eul's Scepter or BKB to counter Orchid, delaying his damage items significantly.",
+      "Queen of Pain": "Orchid Malevolence silences Queen of Pain's Blink, preventing her escape and keeping her in place for your team. Soul Burn's damage amplification makes QoP's low HP pool even more fragile. QoP must rush Eul's or BKB to counter Orchid, disrupting her preferred item build.",
+      "Puck": "Orchid Malevolence prevents Phase Shift, Illusory Orb, and all of Puck's escape tools. Puck is extremely fragile when silenced and the Soul Burn damage amplification ensures a quick kill. Puck must buy Eul's Scepter or Linken's Sphere to survive Orchid, delaying Blink Dagger timing."
+    }
   },
   "shivas_guard": {
     "heroes": ["all"],
@@ -328,7 +333,7 @@
     "coaching_tip": "Upgraded Eul's that can save allies. Use it on teammates to buy time or dispel debuffs. The ability to cyclone allies makes it one of the best late-game support items.",
     "is_active": true
   },
-  "gleipnir": {
+  "gungir": {
     "heroes": ["all"],
     "item_name": "Gleipnir",
     "description": "Active: Root all enemies in an area for 2s (CD 18s). Passive: 30% chance for chain lightning on attack.",
@@ -356,7 +361,6 @@
     "coaching_tip": "Use it on grouped enemies before your team unleashes magic damage. Great in magic-heavy lineups. Apply it at the start of fights to amplify all your team's magical burst.",
     "is_active": true
   },
-
   "abyssal_blade": {
     "heroes": ["Anti-Mage", "Faceless Void", "Troll Warlord", "Ursa", "Monkey King", "Phantom Assassin", "Juggernaut", "Slark"],
     "item_name": "Abyssal Blade",
@@ -413,7 +417,7 @@
     "coaching_tip": "A mid-game farming item and teamfight damage multiplier. Works on ranged and melee heroes alike. Builds into Mjollnir or Gleipnir. Great for heroes who need AoE damage to farm faster.",
     "is_active": false
   },
-  "khanda": {
+  "angels_demise": {
     "heroes": ["Pangolier", "Ember Spirit", "Monkey King", "Phantom Assassin", "Kunkka"],
     "item_name": "Khanda",
     "description": "+50 damage. Passive: After casting a spell, next attack within 6s crits for 160%. Also grants spell damage crit (140% on ability damage, CD 12s).",
@@ -434,7 +438,7 @@
     "coaching_tip": "Gap-closer for melee carries who struggle to get on top of targets. Use it to catch fleeing heroes or close the distance to start fighting. Builds from Echo Sabre components.",
     "is_active": true
   },
-  "parasma": {
+  "devastator": {
     "heroes": ["Lina", "Queen of Pain", "Zeus", "Skywrath Mage", "Tinker", "Storm Spirit"],
     "item_name": "Parasma",
     "description": "+24 damage, +200 mana. Passive: Attacks deal bonus magic damage equal to 80% of your Int. Spells apply magic damage amplification debuff.",

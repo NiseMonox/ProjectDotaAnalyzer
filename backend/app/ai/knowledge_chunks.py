@@ -1,27 +1,31 @@
-"""Built-in knowledge corpus migrated into KnowledgeChunk format.
+"""Knowledge corpus in KnowledgeChunk format.
 
-Converts hardcoded hero data, matchup tips, laning principles, phase
-objectives, vision principles, and death analysis rules from
-knowledge_base.py into discrete, tagged KnowledgeChunks suitable for
-retrieval-augmented coaching prompts.
+Two families of chunks, both bilingual through the ``lang`` parameter:
 
-Supports Chinese (zh-CN) and English (en) via ``lang`` parameter.
+- Structural chunks (:func:`get_all_builtin_chunks`): laning principles and
+  phase objectives per role, vision and death-analysis sections, general
+  coaching and early-game principles. The vision / death-analysis text is
+  NOT duplicated here: it is split from the canonical sections defined in
+  ``knowledge_base`` (``_VISION_SECTIONS`` / ``_DEATH_SECTIONS``).
+- Data-driven chunks (:func:`generate_gamedata_chunks`): one overview and
+  one laning chunk per hero, one ability chunk per hero, one chunk per
+  matchup tip and per item tip — all rendered from the merged data of
+  ``data_manager`` whose canonical text is the editorial JSON.
+
+Editorial content (tips, power spikes ...) is written in English; ``lang``
+controls the structural labels so the chunk reads naturally in a Chinese
+prompt too.
 """
 from __future__ import annotations
 
-from .knowledge_store import KnowledgeChunk
+from .knowledge_store import KnowledgeChunk, hero_tag, item_tag, matchup_tag
 from .knowledge_base import (
-    _FALLBACK_HERO_DATA as HERO_DATA,
-    _FALLBACK_MATCHUP_TIPS as _MATCHUP_TIPS,
-    _FALLBACK_MATCHUP_TIPS_EN as _MATCHUP_TIPS_EN,
+    _DEATH_SECTIONS,
     _LANING_PRINCIPLES,
     _LANING_PRINCIPLES_EN,
     _PHASE_OBJECTIVES,
     _PHASE_OBJECTIVES_EN,
-    _DEATH_ANALYSIS_RULES,
-    _DEATH_ANALYSIS_RULES_EN,
-    _VISION_PRINCIPLES,
-    _VISION_PRINCIPLES_EN,
+    _VISION_SECTIONS,
 )
 
 
@@ -30,587 +34,107 @@ from .knowledge_base import (
 # -------------------------------------------------------------------
 
 def _hero_slug(name: str) -> str:
-    """Lowercase, spaces to underscores, strip apostrophes/hyphens."""
-    return name.lower().replace(" ", "_").replace("'", "").replace("-", "_")
+    """Canonical hero tag slug (internal hero name); see knowledge_store.hero_tag."""
+    return hero_tag(name).split(":", 1)[1]
 
 
-def _role_tag(role: str) -> str:
-    """Normalise role string into a tag value."""
-    return role.lower().replace(" ", "_")
+_ROLE_LABELS = {
+    "zh": {
+        "carry": "一号位（大哥）", "mid": "二号位（中单）", "offlane": "三号位（劣势路）",
+        "support_4": "四号位（游走辅助）", "support_5": "五号位（硬辅助）", "unknown": "未知",
+    },
+    "en": {
+        "carry": "Position 1 (carry)", "mid": "Position 2 (mid)", "offlane": "Position 3 (offlane)",
+        "support_4": "Position 4 (roaming support)", "support_5": "Position 5 (hard support)",
+        "unknown": "unknown",
+    },
+}
+_ATTR_LABELS = {
+    "zh": {"str": "力量", "agi": "敏捷", "int": "智力", "uni": "全才"},
+    "en": {"str": "Strength", "agi": "Agility", "int": "Intelligence", "uni": "Universal"},
+}
+_PHASE_LABELS = {
+    "zh": {"pregame": "开局", "laning": "对线期", "mid_game": "中期", "late_game": "后期"},
+    "en": {"pregame": "Pregame", "laning": "Laning", "mid_game": "Mid game", "late_game": "Late game"},
+}
+_LEVEL1_LABELS = {
+    "zh": {"strong": "强", "average": "一般", "weak": "弱"},
+    "en": {"strong": "strong", "average": "average", "weak": "weak"},
+}
 
 
-# -------------------------------------------------------------------
-# 1. Hero chunks
-# -------------------------------------------------------------------
-
-def _build_hero_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
-    """Two chunks per hero: overview + laning.
-
-    Editorial content (power_spikes, weaknesses, laning_tips) is now always
-    in English. The lang parameter only controls structural labels/headers.
-    """
-    chunks: list[KnowledgeChunk] = []
-
-    for hero_name, data in HERO_DATA.items():
-        slug = _hero_slug(hero_name)
-        role = data.get("role", "unknown")
-        attribute = data.get("attribute", "unknown")
-        attack_type = data.get("attack_type", "unknown")
-        # Editorial content is now English — no _en suffix needed
-        power_spikes = data.get("power_spikes", [])
-        weaknesses = data.get("weaknesses", [])
-        laning_tips = data.get("laning_tips", "")
-
-        if lang == "en":
-            attr_map = {"str": "Strength", "agi": "Agility", "int": "Intelligence", "uni": "Universal"}
-            attack_label = "Ranged" if attack_type == "ranged" else "Melee"
-            spikes_text = ", ".join(power_spikes) if power_spikes else "N/A"
-            weak_text = ", ".join(weaknesses) if weaknesses else "N/A"
-            overview_content = (
-                f"Hero: {hero_name}\n"
-                f"Role: {role}\n"
-                f"Attribute: {attr_map.get(attribute, attribute)} ({attack_label})\n"
-                f"Power Spikes: {spikes_text}\n"
-                f"Weaknesses: {weak_text}"
-            )
-        else:
-            attr_map = {"str": "力量", "agi": "敏捷", "int": "智力", "uni": "全能"}
-            attr_cn = attr_map.get(attribute, attribute)
-            attack_cn = "远程" if attack_type == "ranged" else "近战"
-            # Content is English even in zh mode (editorial is always English)
-            spikes_text = ", ".join(power_spikes) if power_spikes else "N/A"
-            weak_text = ", ".join(weaknesses) if weaknesses else "N/A"
-            overview_content = (
-                f"英雄：{hero_name}\n"
-                f"定位：{role}\n"
-                f"属性：{attr_cn}（{attack_cn}）\n"
-                f"Power Spikes: {spikes_text}\n"
-                f"Weaknesses: {weak_text}"
-            )
-
-        overview_tags = [f"hero:{slug}", f"role:{_role_tag(role)}"]
-        # Add phase tags based on power spikes keywords (English keywords now)
-        if any("Level 1" in s or "Level 2" in s or "Level 3" in s for s in power_spikes):
-            overview_tags.append("phase:laning")
-        if any("BKB" in s or "Blink" in s for s in power_spikes):
-            overview_tags.append("phase:mid_game")
-        if any("Refresher" in s or "Butterfly" in s or "Daedalus" in s for s in power_spikes):
-            overview_tags.append("phase:late_game")
-
-        chunks.append(KnowledgeChunk(
-            chunk_id=f"hero_overview:{slug}",
-            content=overview_content,
-            tags=overview_tags,
-            priority=2,
-            token_estimate=len(overview_content) // 2,
-        ))
-
-        # -- Laning chunk --
-        if laning_tips:
-            if lang == "en":
-                laning_content = f"Hero: {hero_name}\nLaning Tips: {laning_tips}"
-            else:
-                laning_content = f"英雄：{hero_name}\nLaning Tips: {laning_tips}"
-            laning_tags = [
-                f"hero:{slug}",
-                f"role:{_role_tag(role)}",
-                "phase:laning",
-                "mechanic:laning",
-            ]
-            chunks.append(KnowledgeChunk(
-                chunk_id=f"hero_laning:{slug}",
-                content=laning_content,
-                tags=laning_tags,
-                priority=2,
-                token_estimate=len(laning_content) // 2,
-            ))
-
-    return chunks
+def _lbl(table: dict, lang: str) -> dict:
+    return table["en"] if lang == "en" else table["zh"]
 
 
 # -------------------------------------------------------------------
-# 2. Matchup chunks
-# -------------------------------------------------------------------
-
-def _build_matchup_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
-    """One chunk per matchup pair.
-
-    Matchup tips are now always English. The lang parameter only controls
-    the structural label (vs / 对阵).
-    """
-    chunks: list[KnowledgeChunk] = []
-
-    # Use English matchup tips (primary source now)
-    matchup_src = _MATCHUP_TIPS_EN
-    for hero_name, opponents in matchup_src.items():
-        slug1 = _hero_slug(hero_name)
-        for opp_name, tip in opponents.items():
-            slug2 = _hero_slug(opp_name)
-            if lang == "en":
-                content = f"{hero_name} vs {opp_name}: {tip}"
-            else:
-                content = f"{hero_name} 对阵 {opp_name}: {tip}"
-            chunks.append(KnowledgeChunk(
-                chunk_id=f"matchup:{slug1}_vs_{slug2}",
-                content=content,
-                tags=[
-                    f"matchup:{slug1}:{slug2}",
-                    f"hero:{slug1}",
-                    f"hero:{slug2}",
-                ],
-                priority=2,
-                token_estimate=len(content) // 2,
-            ))
-
-    return chunks
-
-
-# -------------------------------------------------------------------
-# 3. Role chunks (laning principles + phase objectives)
+# 1. Role chunks (laning principles + phase objectives)
 # -------------------------------------------------------------------
 
 def _build_role_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
     """One chunk per role for laning principles, one per role+phase for objectives."""
     chunks: list[KnowledgeChunk] = []
-
-    # Laning principles per role
     laning_src = _LANING_PRINCIPLES_EN if lang == "en" else _LANING_PRINCIPLES
     for role, text in laning_src.items():
         chunks.append(KnowledgeChunk(
             chunk_id=f"laning_principles:{role}",
             content=text,
+            category="role_principles",
             tags=[f"role:{role}", "phase:laning", "mechanic:laning"],
             priority=2,
-            token_estimate=len(text) // 2,
         ))
 
-    # Phase objectives per role + phase
     phase_src = _PHASE_OBJECTIVES_EN if lang == "en" else _PHASE_OBJECTIVES
+    role_labels = _lbl(_ROLE_LABELS, lang)
+    phase_labels = _lbl(_PHASE_LABELS, lang)
     for phase, roles in phase_src.items():
         for role, text in roles.items():
             if lang == "en":
-                content = f"Phase: {phase}, Role: {role}\nObjectives: {text}"
+                content = (f"Phase objectives ({phase_labels.get(phase, phase)}, "
+                           f"{role_labels.get(role, role)}): {text}")
             else:
-                content = f"阶段：{phase}，定位：{role}\n目标：{text}"
+                content = (f"阶段目标（{phase_labels.get(phase, phase)}，"
+                           f"{role_labels.get(role, role)}）：{text}")
             chunks.append(KnowledgeChunk(
                 chunk_id=f"phase_objectives:{phase}:{role}",
                 content=content,
+                category="phase_objectives",
                 tags=[f"role:{role}", f"phase:{phase}"],
                 priority=2,
-                token_estimate=len(content) // 2,
             ))
-
     return chunks
 
 
 # -------------------------------------------------------------------
-# 4. Vision chunks (split into 7 sub-chunks)
+# 2./3. Vision + death analysis chunks (split from canonical sections)
 # -------------------------------------------------------------------
+
+def _section_chunks(sections: list[dict], prefix: str, category: str, lang: str) -> list[KnowledgeChunk]:
+    key = "en" if lang == "en" else "zh"
+    return [
+        KnowledgeChunk(
+            chunk_id=f"{prefix}:{section['id']}",
+            content=section[key],
+            category=category,
+            tags=list(section["tags"]),
+            priority=section.get("priority", 2),
+        )
+        for section in sections
+    ]
+
 
 def _build_vision_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
-    """Split _VISION_PRINCIPLES into 7 topical sub-chunks."""
-    chunks: list[KnowledgeChunk] = []
+    """Vision principles, one chunk per canonical section."""
+    return _section_chunks(_VISION_SECTIONS, "vision", "vision_principles", lang)
 
-    if lang == "en":
-        # Sub-chunk 1: Basic vision mechanics
-        basic_vision = (
-            "## Basic Vision Mechanics\n"
-            "- Observer Ward: Provides 1600 range ground vision, lasts 360 seconds (6 minutes), no limit but shop restock has cooldown\n"
-            "- Sentry Ward: Does not provide ground vision, only 850 range true sight (detection/dewarding), used with Observer Wards\n"
-            "- Hero vision: 1800 range during day, 800 range at night. Some heroes are exceptions (e.g. Night Stalker has 1800 night vision)\n"
-            "- Towers: 1900 range vision during day, only 800 at night. Destroyed towers permanently lose fixed vision in that area\n"
-            "- Day/Night cycle: Alternates every 5 minutes (0:00-5:00 day, 5:00-10:00 night, and so on)\n"
-            "- Night vision reduction: Night vision is about 44% of daytime (800/1800), effective control area is only about 19% of daytime\n"
-            "- High/low ground vision: Low ground units cannot see units on high ground; high ground has natural vision advantage\n"
-            "- Tree obstruction: Trees block vision propagation; dense forest areas are natural fog zones"
-        )
-        # Sub-chunk 2: Safety rules
-        safety_rules = (
-            "## Vision Safety Principles\n"
-            "- When 3+ enemy heroes disappear from the map for over 15 seconds, immediately retreat to a safe area (under tower or warded zone)\n"
-            "- Replace expired Observer Wards within 10 seconds, especially at river, Roshan pit, and jungle entrances\n"
-            "- Moving through unwarded areas at night is extremely dangerous -- 800 vision means enemies can ambush from very close range\n"
-            "- Before pushing, ensure flanks have ward coverage; place wards on both sides of the push route at least 30 seconds ahead\n"
-            "- If you don't know enemy positions, assume they are in the most dangerous spot (on your gank route)\n"
-            "- Support heroes should secure key area vision 60 seconds before a teamfight, not after it has already started\n"
-            "- Before entering enemy jungle to farm, confirm the positions of at least 3 enemy heroes"
-        )
-        # Sub-chunk 3: Laning phase wards
-        laning_wards = (
-            "## Laning Phase Vision (0-10 minutes)\n"
-            "- River ward: Controls runes and mid gank routes, most important ward during laning\n"
-            "- Enemy pull camp ward: Prevents enemy support from pulling, keeps creep wave in favorable position\n"
-            "- Rune ward: Place before even minutes to get early rune information\n"
-            "- Priority: River > Pull camp > Aggressive vision\n"
-            "- Laning phase wards should focus on defense and information; don't risk deep aggressive wards"
-        )
-        # Sub-chunk 4: Mid-game wards
-        midgame_wards = (
-            "## Mid-Game Vision (10-25 minutes)\n"
-            "- Enemy jungle ward: Track enemy core farming routes, provide information for ganks\n"
-            "- Roshan pit vision: Control Roshan contest information, mid-game Roshan is very valuable\n"
-            "- Push route flank wards: Prevent flanking during pushes, place at least 30 seconds ahead\n"
-            "- Priority: Roshan > Enemy jungle > Push routes\n\n"
-            "## Late-Game Vision (25+ minutes)\n"
-            "- High ground approach wards: Essential for attacking high ground, defenders need to deward\n"
-            "- Roshan monitoring ward: Late-game Roshan is extremely valuable (Aegis + Cheese + Refresher Shard)\n"
-            "- Enemy base entrance ward: Monitor enemy movement routes\n"
-            "- Own jungle defense ward: Prevent enemy from harassing your farming\n"
-            "- Priority: Roshan > High ground > Base entrance"
-        )
-        # Sub-chunk 5: Role responsibilities for vision
-        role_vision = (
-            "## Vision Responsibilities by Role\n"
-            "- Position 5 (Hard Support): Primary ward buyer, maintain vision network in key areas. Goal: always have 3-4 Observer Wards active on the map\n"
-            "- Position 4 (Roaming Support): Supplementary ward buyer, responsible for aggressive vision (deep enemy wards, dewarding). Prioritize deep wards after Smoke\n"
-            "- Core positions (1/2/3): Don't need to buy wards, but must read vision information to make safe decisions. Must react when enemies disappear\n"
-            "- All positions: Obligation to deward enemy vision when passing through Sentry Ward coverage areas; this is a team responsibility"
-        )
-        # Sub-chunk 6: Death-related vision checklist
-        death_vision = (
-            "## Vision and Death Correlation\n"
-            "Most non-teamfight deaths (~70%) are directly related to lack of vision.\n\n"
-            "### Pre-Death Vision Checklist\n"
-            "1. Are there wards covering the surrounding area? Is the coverage radius sufficient?\n"
-            "2. How many enemy hero positions are unknown? (3+ unknown = extreme danger)\n"
-            "3. How long have missing enemies been gone? (>15s = possibly en route to gank)\n"
-            "4. Is it day or night? (Night doubles the danger factor)\n"
-            "5. Are there allied heroes nearby who can assist? (Within TP range? Walking range?)\n"
-            "6. How far is the nearest safe area (tower/fountain)? (>10s travel = dangerous)\n"
-            "7. Does the enemy have Smoke available? (Smoke bypasses ward vision)"
-        )
-        # Sub-chunk 7: Key numbers reference
-        key_numbers = (
-            "## Vision Key Numbers Reference\n"
-            "- Observer Ward vision: 1600 range, lasts 360 seconds (6 minutes)\n"
-            "- Sentry Ward true sight range: 850, lasts 420 seconds (7 minutes)\n"
-            "- Hero daytime vision: 1800 range\n"
-            "- Hero nighttime vision: 800 range\n"
-            "- Tower daytime vision: 1900 range\n"
-            "- Tower nighttime vision: 800 range\n"
-            "- Day/Night cycle period: every 5 minutes\n"
-            "- Smoke of Deceit duration: 35 seconds\n"
-            "- Smoke detection distance: 1025 range (auto-dispels near enemy heroes/towers)"
-        )
-    else:
-        # Sub-chunk 1: Basic vision mechanics
-        basic_vision = (
-            "## 视野基础机制\n"
-            "- 观察守卫（Observer Ward）：提供1600距离的地面视野，持续360秒（6分钟），无数量限制但商店补货有冷却时间\n"
-            "- 岗哨守卫（Sentry Ward）：不提供地面视野，仅提供850距离的真视（反隐/排眼），与观察守卫配合使用\n"
-            "- 英雄视野：白天1800距离，夜间800距离。部分英雄例外（如夜魇猎人夜间视野1800）\n"
-            "- 防御塔：白天提供1900距离视野，夜间仅800距离。塔被摧毁后该区域永久失去固定视野\n"
-            "- 昼夜交替：每5分钟交替一次（0:00-5:00白天，5:00-10:00夜间，以此类推）\n"
-            "- 夜间视野衰减：夜间视野约为白天的44%（800/1800），有效控制区域仅为白天的约19%\n"
-            "- 高低地视野：低地单位无法看到高地上的单位，高地具有天然视野优势\n"
-            "- 树木遮挡：树木会阻挡视野传播，密林区域是天然的雾区"
-        )
-        # Sub-chunk 2: Safety rules
-        safety_rules = (
-            "## 视野安全原则\n"
-            "- 当3名以上敌方英雄从地图消失超过15秒时，应立即撤退到安全区域（塔下或有视野覆盖区）\n"
-            "- 观察守卫到期后应在10秒内补放新眼，特别是河道、肉山坑、己方野区入口等关键位置\n"
-            "- 夜间在没有视野的区域移动极其危险——视野仅800意味着敌方可以从极近距离发动突袭\n"
-            "- 推进前必须确保侧翼有视野覆盖，至少提前30秒在推进路线两侧插眼\n"
-            "- 如果不知道敌方位置，默认假设他们在最危险的位置（你当前位置的gank路线上）\n"
-            "- 支援型英雄应在团战前60秒确保关键区域视野，而不是团战已经开始后再去插眼\n"
-            "- 进入敌方野区刷野前，必须确认至少3名敌方英雄的位置"
-        )
-        # Sub-chunk 3: Laning phase wards
-        laning_wards = (
-            "## 对线期视野（0-10分钟）\n"
-            "- 河道眼：控制神符和中路gank路线，对线期最重要的眼位\n"
-            "- 对面拉野点眼：阻止敌方辅助拉野，维持兵线在有利位置\n"
-            "- 符点眼：偶数分钟前放置，提前获取神符信息\n"
-            "- 优先级排序：河道 > 拉野点 > 入侵性视野\n"
-            "- 对线期眼位应以防守和信息为主，不要冒险深入插进攻眼"
-        )
-        # Sub-chunk 4: Mid-game wards
-        midgame_wards = (
-            "## 中期视野（10-25分钟）\n"
-            "- 入侵敌方野区眼：掌握敌方核心刷野路线，为抓人提供信息\n"
-            "- 肉山坑视野：控制Roshan争夺信息，中期Roshan价值很高\n"
-            "- 推进路线侧翼眼：防止推进时被包夹，至少提前30秒放置\n"
-            "- 优先级排序：肉山 > 入侵野区 > 推进路线\n\n"
-            "## 后期视野（25分钟+）\n"
-            "- 高地前方眼：攻方推高地必备，守方需要反掉\n"
-            "- Roshan持续监控眼：后期Roshan价值极高（不朽盾+奶酪+刷新碎片）\n"
-            "- 敌方基地入口眼：监控敌方出击路线\n"
-            "- 己方野区防守眼：防止敌方深入骚扰刷野\n"
-            "- 优先级排序：Roshan > 高地 > 基地入口"
-        )
-        # Sub-chunk 5: Role responsibilities for vision
-        role_vision = (
-            "## 不同位置的视野责任\n"
-            "- 5号位（硬辅助）：主要买眼责任，维持关键区域视野网络。目标：地图上始终有3-4个观察守卫存活\n"
-            "- 4号位（游走辅助）：补充买眼，负责侵略性视野（深入敌方区域插眼、反眼）。Smoke后优先放置深入眼\n"
-            "- 核心位（1/2/3号位）：不需要主动买眼，但必须读取视野信息做出安全决策。看到敌方消失必须有反应\n"
-            "- 所有位置：路过岗哨守卫覆盖区域时有义务排除敌方视野（反眼），这是团队责任"
-        )
-        # Sub-chunk 6: Death-related vision checklist
-        death_vision = (
-            "## 死亡与视野的关系\n"
-            "大多数非团战死亡（约70%）都与视野缺失直接相关。\n\n"
-            "### 死亡前视野检查清单\n"
-            "1. 是否有守卫覆盖周围区域？覆盖半径是否足够？\n"
-            "2. 有多少敌方英雄位置未知？（≥3人未知 = 极度危险）\n"
-            "3. 未知敌人消失了多久？（>15秒 = 可能正在gank路上）\n"
-            "4. 当前是白天还是夜间？（夜间危险系数翻倍）\n"
-            "5. 附近是否有友方英雄可以支援？（TP距离内？走路距离内？）\n"
-            "6. 距离最近的安全区域（塔/泉水）有多远？（>10秒路程 = 危险）\n"
-            "7. 敌方是否有烟雾可用？（烟雾可以绕过守卫视野）"
-        )
-        # Sub-chunk 7: Key numbers reference
-        key_numbers = (
-            "## 视野关键数值速查\n"
-            "- Observer Ward 视野：1600距离，持续360秒（6分钟）\n"
-            "- Sentry Ward 真视范围：850距离，持续420秒（7分钟）\n"
-            "- 英雄白天视野：1800距离\n"
-            "- 英雄夜间视野：800距离\n"
-            "- 防御塔白天视野：1900距离\n"
-            "- 防御塔夜间视野：800距离\n"
-            "- 昼夜交替周期：每5分钟\n"
-            "- Smoke of Deceit 持续：35秒\n"
-            "- Smoke 探测距离：1025距离（靠近敌方英雄/塔时自动消散）"
-        )
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="vision:basic_mechanics",
-        content=basic_vision,
-        tags=["mechanic:vision", "mechanic:ward"],
-        priority=2,
-        token_estimate=len(basic_vision) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="vision:safety_rules",
-        content=safety_rules,
-        tags=["mechanic:vision", "situation:danger", "situation:gank"],
-        priority=1,
-        token_estimate=len(safety_rules) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="vision:laning_wards",
-        content=laning_wards,
-        tags=["mechanic:vision", "mechanic:ward", "phase:laning"],
-        priority=2,
-        token_estimate=len(laning_wards) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="vision:midlate_wards",
-        content=midgame_wards,
-        tags=["mechanic:vision", "mechanic:ward", "phase:mid_game", "phase:late_game"],
-        priority=2,
-        token_estimate=len(midgame_wards) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="vision:role_responsibilities",
-        content=role_vision,
-        tags=[
-            "mechanic:vision", "mechanic:ward",
-            "role:support_5", "role:support_4",
-            "role:carry", "role:mid", "role:offlane",
-        ],
-        priority=2,
-        token_estimate=len(role_vision) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="vision:death_checklist",
-        content=death_vision,
-        tags=["mechanic:vision", "situation:death", "situation:danger"],
-        priority=1,
-        token_estimate=len(death_vision) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="vision:key_numbers",
-        content=key_numbers,
-        tags=["mechanic:vision", "reference"],
-        priority=2,
-        token_estimate=len(key_numbers) // 2,
-    ))
-
-    return chunks
-
-
-# -------------------------------------------------------------------
-# 5. Death analysis chunks (split into 6 sub-chunks)
-# -------------------------------------------------------------------
 
 def _build_death_analysis_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
-    """Split _DEATH_ANALYSIS_RULES into topical sub-chunks."""
-    chunks: list[KnowledgeChunk] = []
-
-    if lang == "en":
-        vision_dim = (
-            "## Death Analysis: Vision and Information Dimension\n"
-            "- Were there allied wards covering the area before death? If not, this is a vision-related death\n"
-            "- Could enemy hero positions be seen on the minimap? How many enemies' information was missing?\n"
-            "- Did the enemy use Smoke? If so, this is a high-quality gank and reduces player responsibility\n\n"
-            "### Vision Dimension Scoring Criteria\n"
-            "- S: Operating under full vision coverage, wards active even at night, proactively avoiding potential danger using vision info\n"
-            "- A: Basic vision coverage present, maintained some vigilance toward missing enemies, chose conservative routes when vision was lacking\n"
-            "- B: Partial vision coverage but incomplete, did not fully utilize available vision information\n"
-            "- C: Took risks with insufficient vision, ignored enemy disappearance signals, did not replace expired wards promptly\n"
-            "- D: Pushed deep into completely unwarded areas, multiple enemies missing for extended periods without retreating, solo movement in unwarded areas at night"
-        )
-        positioning_dim = (
-            "## Death Analysis: Positioning Dimension\n"
-            "- Was the death location in a dangerous area (enemy high ground, unwarded jungle, river)?\n"
-            "- Was the player pushing or farming alone without teammates in support range?\n"
-            "- Was the creep wave pushed too far? Was the player caught being greedy for last hits?\n\n"
-            "### Team Coordination Dimension\n"
-            "- Were teammate positions reasonable? Were they within support range?\n"
-            "- Was the death caused by teammate mistakes (e.g. support not using CC, core not dealing damage)?\n"
-            "- Was it a reasonable sacrifice (buying time for cores or protecting buildings)?"
-        )
-        skill_item_dim = (
-            "## Death Analysis: Skill and Item Usage Dimension\n"
-            "- Were escape abilities used properly (Blink, Invisibility, Time Walk, etc.)?\n"
-            "- Were defensive items used in time (BKB, Eul's, Force Staff, etc.)?\n"
-            "- Were key abilities on cooldown? If so, the player should not have been in a dangerous position\n"
-            "- Key consideration: If escape abilities/defensive items are on CD, your safe position should be more conservative\n"
-            "- Identify cases where abilities/items were available but unused -- this is the most common correctable mistake"
-        )
-        timing_dim = (
-            "## Death Analysis: Timing Judgment Dimension\n"
-            "- Did the player enter a dangerous area when enemy key abilities were off cooldown?\n"
-            "- Was teamfight engagement timing correct (too early or too late)?\n"
-            "- Did the player die again after buying back (second death is far worse than the first)?\n"
-            "- Key principle: Buyback death penalty is much greater than normal death; choose the safest action after buyback\n"
-            "- The core of timing judgment is understanding enemy ability cooldown cycles and teamfight tempo windows"
-        )
-        trade_dim = (
-            "## Death Analysis: Trade Evaluation Dimension\n"
-            "- Did the death result in something valuable (kills, tower, Roshan, buyback forced)?\n"
-            "- Was a 1-for-1 trade worthwhile (compare net worth and importance of both heroes)?\n"
-            "- Deaths in teamfights that result in multiple kills or buildings can be considered positive trades\n"
-            "- Supports trading their life for a core's survival is usually a positive trade\n"
-            "- Core deaths even with a return kill may be negative trades (longer respawn, greater gold loss)"
-        )
-        scoring = (
-            "## Death Analysis Scoring Rubric\n"
-            "- S (Perfect): Unavoidable death, or a valuable intentional sacrifice. E.g. Smoke ganked with no escape, or support sacrifice that wins the teamfight\n"
-            "- A (Good): Only minor mistakes, fundamentally correct play. E.g. slightly off positioning but overall sound decision-making\n"
-            "- B (Average): Clear judgment error but not a habitual problem. E.g. missed enemy disappearance signal but used available escape tools\n"
-            "- C (Poor): Obvious positioning or decision error. E.g. pushed deep into enemy territory with no vision\n"
-            "- D (Very Poor): Severe fundamental mistakes. E.g. obvious feeding, greedy farming in known danger, completely ignoring map information\n\n"
-            "Score by combining five dimensions: vision, positioning, skill usage, timing, and trade value. The lowest-scoring dimension drives the overall rating."
-        )
-    else:
-        vision_dim = (
-            "## 死亡分析：视野与信息维度\n"
-            "- 死亡前周围是否有己方眼位？如果没有，属于视野缺失导致的死亡\n"
-            "- 小地图上是否能看到敌方英雄位置？缺失几个敌人的信息？\n"
-            "- 敌方是否使用了烟雾（Smoke）？如果是，属于高质量gank，减轻玩家责任\n\n"
-            "### 视野维度评分标准\n"
-            "- S：在完整视野覆盖下操作，即使夜间也有守卫覆盖，利用视野信息主动规避了潜在危险\n"
-            "- A：有基本视野覆盖，对消失的敌人保持了一定警惕，在视野不足时选择了保守路线\n"
-            "- B：有部分视野但不完整，没有充分利用已有的视野信息\n"
-            "- C：在视野不足的情况下冒险，忽视了敌方英雄消失的信号，守卫到期后未及时补放\n"
-            "- D：在完全没有视野的区域深入，多名敌方长时间消失却不撤退，夜间在无视野区域单独行动"
-        )
-        positioning_dim = (
-            "## 死亡分析：位置与走位维度\n"
-            "- 死亡位置是否在危险区域（敌方高地、缺乏视野的野区、河道）？\n"
-            "- 是否在没有队友支援范围内独自推进或刷野？\n"
-            "- 兵线位置是否过深？是否贪兵导致被抓？\n\n"
-            "### 团队配合维度\n"
-            "- 队友位置是否合理？是否在支援范围内？\n"
-            "- 是否因为队友失误导致的死亡（如辅助未控、核心未输出）？\n"
-            "- 是否是合理的牺牲（为核心争取时间或保护建筑）？"
-        )
-        skill_item_dim = (
-            "## 死亡分析：技能与物品使用维度\n"
-            "- 是否合理使用了逃生技能（闪烁、隐身、时间漫步等）？\n"
-            "- 是否及时使用了防御物品（BKB、风杖、推推棍等）？\n"
-            "- 技能CD是否在冷却中？如果关键技能在CD，不应该待在危险位置\n"
-            "- 关键考量：如果逃生技能/防御物品在CD，你的安全位置应该更保守\n"
-            "- 判断是否存在「有技能/物品可用但未使用」的情况，这是最常见的可纠正错误"
-        )
-        timing_dim = (
-            "## 死亡分析：时机判断维度\n"
-            "- 是否在敌方关键技能CD时进入危险区域（如对面大招刚好冷却好）？\n"
-            "- 团战参与时机是否正确（过早或过晚加入）？\n"
-            "- 是否在买活后又死了一次（二次死亡比第一次严重得多）？\n"
-            "- 关键原则：买活后死亡的惩罚远大于普通死亡，买活后应选择最安全的行动\n"
-            "- 时机判断的核心是理解敌方技能CD周期和团战节奏窗口"
-        )
-        trade_dim = (
-            "## 死亡分析：交换评估维度\n"
-            "- 死亡是否换到了有价值的东西（击杀、推塔、Roshan、买活）？\n"
-            "- 1换1是否值得（看双方净资产和重要程度）？\n"
-            "- 团战中的死亡如果换到了多个击杀或建筑，可以视为正面交换\n"
-            "- 辅助用命换核心存活通常是正面交换\n"
-            "- 核心死亡即使换到击杀也可能是负面交换（死亡时间长、经济损失大）"
-        )
-        scoring = (
-            "## 死亡分析评分标准\n"
-            "- S（完美）：不可避免的死亡，或有价值的主动牺牲。例如：被烟雾gank且无逃生手段，或辅助牺牲保核心后赢下团战\n"
-            "- A（良好）：只有小失误，基本操作正确。例如：走位稍有偏差但整体决策合理\n"
-            "- B（一般）：有明显的判断失误但非致命习惯。例如：没有注意到敌方消失信号但使用了可用的逃生手段\n"
-            "- C（较差）：明显的位置或决策错误。例如：在缺乏视野的情况下独自深入敌方区域\n"
-            "- D（很差）：严重的基础失误。例如：明显送头、在明知危险时贪兵、完全无视地图信息\n\n"
-            "评分时综合视野、位置、技能使用、时机、交换价值五个维度，取最低分维度为主导评价。"
-        )
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="death_analysis:vision",
-        content=vision_dim,
-        tags=["situation:death", "mechanic:vision"],
-        priority=2,
-        token_estimate=len(vision_dim) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="death_analysis:positioning",
-        content=positioning_dim,
-        tags=["situation:death", "mechanic:positioning"],
-        priority=2,
-        token_estimate=len(positioning_dim) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="death_analysis:skill_item",
-        content=skill_item_dim,
-        tags=["situation:death", "mechanic:skill_usage", "mechanic:item_usage"],
-        priority=2,
-        token_estimate=len(skill_item_dim) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="death_analysis:timing",
-        content=timing_dim,
-        tags=["situation:death", "mechanic:timing"],
-        priority=2,
-        token_estimate=len(timing_dim) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="death_analysis:trade_eval",
-        content=trade_dim,
-        tags=["situation:death", "mechanic:trade"],
-        priority=2,
-        token_estimate=len(trade_dim) // 2,
-    ))
-
-    chunks.append(KnowledgeChunk(
-        chunk_id="death_analysis:scoring_rubric",
-        content=scoring,
-        tags=["situation:death", "reference"],
-        priority=1,
-        token_estimate=len(scoring) // 2,
-    ))
-
-    return chunks
+    """Death analysis rules, one chunk per canonical section."""
+    return _section_chunks(_DEATH_SECTIONS, "death_analysis", "death_analysis", lang)
 
 
 # -------------------------------------------------------------------
-# 6. General coaching chunks (new knowledge not in hardcoded system)
+# 4. General coaching chunks (new knowledge not in hardcoded system)
 # -------------------------------------------------------------------
 
 def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
@@ -630,7 +154,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- After taking Aegis, play aggressively and push; don't waste the Aegis time window"
             ),
             tags=["mechanic:roshan", "phase:mid_game", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 2. Buyback strategy
         chunks.append(KnowledgeChunk(
@@ -644,7 +168,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Never die again after buyback; dying after buyback is one of the most severe mistakes"
             ),
             tags=["mechanic:buyback", "phase:mid_game", "phase:late_game", "situation:death"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 3. Tower aggro mechanics
         chunks.append(KnowledgeChunk(
@@ -658,7 +182,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Use tower aggro mechanics to safely last hit and harass under tower"
             ),
             tags=["mechanic:tower_aggro", "mechanic:laning", "phase:laning"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 4. Smoke ganking principles
         chunks.append(KnowledgeChunk(
@@ -672,7 +196,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Successful smoke gank should convert into pushing a tower or taking Roshan; don't just kill and go home"
             ),
             tags=["mechanic:smoke", "mechanic:gank", "phase:mid_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 5. Power rune control and timing
         chunks.append(KnowledgeChunk(
@@ -686,7 +210,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Haste and Invisibility runes are best for ganking; Double Damage is good for farming or fighting"
             ),
             tags=["mechanic:rune", "phase:laning", "phase:mid_game", "role:mid"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 6. Comeback mechanics
         chunks.append(KnowledgeChunk(
@@ -700,7 +224,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- When behind, don't rush fights; use defensive formations and high ground advantage to wait for enemy mistakes"
             ),
             tags=["mechanic:comeback", "situation:behind", "phase:mid_game", "phase:late_game"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 7. High ground defense
         chunks.append(KnowledgeChunk(
@@ -714,7 +238,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- If you have buyback gold, consider fighting one round then buying back for a second engagement"
             ),
             tags=["mechanic:highground", "situation:behind", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 8. Split push strategy
         chunks.append(KnowledgeChunk(
@@ -728,7 +252,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Split push risk: getting caught can lead to a 4v5 disadvantaged teamfight; requires strong map awareness"
             ),
             tags=["mechanic:split_push", "phase:mid_game", "phase:late_game"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 9. TP scroll usage
         chunks.append(KnowledgeChunk(
@@ -742,7 +266,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Multiple TPs to the same building increase subsequent TP channel time; spread out TP targets"
             ),
             tags=["mechanic:tp_scroll", "phase:laning", "phase:mid_game", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 10. Stacking and pulling for supports
         chunks.append(KnowledgeChunk(
@@ -756,7 +280,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Supports should develop a habit of timed pulling and stacking; this is a core laning skill for economy and wave control"
             ),
             tags=["mechanic:stack_pull", "mechanic:laning", "role:support_5", "role:support_4", "phase:laning"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 11. Teamfight positioning
         chunks.append(KnowledgeChunk(
@@ -770,7 +294,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Before teamfight begins, identify your priority attack target and which teammates to protect"
             ),
             tags=["mechanic:teamfight", "mechanic:positioning", "phase:mid_game", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 12. Farming efficiency
         chunks.append(KnowledgeChunk(
@@ -784,7 +308,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Mid-game targets: carry 600+ GPM, mid 500+ GPM, offlane 400+ GPM"
             ),
             tags=["mechanic:farming", "role:carry", "role:mid", "phase:laning", "phase:mid_game"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 13. Map awareness basics
         chunks.append(KnowledgeChunk(
@@ -798,7 +322,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Watch enemy hero levels; a level advantage enemy usually wins 1v1"
             ),
             tags=["mechanic:map_awareness", "phase:laning", "phase:mid_game", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
     else:
         # 1. Roshan timing
@@ -813,7 +337,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 拿盾后应积极打架推进，不要浪费盾的时间窗口"
             ),
             tags=["mechanic:roshan", "phase:mid_game", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 2. Buyback strategy
         chunks.append(KnowledgeChunk(
@@ -827,7 +351,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 买活后绝对不能再死，买活后二次死亡是最严重的失误之一"
             ),
             tags=["mechanic:buyback", "phase:mid_game", "phase:late_game", "situation:death"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 3. Tower aggro mechanics
         chunks.append(KnowledgeChunk(
@@ -841,7 +365,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 利用塔仇恨机制可以安全地在塔下补刀和骚扰"
             ),
             tags=["mechanic:tower_aggro", "mechanic:laning", "phase:laning"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 4. Smoke ganking principles
         chunks.append(KnowledgeChunk(
@@ -855,7 +379,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 成功的烟雾gank可以转化为推塔或Roshan，不要只是杀人后回家"
             ),
             tags=["mechanic:smoke", "mechanic:gank", "phase:mid_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 5. Power rune control and timing
         chunks.append(KnowledgeChunk(
@@ -869,7 +393,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 极速和隐身神符最适合gank，双倍伤害适合刷钱或打架"
             ),
             tags=["mechanic:rune", "phase:laning", "phase:mid_game", "role:mid"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 6. Comeback mechanics
         chunks.append(KnowledgeChunk(
@@ -883,7 +407,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 劣势时不要急于打架，利用防守阵型和高地优势等待敌方失误"
             ),
             tags=["mechanic:comeback", "situation:behind", "phase:mid_game", "phase:late_game"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 7. High ground defense
         chunks.append(KnowledgeChunk(
@@ -897,7 +421,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 如果有买活金，可以考虑打一波消耗后等买活再打第二波"
             ),
             tags=["mechanic:highground", "situation:behind", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 8. Split push strategy
         chunks.append(KnowledgeChunk(
@@ -911,7 +435,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 分推的风险：被抓后可能导致4v5劣势团战，需要良好的地图感知"
             ),
             tags=["mechanic:split_push", "phase:mid_game", "phase:late_game"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 9. TP scroll usage
         chunks.append(KnowledgeChunk(
@@ -925,7 +449,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 多人TP到同一建筑会增加后续TP的传送时间，注意分散传送目标"
             ),
             tags=["mechanic:tp_scroll", "phase:laning", "phase:mid_game", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 10. Stacking and pulling for supports
         chunks.append(KnowledgeChunk(
@@ -939,7 +463,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 辅助应养成定时拉野堆野的习惯，这是对线期经济和兵线控制的核心技能"
             ),
             tags=["mechanic:stack_pull", "mechanic:laning", "role:support_5", "role:support_4", "phase:laning"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 11. Teamfight positioning
         chunks.append(KnowledgeChunk(
@@ -953,7 +477,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 团战开始前确定你的优先攻击目标和需要保护的队友"
             ),
             tags=["mechanic:teamfight", "mechanic:positioning", "phase:mid_game", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
         # 12. Farming efficiency
         chunks.append(KnowledgeChunk(
@@ -967,7 +491,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 中期目标：大哥600+GPM，中单500+GPM，三号位400+GPM"
             ),
             tags=["mechanic:farming", "role:carry", "role:mid", "phase:laning", "phase:mid_game"],
-            priority=3, token_estimate=0,
+            priority=3,
         ))
         # 13. Map awareness basics
         chunks.append(KnowledgeChunk(
@@ -981,14 +505,14 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 注意敌方英雄等级，等级领先的敌人在1v1中通常有优势"
             ),
             tags=["mechanic:map_awareness", "phase:laning", "phase:mid_game", "phase:late_game"],
-            priority=2, token_estimate=0,
+            priority=2,
         ))
 
     return chunks
 
 
 # -------------------------------------------------------------------
-# 7. Early game chunks (pregame / rune contest / level 1)
+# 5. Early game chunks (pregame / rune contest / level 1)
 # -------------------------------------------------------------------
 
 def _build_early_game_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
@@ -1067,9 +591,10 @@ def _build_early_game_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
     chunks.append(KnowledgeChunk(
         chunk_id="early_game:rune_contest_framework",
         content=rune_contest,
-        tags=["phase:pregame", "mechanic:rune", "situation:death"],
+        # Not tagged situation:death: it is only relevant to pregame deaths,
+        # which the phase tag already captures.
+        tags=["phase:pregame", "mechanic:rune"],
         priority=2,
-        token_estimate=len(rune_contest) // 2,
     ))
 
     chunks.append(KnowledgeChunk(
@@ -1077,7 +602,6 @@ def _build_early_game_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
         content=level1_fight,
         tags=["phase:pregame", "phase:laning", "mechanic:teamfight"],
         priority=2,
-        token_estimate=len(level1_fight) // 2,
     ))
 
     chunks.append(KnowledgeChunk(
@@ -1085,21 +609,23 @@ def _build_early_game_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
         content=pregame_principles,
         tags=["phase:pregame"],
         priority=2,
-        token_estimate=len(pregame_principles) // 2,
     ))
 
     return chunks
 
 
 # -------------------------------------------------------------------
-# Public API
+# Public API (structural chunks)
 # -------------------------------------------------------------------
 
 def get_all_builtin_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
-    """Return all built-in knowledge chunks."""
+    """Return all structural built-in chunks (principles; no hero/item data).
+
+    Hero, matchup, ability and item chunks come from
+    :func:`generate_gamedata_chunks` so that the editorial JSON stays the
+    single source of truth for them.
+    """
     chunks: list[KnowledgeChunk] = []
-    chunks.extend(_build_hero_chunks(lang))
-    chunks.extend(_build_matchup_chunks(lang))
     chunks.extend(_build_role_chunks(lang))
     chunks.extend(_build_vision_chunks(lang))
     chunks.extend(_build_death_analysis_chunks(lang))
@@ -1109,25 +635,212 @@ def get_all_builtin_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
 
 
 # -------------------------------------------------------------------
-# 7. Game data chunks (from auto-fetched data, covers 130+ heroes)
+# Data-driven chunks (editorial knowledge + game data, all heroes)
 # -------------------------------------------------------------------
 
 def _heroes_to_tags(heroes_list: list[str] | None) -> list[str]:
-    """Convert a heroes list from editorial data to hero:xxx tags.
+    """Editorial ``heroes`` list -> canonical hero tags.
 
-    ["Axe"] -> ["hero:axe"]
-    ["all"] -> ["hero:all"]
-    None    -> []
+    ["Axe"] -> ["hero:axe"]; ["all"] -> ["hero:all"]; None -> [].
     """
     if not heroes_list:
         return []
-    tags = []
+    tags: list[str] = []
     for h in heroes_list:
-        if h.lower() == "all":
-            tags.append("hero:all")
-        else:
-            tags.append(f"hero:{_hero_slug(h)}")
+        tag = "hero:all" if str(h).strip().lower() == "all" else hero_tag(h)
+        if tag not in tags:
+            tags.append(tag)
     return tags
+
+
+def _join(values: list[str], lang: str) -> str:
+    return ("; " if lang == "en" else "；").join(v for v in values if v)
+
+
+def _hero_chunks(hero_name: str, info: dict, lang: str) -> list[KnowledgeChunk]:
+    """Overview + laning chunk for one hero (only when editorial text exists)."""
+    power_spikes = [str(s) for s in info.get("power_spikes") or []]
+    weaknesses = [str(w) for w in info.get("weaknesses") or []]
+    laning_tips = str(info.get("laning_tips") or "").strip()
+    level1 = str(info.get("level1_strength") or "")
+    level1_note = str(info.get("level1_note") or "").strip()
+    if not (power_spikes or weaknesses or laning_tips or level1_note):
+        return []
+
+    slug = _hero_slug(hero_name)
+    role = str(info.get("role") or "unknown")
+    role_text = _lbl(_ROLE_LABELS, lang).get(role, role)
+    attr_text = _lbl(_ATTR_LABELS, lang).get(info.get("attribute", ""), info.get("attribute", ""))
+    level1_text = _lbl(_LEVEL1_LABELS, lang).get(level1, level1)
+    ranged = info.get("attack_type") == "ranged"
+    # Hero chunks carry no role tags: knowledge about a hero matters whatever
+    # position it is played in (the hero tag decides relevance). Only the
+    # laning chunk is phase-scoped.
+    tag = hero_tag(hero_name)
+
+    if lang == "en":
+        lines = [f"Hero: {hero_name} — {role_text}, {attr_text} ({'ranged' if ranged else 'melee'})"]
+        if power_spikes:
+            lines.append(f"Power spikes: {_join(power_spikes, lang)}")
+        if weaknesses:
+            lines.append(f"Weaknesses: {_join(weaknesses, lang)}")
+        if level1 or level1_note:
+            lines.append(f"Level-1 fights: {level1_text}" + (f" — {level1_note}" if level1_note else ""))
+    else:
+        lines = [f"英雄：{hero_name}（{role_text}，{attr_text}，{'远程' if ranged else '近战'}）"]
+        if power_spikes:
+            lines.append(f"强势期：{_join(power_spikes, lang)}")
+        if weaknesses:
+            lines.append(f"弱点：{_join(weaknesses, lang)}")
+        if level1 or level1_note:
+            lines.append(f"1级团战能力：{level1_text}" + (f" — {level1_note}" if level1_note else ""))
+
+    chunks = [KnowledgeChunk(
+        chunk_id=f"hero_overview:{slug}",
+        content="\n".join(lines),
+        category="hero_overview",
+        tags=[tag],
+        priority=2,
+        source="editorial",
+        dedupe_key=f"hero_overview:{slug}",
+    )]
+    if laning_tips:
+        label = "Laning tips" if lang == "en" else "对线要点"
+        sep = ": " if lang == "en" else "："
+        chunks.append(KnowledgeChunk(
+            chunk_id=f"hero_laning:{slug}",
+            content=f"{hero_name} — {label}{sep}{laning_tips}",
+            category="hero_laning",
+            tags=[tag, "phase:laning", "mechanic:laning"],
+            priority=2,
+            source="editorial",
+            dedupe_key=f"hero_laning:{slug}",
+        ))
+    return chunks
+
+
+_DTYPE_LABELS = {
+    "zh": {"magical": "魔法", "physical": "物理", "pure": "纯粹"},
+    "en": {"magical": "Magical", "physical": "Physical", "pure": "Pure"},
+}
+
+
+def _ability_chunk(hero_name: str, hero_abilities: dict[str, dict], lang: str) -> KnowledgeChunk | None:
+    """One chunk listing a hero's abilities with their coaching tips."""
+    dtype_labels = _lbl(_DTYPE_LABELS, lang)
+    lines: list[str] = []
+    for ability_name, data in hero_abilities.items():
+        text = str(data.get("coaching_tip") or data.get("description") or "").strip()
+        if not text:
+            continue
+        flags: list[str] = []
+        if data.get("is_ultimate"):
+            flags.append("Ultimate" if lang == "en" else "大招")
+        if dtype_labels.get(data.get("damage_type", "")):
+            flags.append(dtype_labels[data["damage_type"]])
+        if data.get("pierces_bkb"):
+            flags.append("pierces BKB" if lang == "en" else "无视BKB")
+        if data.get("type") == "passive":
+            flags.append("Passive" if lang == "en" else "被动")
+        flag_text = f" ({', '.join(flags)})" if lang == "en" and flags else (
+            f"（{'，'.join(flags)}）" if flags else "")
+        lines.append(f"- {ability_name}{flag_text}: {text}")
+        if len(lines) >= 6:
+            break
+    if not lines:
+        return None
+    slug = _hero_slug(hero_name)
+    header = f"{hero_name} abilities:" if lang == "en" else f"{hero_name} 技能要点："
+    return KnowledgeChunk(
+        chunk_id=f"hero_abilities:{slug}",
+        content=header + "\n" + "\n".join(lines),
+        category="ability_coaching",
+        tags=[hero_tag(hero_name), "mechanic:skill_usage"],
+        priority=2,
+        source="editorial",
+        dedupe_key=f"hero_abilities:{slug}",
+    )
+
+
+def _matchup_chunks(matchup_tips: dict[str, dict[str, str]], lang: str) -> list[KnowledgeChunk]:
+    chunks: list[KnowledgeChunk] = []
+    for hero_a in sorted(matchup_tips):
+        for hero_b, tip in sorted(matchup_tips[hero_a].items()):
+            if not tip:
+                continue
+            slug_a, slug_b = _hero_slug(hero_a), _hero_slug(hero_b)
+            tag = matchup_tag(hero_a, hero_b)
+            content = (f"{hero_a} vs {hero_b}: {tip}" if lang == "en"
+                       else f"{hero_a} 对阵 {hero_b}：{tip}")
+            chunks.append(KnowledgeChunk(
+                chunk_id=f"matchup:{slug_a}_vs_{slug_b}",
+                content=content,
+                category="hero_matchup",
+                # Only the pair tag: a matchup tip is irrelevant unless both
+                # heroes are in the game (queries add both directions).
+                tags=[tag],
+                priority=2,
+                source="editorial",
+                dedupe_key=tag,
+            ))
+    return chunks
+
+
+def _item_chunks(items: dict[str, dict], lang: str) -> list[KnowledgeChunk]:
+    """One chunk per item with a coaching tip, plus per-hero counter tips."""
+    chunks: list[KnowledgeChunk] = []
+    for item_name in sorted(items):
+        data = items[item_name]
+        tip = str(data.get("coaching_tip") or "").strip()
+        key = str(data.get("key") or "")
+        if not key:
+            continue
+        tag = item_tag(key)
+        slug = tag.split(":", 1)[1]
+        if tip:
+            desc = str(data.get("description") or "").strip()
+            cost = data.get("cost")
+            active = bool(data.get("is_active"))
+            if lang == "en":
+                meta = ", ".join(x for x in (
+                    f"{cost} gold" if isinstance(cost, (int, float)) and cost else "",
+                    "active" if active else "passive",
+                ) if x)
+                content = f"Item: {item_name} ({meta})" + (f" — {desc}" if desc else "") + f"\nTip: {tip}"
+            else:
+                meta = "，".join(x for x in (
+                    f"{cost}金" if isinstance(cost, (int, float)) and cost else "",
+                    "主动" if active else "被动",
+                ) if x)
+                content = f"物品：{item_name}（{meta}）" + (f" — {desc}" if desc else "") + f"\n要点：{tip}"
+            hero_tags = [t for t in _heroes_to_tags(data.get("heroes")) if t != "hero:all"]
+            chunks.append(KnowledgeChunk(
+                chunk_id=f"item:{slug}",
+                content=content,
+                category="item_coaching",
+                tags=[tag, "mechanic:item_usage", *hero_tags],
+                priority=2,
+                source="editorial",
+                dedupe_key=f"item:{slug}",
+            ))
+        counters = data.get("counter_tips")
+        if isinstance(counters, dict):
+            for hero, counter_tip in sorted(counters.items()):
+                if not counter_tip:
+                    continue
+                hslug = _hero_slug(hero)
+                content = (f"{item_name} vs {hero}: {counter_tip}" if lang == "en"
+                           else f"{item_name} 对抗 {hero}：{counter_tip}")
+                chunks.append(KnowledgeChunk(
+                    chunk_id=f"item_counter:{slug}:{hslug}",
+                    content=content,
+                    category="item_coaching",
+                    tags=[tag, hero_tag(hero)],
+                    priority=2,
+                    source="editorial",
+                    dedupe_key=f"item_counter:{slug}:{hslug}",
+                ))
+    return chunks
 
 
 def generate_gamedata_chunks(
@@ -1137,142 +850,24 @@ def generate_gamedata_chunks(
     lang: str = "zh",
     matchup_tips: dict[str, dict[str, str]] | None = None,
 ) -> list[KnowledgeChunk]:
-    """Generate retrievable chunks from loaded game data.
+    """Generate retrievable chunks from the merged game data.
 
-    One chunk per hero (abilities overview) tagged with hero:slug.
-    One chunk per notable item tagged with item:slug.
-    One chunk per matchup pair from editorial matchup tips.
-    Token budget control: each chunk is small (~100-200 tokens).
+    - per hero: overview + laning chunk (editorial), ability chunk
+    - per matchup tip: one chunk (``matchup:<a>_vs_<b>``)
+    - per item with a tip: one chunk (``item:<key>``) + counter-tip chunks
 
-    Only generates chunks for heroes/matchups NOT already covered by builtin
-    chunks, to avoid duplication.
-
-    Editorial content (coaching tips, descriptions) is always in English.
-    The lang parameter controls structural labels/headers only.
+    Inputs are the ``data_manager.load_*`` results (or any dicts of the same
+    shape); hero / item names may be display names, slugs or npc names.
     """
     chunks: list[KnowledgeChunk] = []
-    builtin_hero_slugs = {_hero_slug(name) for name in HERO_DATA}
-
-    # Hero ability overview chunks (for heroes not in builtin)
-    for hero_name, hero_abilities in abilities.items():
-        slug = _hero_slug(hero_name)
-        if slug in builtin_hero_slugs:
-            continue  # already covered by builtin chunks
-
-        # Build a concise ability overview
-        ability_lines = []
-        for ability_name, ability_data in hero_abilities.items():
-            parts = [ability_name]
-            if ability_data.get("damage_type"):
-                dtype_label = {"magical": "Magical", "physical": "Physical", "pure": "Pure"}.get(
-                    ability_data["damage_type"], ""
-                )
-                if dtype_label:
-                    parts.append(dtype_label)
-            if ability_data.get("is_ultimate"):
-                parts.append("Ultimate")
-            if ability_data.get("pierces_bkb"):
-                parts.append("Pierces BKB")
-            if ability_data.get("is_passive"):
-                parts.append("Passive")
-            # coaching_tip is now always English
-            if ability_data.get("coaching_tip"):
-                parts.append(ability_data["coaching_tip"])
-            ability_lines.append("- " + ", ".join(parts))
-
-        if not ability_lines:
-            continue
-
-        hero_info = heroes.get(hero_name, {})
-        role = hero_info.get("role", "unknown")
-
-        if lang == "en":
-            content = f"Hero: {hero_name}\nAbilities:\n" + "\n".join(ability_lines[:6])
-        else:
-            content = f"英雄：{hero_name}\n技能概览：\n" + "\n".join(ability_lines[:6])
-
-        tags = [f"hero:{slug}", f"role:{_role_tag(role)}"]
-        chunks.append(KnowledgeChunk(
-            chunk_id=f"gamedata_hero:{slug}",
-            content=content,
-            category="hero_overview",
-            tags=tags,
-            priority=3,  # supplementary (auto-generated, not hand-curated)
-            source="gamedata",
-        ))
-
-    # Hero overview chunks with editorial data (for heroes not in builtin)
-    for hero_name, hero_info in heroes.items():
-        slug = _hero_slug(hero_name)
-        if slug in builtin_hero_slugs:
-            continue
-
-        # Editorial content is now English regardless of lang
-        laning_tips = hero_info.get("laning_tips", "")
-        weaknesses = hero_info.get("weaknesses", [])
-        power_spikes = hero_info.get("power_spikes", [])
-
-        # Only generate if we have editorial content
-        if not (laning_tips or weaknesses or power_spikes):
-            continue
-
-        if lang == "en":
-            parts = [f"Hero: {hero_name}"]
-        else:
-            parts = [f"英雄：{hero_name}"]
-        if power_spikes:
-            parts.append(f"Power Spikes: {', '.join(power_spikes)}")
-        if weaknesses:
-            parts.append(f"Weaknesses: {', '.join(weaknesses)}")
-        if laning_tips:
-            parts.append(f"Laning Tips: {laning_tips}")
-
-        content = "\n".join(parts)
-        role = hero_info.get("role", "unknown")
-
-        # Use heroes tag from editorial if available
-        hero_tags = _heroes_to_tags(hero_info.get("heroes"))
-        if not hero_tags:
-            hero_tags = [f"hero:{slug}"]
-
-        chunks.append(KnowledgeChunk(
-            chunk_id=f"gamedata_hero_editorial:{slug}",
-            content=content,
-            category="hero_laning",
-            tags=hero_tags + [f"role:{_role_tag(role)}", "phase:laning"],
-            priority=2,
-            source="editorial",
-        ))
-
-    # Editorial matchup tip chunks (skip pairs already in builtin)
+    for hero_name in sorted(heroes):
+        chunks.extend(_hero_chunks(hero_name, heroes[hero_name], lang))
+    for hero_name in sorted(abilities):
+        chunk = _ability_chunk(hero_name, abilities[hero_name], lang)
+        if chunk is not None:
+            chunks.append(chunk)
     if matchup_tips:
-        builtin_matchup_ids = {
-            f"matchup:{_hero_slug(h1)}_vs_{_hero_slug(h2)}"
-            for h1, opps in _MATCHUP_TIPS_EN.items()
-            for h2 in opps
-        }
-        for hero_a, opponents in matchup_tips.items():
-            slug_a = _hero_slug(hero_a)
-            for hero_b, tip in opponents.items():
-                slug_b = _hero_slug(hero_b)
-                chunk_id = f"matchup:{slug_a}_vs_{slug_b}"
-                if chunk_id in builtin_matchup_ids:
-                    continue
-                if lang == "en":
-                    content = f"{hero_a} vs {hero_b}: {tip}"
-                else:
-                    content = f"{hero_a} 对阵 {hero_b}: {tip}"
-                chunks.append(KnowledgeChunk(
-                    chunk_id=chunk_id,
-                    content=content,
-                    category="matchup",
-                    tags=[
-                        f"matchup:{slug_a}:{slug_b}",
-                        f"hero:{slug_a}",
-                        f"hero:{slug_b}",
-                    ],
-                    priority=2,
-                    source="editorial",
-                ))
-
+        chunks.extend(_matchup_chunks(matchup_tips, lang))
+    if items:
+        chunks.extend(_item_chunks(items, lang))
     return chunks
