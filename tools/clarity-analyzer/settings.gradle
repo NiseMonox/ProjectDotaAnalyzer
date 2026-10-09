@@ -1,1 +1,15 @@
+// Optional Maven mirror (e.g. MAVEN_MIRROR=https://maven.aliyun.com/repository/public for
+// users in China). Set it via the MAVEN_MIRROR environment variable or -PmavenMirror=<url>.
+// The Gradle Plugin Portal / Maven Central remain the defaults and fallbacks.
+pluginManagement {
+    def mirror = providers.gradleProperty('mavenMirror').orElse(providers.environmentVariable('MAVEN_MIRROR')).getOrElse('').trim()
+    repositories {
+        if (mirror) {
+            maven { url mirror }
+        }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
 rootProject.name = 'clarity-analyzer'

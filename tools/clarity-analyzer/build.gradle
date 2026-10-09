@@ -5,20 +5,34 @@ plugins {
 }
 
 group = 'com.dotaanalyzer'
-version = '1.0.0'
+version = '1.1.0'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
 }
 
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // Produce Java 17 bytecode/API even when built with a newer JDK.
+    options.release = 17
+}
+
+// Optional extra Maven mirror, tried before Maven Central (see settings.gradle).
+def mavenMirror = providers.gradleProperty('mavenMirror').orElse(providers.environmentVariable('MAVEN_MIRROR')).getOrElse('').trim()
+
 repositories {
+    if (mavenMirror) {
+        maven { url mavenMirror }
+    }
     mavenCentral()
 }
 
 dependencies {
     implementation 'com.skadistats:clarity:3.1.3'
     implementation 'com.google.code.gson:gson:2.10.1'
+    // clarity logs through SLF4J; bind it to a no-op logger so stderr stays readable.
+    runtimeOnly 'org.slf4j:slf4j-nop:2.0.7'
 }
 
 application {

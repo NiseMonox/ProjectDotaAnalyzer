@@ -1,4 +1,13 @@
-"""Data models for Dota 2 match analysis."""
+"""Data models for Dota 2 match analysis.
+
+Coordinates: every x/y below (wards, smokes incl. path, teamfight positions and
+ability casts, ability events, laning snapshots, buildings) is in Dota 2 world
+units (see ``geo.py``). The only exception is ``PlayerData.lane_pos``, which is
+OpenDota's raw cell heatmap.
+
+Enumerations are stable lowercase codes (no localized labels); the frontend
+translates them.
+"""
 from __future__ import annotations
 
 from pydantic import BaseModel
@@ -20,25 +29,28 @@ class SkillEvent(BaseModel):
 
 class WardEvent(BaseModel):
     ward_type: str  # "observer" or "sentry"
-    x: float
+    x: float        # world units
     y: float
-    time: int
-    player_slot: int
-    destroyed_time: int | None = None
+    time: int       # game time of placement (negative = before the horn)
+    player_slot: int  # owner; -1 when the owner is unknown (see ``team``)
+    destroyed_time: int | None = None  # dewarded/expired; None = alive at game end
+    team: str = ""  # "radiant"/"dire"; empty = derive from player_slot
 
 
 class SmokeEvent(BaseModel):
     time: int
     team: str  # "radiant" or "dire"
     player_slots: list[int]
-    x: float = 0.0              # smoke activation position
+    x: float = 0.0              # smoke activation position (world units)
     y: float = 0.0
     end_time: int = 0           # when smoke breaks
-    path: list[list[float]] = []  # [[x1,y1], ...] waypoints
-    result: str = "unknown"     # "kill", "no_contact", "traded", "objective"
-    kills_gained: int = 0       # kills within 30s after smoke breaks
-    deaths_suffered: int = 0    # deaths within 30s after smoke breaks
-    objective_taken: str | None = None  # "tower", "roshan", None
+    path: list[list[float]] = []  # [[x1,y1], ...] waypoints (world units)
+    # Result code: "kill", "traded", "objective", "caught" (only own deaths),
+    # "no_contact" or "unknown"
+    result: str = "unknown"
+    kills_gained: int = 0       # enemy deaths near the group, -5..+30s around the break
+    deaths_suffered: int = 0    # own deaths near the group in the same window
+    objective_taken: str | None = None  # "tower", "barracks", "ancient", "roshan" or None
 
 
 class PositionSnapshot(BaseModel):
@@ -117,7 +129,7 @@ class LaningSnapshot(BaseModel):
 class LaningCreepKill(BaseModel):
     """A single last-hit or deny event during laning."""
     time: int = 0
-    creep_type: str = ""
+    creep_type: str = ""  # "melee", "ranged", "siege", "neutral" or "unknown"
     gold: int = 0
 
 
@@ -153,11 +165,12 @@ class PlayerData(BaseModel):
     hero_damage: int
     tower_damage: int
     hero_healing: int
-    net_worth: int
+    net_worth: int              # real net worth when the source provides it
     items: list[ItemEvent]
-    backpack: list[str]
-    final_items: list[str]
+    backpack: list[str]         # item keys in the backpack at game end
+    final_items: list[str]      # display names of the end-of-game inventory
     final_item_keys: list[str] = []  # internal keys for CDN icons
+    neutral_item: str = ""      # item key of the neutral item slot, "" if none/unknown
     skills: list[SkillEvent]
     wards: list[WardEvent]
     ability_events: list[AbilityEvent]
@@ -168,8 +181,10 @@ class PlayerData(BaseModel):
     lh_t: list[int] = []        # last hits at each minute
 
     # Lane data
-    lane: int = 0               # 1=safe, 2=mid, 3=off
-    lane_role: int = 0           # 1=safe, 2=mid, 3=off, 4=jungle
+    # lane is ABSOLUTE (OpenDota convention): 1=bottom, 2=mid, 3=top, 4=jungle, 0=unknown
+    lane: int = 0
+    # lane_role is RELATIVE to the team: 1=safe, 2=mid, 3=off, 4=jungle/roaming, 0=unknown
+    lane_role: int = 0
     is_roaming: bool = False
     lane_efficiency: float = 0.0
     lane_efficiency_pct: float = 0.0
@@ -188,7 +203,7 @@ class PlayerData(BaseModel):
     # Benchmarks
     benchmarks: dict[str, dict] = {}    # {stat: {raw, pct}}
 
-    # Runes
+    # Runes (rune type ids as string keys, OpenDota numbering)
     runes_log: list[dict] = []          # [{time, key}]
     runes: dict[str, int] = {}          # {rune_type: count}
 
@@ -235,7 +250,7 @@ class MatchData(BaseModel):
     match_id: int
     duration: int  # seconds
     radiant_win: bool
-    game_mode: str
+    game_mode: str  # code, e.g. "ranked_all_pick", "turbo", "captains_mode", "mode_<id>"
     start_time: int
     radiant_score: int
     dire_score: int
@@ -253,17 +268,33 @@ class MatchData(BaseModel):
     # Draft
     picks_bans: list[dict] = []        # [{is_pick, hero_id, team, order}]
 
-    # Objectives
-    objectives: list[dict] = []        # [{time, type, unit, key, slot, team}]
+    # Objectives (OpenDota-style): building kills use type "building_kill" with the
+    # destroyed building's unit name in "key" (e.g. "npc_dota_goodguys_tower1_top")
+    # and the team that took it in "team"; Roshan kills use "CHAT_MESSAGE_ROSHAN_KILL".
+    objectives: list[dict] = []        # [{time, type, key, player_slot, team, ...}]
 
     # Chat
     chat: list[dict] = []              # [{time, type, key, slot, player_slot}]
 
-    # Building status
+    # Building status at game end (OpenDota/Valve bit layout, set bit = alive).
+    # Towers: bit0-2 top t1-t3, bit3-5 mid t1-t3, bit6-8 bot t1-t3,
+    # bit9 ancient top (t4), bit10 ancient bottom (t4).
+    # Barracks: bit0 top melee, bit1 top ranged, bit2 mid melee, bit3 mid ranged,
+    # bit4 bot melee, bit5 bot ranged.
     tower_status_radiant: int = 0
     tower_status_dire: int = 0
     barracks_status_radiant: int = 0
     barracks_status_dire: int = 0
+
+    # Buildings with real positions (world units) when the source provides them:
+    # [{"name": "npc_dota_goodguys_tower1_top", "team": "radiant"|"dire",
+    #   "type": "tower"|"barracks"|"fort"|"other", "x": float, "y": float,
+    #   "destroyed_time": int | None}]
+    # Empty when unknown; consumers then fall back to geo.TOWER_POSITIONS.
+    buildings: list[dict] = []
+
+    # True when the replay was truncated/corrupted and only part of it was parsed.
+    partial: bool = False
 
     # First blood
     first_blood_time: int = 0

@@ -1,7 +1,15 @@
-"""Mock data generator for development and testing."""
-import random
-import time
+"""Mock data generator for development and testing.
 
+Produces a deterministic MatchData modelled on real match 8713267082. All
+positions are Dota 2 world units (see ``geo.py``); randomness comes from a
+private seeded RNG so the global ``random`` state is never touched.
+"""
+from __future__ import annotations
+
+import random
+import threading
+
+from . import geo
 from .models import (
     AbilityCast,
     AbilityEvent,
@@ -168,21 +176,26 @@ SUPPORT_ITEMS = [
     ("Lotus Orb", "lotus_orb"),
 ]
 
+# Private RNG (seeded per generate_mock_match call) and a lock so concurrent
+# callers cannot interleave draws and break determinism.
+_rng = random.Random()
+_MOCK_LOCK = threading.Lock()
+_MOCK_SEED = 42
+
 PLAYER_NAMES = [
     "AllMight", "ShadowBlade", "IceStorm", "DragonFly", "NightStalker",
     "SunRay", "ThunderBolt", "StarLight", "MoonWalker", "FireStorm",
 ]
 
-# Playable area bounds (matching OpenDota cell range 64-190)
-# cell * 62.5 - 8000: cell 64 → -4000, cell 190 → 3875
-MAP_MIN = -4000
-MAP_MAX = 3875
+# Playable area bounds in world units (the minimap spans -8192..8064).
+MAP_MIN = -7400.0
+MAP_MAX = 7400.0
 
 
 def _rand_map_pos() -> tuple[float, float]:
     return (
-        random.uniform(MAP_MIN, MAP_MAX),
-        random.uniform(MAP_MIN, MAP_MAX),
+        _rng.uniform(MAP_MIN, MAP_MAX),
+        _rng.uniform(MAP_MIN, MAP_MAX),
     )
 
 
@@ -193,33 +206,33 @@ def _generate_item_build(
     items: list[ItemEvent] = []
     item_keys: list[str] = []
     # Starting items purchased during strategy phase (-90s to 0s)
-    t = -random.randint(85, 89)
+    t = -_rng.randint(85, 89)
 
-    for _ in range(random.randint(3, 5)):
-        name, key = random.choice(EARLY_ITEMS)
+    for _ in range(_rng.randint(3, 5)):
+        name, key = _rng.choice(EARLY_ITEMS)
         items.append(ItemEvent(item_name=name, time=t, item_key=key))
         item_keys.append(key)
-        t += random.randint(0, 3)
+        t += _rng.randint(0, 3)
 
     # Early-mid game items (after horn at 0:00)
-    t = random.randint(60, 180)
-    num_mid = random.randint(3, 6)
+    t = _rng.randint(60, 180)
+    num_mid = _rng.randint(3, 6)
     for _ in range(num_mid):
-        t += random.randint(60, 300)
+        t += _rng.randint(60, 300)
         if t > duration:
             break
         pool = MID_ITEMS if role != "support" else MID_ITEMS + SUPPORT_ITEMS
-        name, key = random.choice(pool)
+        name, key = _rng.choice(pool)
         items.append(ItemEvent(item_name=name, time=t, item_key=key))
         item_keys.append(key)
 
     # Late game items
-    num_late = random.randint(2, 4) if role != "support" else random.randint(0, 2)
+    num_late = _rng.randint(2, 4) if role != "support" else _rng.randint(0, 2)
     for _ in range(num_late):
-        t += random.randint(180, 480)
+        t += _rng.randint(180, 480)
         if t > duration:
             break
-        name, key = random.choice(LATE_ITEMS)
+        name, key = _rng.choice(LATE_ITEMS)
         items.append(ItemEvent(item_name=name, time=t, item_key=key))
         item_keys.append(key)
 
@@ -238,12 +251,12 @@ def _generate_skill_build(abilities: list[tuple[str, str]], duration: int) -> li
     ult_name, ult_key = abilities[3]
 
     for lvl in range(1, max_level + 1):
-        t = lvl * random.randint(60, 120)
+        t = lvl * _rng.randint(60, 120)
         if t > duration:
             break
 
         if lvl in (10, 15, 20, 25):
-            side = random.choice(["left", "right"])
+            side = _rng.choice(["left", "right"])
             skills.append(SkillEvent(
                 ability_name=f"talent_{side}_lvl{lvl}",
                 ability_key=f"talent_{side}_lvl{lvl}",
@@ -265,7 +278,7 @@ def _generate_skill_build(abilities: list[tuple[str, str]], duration: int) -> li
         if not regular:
             continue
 
-        chosen_name, chosen_key = random.choice(regular)
+        chosen_name, chosen_key = _rng.choice(regular)
         skill_levels[chosen_name] += 1
         skills.append(SkillEvent(
             ability_name=chosen_name, ability_key=chosen_key,
@@ -277,26 +290,26 @@ def _generate_skill_build(abilities: list[tuple[str, str]], duration: int) -> li
 
 def _generate_wards(player_slot: int, team: str, role: str, duration: int) -> list[WardEvent]:
     wards: list[WardEvent] = []
-    num_wards = random.randint(0, 3) if role not in ("support", "roamer") else random.randint(8, 20)
+    num_wards = _rng.randint(0, 3) if role not in ("support", "roamer") else _rng.randint(8, 20)
 
     for i in range(num_wards):
         # First 1-2 wards for supports are placed during pre-game (-50s to -10s)
         if i < 2 and role in ("support", "roamer"):
-            t = -random.randint(10, 50)
+            t = -_rng.randint(10, 50)
         else:
-            t = random.randint(60, duration - 30)
+            t = _rng.randint(60, duration - 30)
         x, y = _rand_map_pos()
         # Bias ward placement toward team's side of the map
         if team == "radiant":
-            y = max(MAP_MIN, min(MAP_MAX, y * 0.6 + random.uniform(-1500, 2500)))
+            y = max(MAP_MIN, min(MAP_MAX, y * 0.6 + _rng.uniform(-3000, 5000)))
         else:
-            y = max(MAP_MIN, min(MAP_MAX, y * 0.6 + random.uniform(-2500, 1500)))
+            y = max(MAP_MIN, min(MAP_MAX, y * 0.6 + _rng.uniform(-5000, 3000)))
         x = max(MAP_MIN, min(MAP_MAX, x))
 
-        ward_type = random.choice(["observer", "observer", "sentry"])
+        ward_type = _rng.choice(["observer", "observer", "sentry"])
         destroyed = None
-        if random.random() < 0.3:
-            destroyed = t + random.randint(30, 360)
+        if _rng.random() < 0.3:
+            destroyed = t + _rng.randint(30, 360)
             if destroyed > duration:
                 destroyed = None
 
@@ -311,14 +324,8 @@ def _generate_wards(player_slot: int, team: str, role: str, duration: int) -> li
 
 
 def _cell_to_game(cx: float, cy: float) -> tuple[float, float]:
-    """Convert OpenDota cell coordinates (0-255) to game coordinates (-8000..8000).
-
-    OpenDota cell axes are swapped relative to game axes:
-    - cell x (row) corresponds to game Y
-    - cell y (column) corresponds to game X
-    Both cell axes increase towards negative game coords (Radiant corner).
-    """
-    return round(cx * 62.5 - 8000, 1), round(cy * 62.5 - 8000, 1)
+    """Convert OpenDota ward-log cell coordinates to world units."""
+    return round(geo.opendota_cell_to_world(cx), 1), round(geo.opendota_cell_to_world(cy), 1)
 
 
 # Real ward data from match 8713267082 (OpenDota API).
@@ -442,11 +449,12 @@ def _real_wards_for_player(player_slot: int) -> list[WardEvent]:
     return sorted(wards, key=lambda w: w.time)
 
 
+# Smoke gank targets in world units (enemy jungle / river / lanes)
 SMOKE_TARGETS_RADIANT = [
-    (2000, 2000), (0, 0), (-200, 1500), (3500, 2500), (2500, 800),
+    (4100, 4100), (0, 0), (-400, 3000), (7000, 5100), (5100, 1600),
 ]
 SMOKE_TARGETS_DIRE = [
-    (-2000, -2000), (0, 0), (-200, 1500), (-3500, -2500), (-2500, -800),
+    (-4100, -4100), (0, 0), (-400, 3000), (-7000, -5100), (-5100, -1600),
 ]
 
 
@@ -455,20 +463,20 @@ def _generate_smoke_path(
 ) -> tuple[float, float, list[list[float]]]:
     """Generate smoke start + movement path toward a target."""
     if team == "radiant":
-        sx = random.uniform(-3800, -1500)
-        sy = random.uniform(-3800, -1500)
-        target = random.choice(SMOKE_TARGETS_RADIANT)
+        sx = _rng.uniform(-6000, -3000)
+        sy = _rng.uniform(-6000, -3000)
+        target = _rng.choice(SMOKE_TARGETS_RADIANT)
     else:
-        sx = random.uniform(1500, 3800)
-        sy = random.uniform(1500, 3800)
-        target = random.choice(SMOKE_TARGETS_DIRE)
+        sx = _rng.uniform(3000, 6000)
+        sy = _rng.uniform(3000, 6000)
+        target = _rng.choice(SMOKE_TARGETS_DIRE)
 
     tx, ty = target
     path: list[list[float]] = []
     for i in range(num_waypoints):
         t_ratio = (i + 1) / (num_waypoints + 1)
-        wx = sx + (tx - sx) * t_ratio + random.uniform(-500, 500)
-        wy = sy + (ty - sy) * t_ratio + random.uniform(-500, 500)
+        wx = sx + (tx - sx) * t_ratio + _rng.uniform(-800, 800)
+        wy = sy + (ty - sy) * t_ratio + _rng.uniform(-800, 800)
         wx = max(MAP_MIN, min(MAP_MAX, wx))
         wy = max(MAP_MIN, min(MAP_MAX, wy))
         path.append([round(wx, 1), round(wy, 1)])
@@ -478,38 +486,39 @@ def _generate_smoke_path(
 
 def _generate_smokes(team: str, duration: int) -> list[SmokeEvent]:
     smokes: list[SmokeEvent] = []
-    num_smokes = random.randint(4, 10)
+    num_smokes = _rng.randint(4, 10)
     slots = list(range(0, 5)) if team == "radiant" else list(range(128, 133))
 
     for _ in range(num_smokes):
-        t = random.randint(300, duration - 60)
-        participants = random.sample(slots, random.randint(2, 5))
-        num_waypoints = random.randint(3, 8)
+        t = _rng.randint(300, duration - 60)
+        participants = _rng.sample(slots, _rng.randint(2, 5))
+        num_waypoints = _rng.randint(3, 8)
         sx, sy, path = _generate_smoke_path(team, num_waypoints)
-        smoke_duration = random.randint(10, 35)
+        smoke_duration = _rng.randint(10, 35)
 
         # Random result for the smoke gank
-        result_roll = random.random()
+        result_roll = _rng.random()
         if result_roll < 0.35:
             result = "kill"
-            kills_gained = random.randint(1, 3)
-            deaths_suffered = random.randint(0, 1)
+            kills_gained = _rng.randint(1, 3)
+            deaths_suffered = _rng.randint(0, 1)
         elif result_roll < 0.55:
             result = "traded"
-            kills_gained = random.randint(1, 2)
-            deaths_suffered = random.randint(1, 2)
+            kills_gained = _rng.randint(1, 2)
+            deaths_suffered = _rng.randint(1, 2)
         elif result_roll < 0.75:
             result = "objective"
-            kills_gained = random.randint(0, 1)
+            kills_gained = _rng.randint(0, 1)
             deaths_suffered = 0
         else:
-            result = "no_contact"
             kills_gained = 0
-            deaths_suffered = random.randint(0, 1)
+            deaths_suffered = _rng.randint(0, 1)
+            # Same code the replay parser uses: only own deaths = the smoke was caught.
+            result = "caught" if deaths_suffered else "no_contact"
 
         objective = None
         if result == "objective":
-            objective = random.choice(["tower", "roshan"])
+            objective = _rng.choice(["tower", "roshan"])
 
         smokes.append(SmokeEvent(
             time=t, team=team, player_slots=participants,
@@ -548,9 +557,9 @@ def _generate_teamfights(
 ) -> list[TeamfightEvent]:
     teamfights: list[TeamfightEvent] = []
 
-    for _ in range(random.randint(5, 12)):
-        start = random.randint(600, duration - 120)
-        fight_duration = random.randint(10, 45)
+    for _ in range(_rng.randint(5, 12)):
+        start = _rng.randint(600, duration - 120)
+        fight_duration = _rng.randint(10, 45)
         end = start + fight_duration
         cx, cy = _rand_map_pos()
 
@@ -559,10 +568,10 @@ def _generate_teamfights(
 
         for i, (hero_id, hero_name, slug, abilities) in enumerate(heroes):
             slot = i if i < 5 else 128 + (i - 5)
-            px = max(MAP_MIN, min(MAP_MAX, cx + random.uniform(-1500, 1500)))
-            py = max(MAP_MIN, min(MAP_MAX, cy + random.uniform(-1500, 1500)))
-            died = random.random() < 0.3
-            kills = random.randint(0, 2) if not died else random.randint(0, 1)
+            px = max(MAP_MIN, min(MAP_MAX, cx + _rng.uniform(-1200, 1200)))
+            py = max(MAP_MIN, min(MAP_MAX, cy + _rng.uniform(-1200, 1200)))
+            died = _rng.random() < 0.3
+            kills = _rng.randint(0, 2) if not died else _rng.randint(0, 1)
 
             if died:
                 if i < 5:
@@ -571,7 +580,7 @@ def _generate_teamfights(
                     d_deaths += 1
 
             # Generate position snapshots (4-8 per player)
-            num_snapshots = random.randint(4, 8)
+            num_snapshots = _rng.randint(4, 8)
             positions: list[PositionSnapshot] = []
             cur_x, cur_y = px, py
             for s_idx in range(num_snapshots):
@@ -582,30 +591,30 @@ def _generate_teamfights(
                     x=round(cur_x, 1), y=round(cur_y, 1),
                     time_offset=t_off,
                 ))
-                cur_x += random.uniform(-300, 300)
-                cur_y += random.uniform(-300, 300)
+                cur_x += _rng.uniform(-400, 400)
+                cur_y += _rng.uniform(-400, 400)
                 cur_x = max(MAP_MIN, min(MAP_MAX, max(cx - 2000, min(cx + 2000, cur_x))))
                 cur_y = max(MAP_MIN, min(MAP_MAX, max(cy - 2000, min(cy + 2000, cur_y))))
 
             # Dead heroes: trim positions to before death
             if died:
-                death_off = random.uniform(fight_duration * 0.3, fight_duration * 0.9)
+                death_off = _rng.uniform(fight_duration * 0.3, fight_duration * 0.9)
                 positions = [p for p in positions if p.time_offset <= death_off]
                 if not positions:
                     positions = [PositionSnapshot(x=round(px, 1), y=round(py, 1), time_offset=0)]
 
             # Generate ability casts (1-4 per player)
-            num_casts = random.randint(1, 4)
+            num_casts = _rng.randint(1, 4)
             ability_casts: list[AbilityCast] = []
             for _ in range(num_casts):
-                ab_name, ab_key = random.choice(abilities)
-                cast_off = round(random.uniform(0, fight_duration * 0.9), 1)
+                ab_name, ab_key = _rng.choice(abilities)
+                cast_off = round(_rng.uniform(0, fight_duration * 0.9), 1)
                 hx, hy = _interpolate_position(positions, cast_off)
                 ability_casts.append(AbilityCast(
                     ability_name=ab_name, ability_key=ab_key,
                     time_offset=cast_off,
-                    x=round(hx + random.uniform(-200, 200), 1),
-                    y=round(hy + random.uniform(-200, 200), 1),
+                    x=round(max(MAP_MIN, min(MAP_MAX, hx + _rng.uniform(-300, 300))), 1),
+                    y=round(max(MAP_MIN, min(MAP_MAX, hy + _rng.uniform(-300, 300))), 1),
                 ))
             ability_casts.sort(key=lambda a: a.time_offset)
 
@@ -617,9 +626,9 @@ def _generate_teamfights(
             players.append(TeamfightPlayer(
                 player_slot=slot, hero_name=hero_name, hero_slug=slug,
                 x=round(px, 1), y=round(py, 1),
-                damage_dealt=random.randint(200, 3000),
-                damage_taken=random.randint(100, 2500),
-                healing=random.randint(0, 500),
+                damage_dealt=_rng.randint(200, 3000),
+                damage_taken=_rng.randint(100, 2500),
+                healing=_rng.randint(0, 500),
                 kills=kills, deaths=1 if died else 0,
                 abilities_used=used_names,
                 positions=positions,
@@ -635,7 +644,7 @@ def _generate_teamfights(
             killers = [p for p in players if p.kills > 0 and
                        ("radiant" if p.player_slot < 128 else "dire") != dead_team]
             if killers:
-                killer = random.choice(killers)
+                killer = _rng.choice(killers)
                 killer.kill_targets.append({
                     "target": dead_p.hero_name,
                     "target_slug": dead_p.hero_slug,
@@ -656,9 +665,9 @@ def _generate_ability_events(
     abilities: list[tuple[str, str]], duration: int,
 ) -> list[AbilityEvent]:
     events: list[AbilityEvent] = []
-    for _ in range(random.randint(30, 80)):
-        t = random.randint(60, duration)
-        name, key = random.choice(abilities)
+    for _ in range(_rng.randint(30, 80)):
+        t = _rng.randint(60, duration)
+        name, key = _rng.choice(abilities)
         x, y = _rand_map_pos()
         events.append(AbilityEvent(
             player_slot=player_slot, hero_name=hero_name,
@@ -674,28 +683,28 @@ def _generate_gold_xp_timeline(duration: int, radiant_win: bool) -> list[GoldXpS
     r_gold, d_gold = 0, 0
     r_xp, d_xp = 0, 0
     # Base gold/xp growth rates (per minute)
-    r_gold_rate = random.randint(1800, 2400)
-    d_gold_rate = random.randint(1800, 2400)
-    r_xp_rate = random.randint(2200, 2800)
-    d_xp_rate = random.randint(2200, 2800)
+    r_gold_rate = _rng.randint(1800, 2400)
+    d_gold_rate = _rng.randint(1800, 2400)
+    r_xp_rate = _rng.randint(2200, 2800)
+    d_xp_rate = _rng.randint(2200, 2800)
     # Winner gradually gains advantage
     advantage_factor = 1.0
     for minute in range(0, duration // 60 + 1):
         t = minute * 60
         # Laning phase (0-10 min): fairly even
         if minute <= 10:
-            jitter_gold = random.randint(-300, 300)
-            jitter_xp = random.randint(-200, 200)
+            jitter_gold = _rng.randint(-300, 300)
+            jitter_xp = _rng.randint(-200, 200)
         # Mid game (10-25 min): leads develop
         elif minute <= 25:
             advantage_factor += 0.02 if radiant_win else -0.02
-            jitter_gold = random.randint(-500, 500)
-            jitter_xp = random.randint(-400, 400)
+            jitter_gold = _rng.randint(-500, 500)
+            jitter_xp = _rng.randint(-400, 400)
         # Late game (25+ min): swings possible
         else:
             advantage_factor += 0.015 if radiant_win else -0.015
-            jitter_gold = random.randint(-800, 800)
-            jitter_xp = random.randint(-500, 500)
+            jitter_gold = _rng.randint(-800, 800)
+            jitter_xp = _rng.randint(-500, 500)
 
         r_gold += int(r_gold_rate * max(0.7, min(1.3, advantage_factor)) + jitter_gold)
         d_gold += int(d_gold_rate * max(0.7, min(1.3, 2 - advantage_factor)) + jitter_gold * -0.5)
@@ -712,11 +721,21 @@ def _generate_gold_xp_timeline(duration: int, radiant_win: bool) -> list[GoldXpS
     return snapshots
 
 
-def _generate_laning_snapshots(hero_idx: int, is_core: bool = True) -> list[LaningSnapshot]:
+# Where each lane's creep equilibrium sits during the laning phase (world units)
+_LANE_AREAS: dict[int, tuple[float, float]] = {
+    1: (5400.0, -5600.0),   # bottom
+    2: (-500.0, -400.0),    # mid
+    3: (-5700.0, 4900.0),   # top
+}
+
+
+def _generate_laning_snapshots(
+    hero_idx: int, is_core: bool = True, lane: int = 2,
+) -> list[LaningSnapshot]:
     """Generate 120 snapshots (every 5 seconds, 0-595) for laning phase."""
     snapshots = []
-    base_hp = 550 + random.randint(0, 100)
-    base_mana = 250 + random.randint(0, 100)
+    base_hp = 550 + _rng.randint(0, 100)
+    base_mana = 250 + _rng.randint(0, 100)
     cs = 0
     denies = 0
     gold = 625
@@ -724,10 +743,10 @@ def _generate_laning_snapshots(hero_idx: int, is_core: bool = True) -> list[Lani
 
     for t in range(0, 600, 5):
         # Simulate CS growth (cores get more)
-        if t > 30 and random.random() < (0.12 if is_core else 0.03):
+        if t > 30 and _rng.random() < (0.12 if is_core else 0.03):
             cs += 1
-            gold += random.randint(35, 55)
-        if t > 30 and random.random() < 0.02:
+            gold += _rng.randint(35, 55)
+        if t > 30 and _rng.random() < 0.02:
             denies += 1
 
         # Level up roughly
@@ -744,12 +763,13 @@ def _generate_laning_snapshots(hero_idx: int, is_core: bool = True) -> list[Lani
 
         max_hp = base_hp + level * 40
         max_mana = base_mana + level * 20
-        hp = int(max_hp * random.uniform(0.4, 1.0))
-        mana = int(max_mana * random.uniform(0.2, 1.0))
+        hp = int(max_hp * _rng.uniform(0.4, 1.0))
+        mana = int(max_mana * _rng.uniform(0.2, 1.0))
 
-        # Position (lane area roughly)
-        x = random.uniform(-1500, 1500)
-        y = random.uniform(-1500, 1500)
+        # Position: around the assigned lane's creep equilibrium
+        lx, ly = _LANE_AREAS.get(lane, _LANE_AREAS[2])
+        x = lx + _rng.uniform(-900, 900)
+        y = ly + _rng.uniform(-900, 900)
 
         snapshots.append(LaningSnapshot(
             time=t, x=round(x, 1), y=round(y, 1),
@@ -764,16 +784,16 @@ def _generate_laning_snapshots(hero_idx: int, is_core: bool = True) -> list[Lani
 def _generate_laning_creep_kills(is_core: bool = True) -> list[LaningCreepKill]:
     """Generate realistic last-hit events during laning phase."""
     kills = []
-    num = random.randint(30, 55) if is_core else random.randint(5, 15)
+    num = _rng.randint(30, 55) if is_core else _rng.randint(5, 15)
     for _ in range(num):
-        t = random.randint(30, 599)
-        creep_type = random.choice(["melee", "melee", "melee", "ranged", "siege"])
+        t = _rng.randint(30, 599)
+        creep_type = _rng.choice(["melee", "melee", "melee", "ranged", "siege"])
         if creep_type == "melee":
-            gold = random.randint(36, 44)
+            gold = _rng.randint(36, 44)
         elif creep_type == "ranged":
-            gold = random.randint(44, 52)
+            gold = _rng.randint(44, 52)
         else:
-            gold = random.randint(60, 80)
+            gold = _rng.randint(60, 80)
         kills.append(LaningCreepKill(time=t, creep_type=creep_type, gold=gold))
     return sorted(kills, key=lambda k: k.time)
 
@@ -781,10 +801,10 @@ def _generate_laning_creep_kills(is_core: bool = True) -> list[LaningCreepKill]:
 def _generate_laning_denies() -> list[LaningCreepKill]:
     """Generate a few deny events during laning phase."""
     denies = []
-    num = random.randint(1, 8)
+    num = _rng.randint(1, 8)
     for _ in range(num):
-        t = random.randint(60, 599)
-        creep_type = random.choice(["melee", "melee", "ranged"])
+        t = _rng.randint(60, 599)
+        creep_type = _rng.choice(["melee", "melee", "ranged"])
         denies.append(LaningCreepKill(time=t, creep_type=creep_type, gold=0))
     return sorted(denies, key=lambda d: d.time)
 
@@ -798,7 +818,7 @@ def _generate_laning_damage_events(
     the clarity Java analyzer output — NOT player_slot (dire slots are 128+).
     """
     events = []
-    num = random.randint(10, 30)
+    num = _rng.randint(10, 30)
     # Target indices (into match.players) from opposing team
     if hero_idx < 5:
         possible_targets = list(range(5, num_players))
@@ -807,10 +827,10 @@ def _generate_laning_damage_events(
     if not possible_targets:
         return events
     for _ in range(num):
-        t = random.randint(30, 599)
-        target_idx = random.choice(possible_targets)
-        damage = random.randint(20, 150)
-        inflictor = random.choice(["attack", "attack", "attack", "ability"])
+        t = _rng.randint(30, 599)
+        target_idx = _rng.choice(possible_targets)
+        damage = _rng.randint(20, 150)
+        inflictor = _rng.choice(["attack", "attack", "attack", "ability"])
         events.append(LaningDamageEvent(
             time=t, target_idx=target_idx,
             damage=damage, inflictor=inflictor,
@@ -829,16 +849,113 @@ def _generate_laning_regen_events() -> list[LaningRegenEvent]:
         ("faerie_fire", 0, 1),
     ]
     for item, min_uses, max_uses in regen_items:
-        num = random.randint(min_uses, max_uses)
+        num = _rng.randint(min_uses, max_uses)
         for _ in range(num):
-            t = random.randint(30, 599)
+            t = _rng.randint(30, 599)
             events.append(LaningRegenEvent(time=t, item=item))
     return sorted(events, key=lambda e: e.time)
 
 
+# Approximate barracks positions (world units); the replay parser provides real
+# ones. (melee, ranged) per lane, a few hundred units behind each tier-3 tower.
+_BARRACKS_POSITIONS: dict[str, dict[str, tuple[float, float]]] = {
+    "radiant": {
+        "top_melee": (-6800.0, -3900.0), "top_range": (-6300.0, -3900.0),
+        "mid_melee": (-4700.0, -4600.0), "mid_range": (-5100.0, -4200.0),
+        "bot_melee": (-4400.0, -6400.0), "bot_range": (-4400.0, -5900.0),
+    },
+    "dire": {
+        "top_melee": (4000.0, 6100.0), "top_range": (4000.0, 5600.0),
+        "mid_melee": (4500.0, 4300.0), "mid_range": (4900.0, 3900.0),
+        "bot_melee": (6600.0, 3500.0), "bot_range": (6100.0, 3500.0),
+    },
+}
+
+# Buildings destroyed in the mock game (Dire wins at 31:53):
+# (team, key, destroyed_time, killer player_slot)
+_MOCK_BUILDING_KILLS: list[tuple[str, str, int, int]] = [
+    ("radiant", "mid_t1", 655, 131),
+    ("dire", "bot_t1", 712, 1),
+    ("radiant", "top_t1", 798, 132),
+    ("radiant", "bot_t1", 905, 129),
+    ("radiant", "mid_t2", 1210, 131),
+    ("radiant", "top_t2", 1388, 129),
+    ("dire", "top_t1", 1402, 3),
+    ("radiant", "bot_t2", 1525, 131),
+    ("radiant", "mid_t3", 1702, 131),
+    ("radiant", "mid_melee", 1731, 129),
+    ("radiant", "mid_range", 1736, 130),
+    ("radiant", "ancient_top", 1858, 131),
+    ("radiant", "ancient_bot", 1879, 129),
+    ("radiant", "fort", 1913, 131),
+]
+
+
+def _building_name(team: str, key: str) -> str:
+    side = "goodguys" if team == "radiant" else "badguys"
+    if key == "fort":
+        return f"npc_dota_{side}_fort"
+    lane, rest = key.split("_", 1)
+    if rest in ("melee", "range"):
+        return f"npc_dota_{side}_{rest}_rax_{lane}"
+    if lane == "ancient":
+        return f"npc_dota_{side}_tower4_{rest}"
+    return f"npc_dota_{side}_tower{rest[1:]}_{lane}"
+
+
+def _generate_buildings() -> tuple[list[dict], list[dict]]:
+    """Return (buildings, building_kill objectives) for the mock match."""
+    destroyed = {(team, key): (t, slot) for team, key, t, slot in _MOCK_BUILDING_KILLS}
+    buildings: list[dict] = []
+    for team in ("radiant", "dire"):
+        entries = (
+            [("tower", key, pos) for key, pos in geo.TOWER_POSITIONS[team].items()]
+            + [("barracks", key, pos) for key, pos in _BARRACKS_POSITIONS[team].items()]
+            + [("fort", "fort", geo.ANCIENT_POSITIONS[team])]
+        )
+        for btype, key, (x, y) in entries:
+            kill = destroyed.get((team, key))
+            buildings.append({
+                "name": _building_name(team, key),
+                "team": team,
+                "type": btype,
+                "x": x,
+                "y": y,
+                "destroyed_time": kill[0] if kill else None,
+            })
+    objectives = []
+    for team, key, t, slot in _MOCK_BUILDING_KILLS:
+        objectives.append({
+            "time": t,
+            "type": "building_kill",
+            "key": _building_name(team, key),
+            "player_slot": slot,
+            "team": "dire" if team == "radiant" else "radiant",
+        })
+    return buildings, objectives
+
+
+# (lane, lane_role) per role and team; lane is absolute (1=bottom, 2=mid, 3=top)
+_MOCK_LANES: dict[str, dict[str, tuple[int, int]]] = {
+    "radiant": {"carry": (1, 1), "mid": (2, 2), "offlane": (3, 3)},
+    "dire": {"carry": (3, 1), "mid": (2, 2), "offlane": (1, 3)},
+}
+# Supports by slot: which lane they laned in (soft support with the offlaner,
+# hard support with the carry).
+_MOCK_SUPPORT_LANES: dict[int, tuple[int, int]] = {
+    0: (3, 3), 2: (1, 1), 128: (3, 1), 130: (1, 3),
+}
+
+
 def generate_mock_match() -> MatchData:
-    """Generate mock match based on real match 8713267082."""
-    random.seed(42)
+    """Generate a deterministic mock match based on real match 8713267082."""
+    with _MOCK_LOCK:
+        _rng.seed(_MOCK_SEED)
+        return _build_mock_match()
+
+
+def _build_mock_match() -> MatchData:
+    from .parser import building_status_bitmasks  # lazy: parser imports this module lazily too
 
     match_id = 8713267082
     duration = 1913  # 31:53
@@ -928,13 +1045,17 @@ def generate_mock_match() -> MatchData:
 
         team = "radiant" if slot < 128 else "dire"
         is_core = role in ("carry", "mid", "offlane")
+        if role == "support":
+            lane, lane_role = _MOCK_SUPPORT_LANES.get(slot, (0, 4))
+        else:
+            lane, lane_role = _MOCK_LANES[team][role]
         items, _, _ = _generate_item_build(role, duration)
         skills = _generate_skill_build(abilities, duration)
         wards = _real_wards_for_player(slot)
         ability_events = _generate_ability_events(slot, hero_name, abilities, duration)
 
         # Generate laning phase data
-        laning_snapshots = _generate_laning_snapshots(hero_idx, is_core=is_core)
+        laning_snapshots = _generate_laning_snapshots(hero_idx, is_core=is_core, lane=lane)
         laning_creep_kills = _generate_laning_creep_kills(is_core=is_core)
         laning_denies = _generate_laning_denies()
         laning_damage_events = _generate_laning_damage_events(hero_idx, num_players)
@@ -967,6 +1088,11 @@ def generate_mock_match() -> MatchData:
             skills=skills,
             wards=wards,
             ability_events=ability_events,
+            lane=lane,
+            lane_role=lane_role,
+            is_roaming=False,
+            obs_placed=sum(1 for w in wards if w.ward_type == "observer"),
+            sen_placed=sum(1 for w in wards if w.ward_type == "sentry"),
             laning_snapshots=laning_snapshots,
             laning_creep_kills=laning_creep_kills,
             laning_denies=laning_denies,
@@ -984,11 +1110,21 @@ def generate_mock_match() -> MatchData:
 
     gold_xp_timeline = _generate_gold_xp_timeline(duration, radiant_win)
 
+    buildings, building_objectives = _generate_buildings()
+    objectives = sorted(
+        building_objectives + [
+            {"time": 128, "type": "CHAT_MESSAGE_FIRSTBLOOD", "player_slot": 131, "key": "warlock"},
+            {"time": 1440, "type": "CHAT_MESSAGE_ROSHAN_KILL", "team": "dire"},
+            {"time": 1442, "type": "CHAT_MESSAGE_AEGIS", "player_slot": 131},
+        ],
+        key=lambda o: o["time"],
+    )
+
     return MatchData(
         match_id=match_id,
         duration=duration,
         radiant_win=radiant_win,
-        game_mode="All Pick",
+        game_mode="ranked_all_pick",
         start_time=1741024620,  # 2025-03-03 17:57 UTC (2025-03-04 01:57 UTC+8)
         radiant_score=19,
         dire_score=51,
@@ -998,4 +1134,8 @@ def generate_mock_match() -> MatchData:
         teamfights=teamfights,
         ability_events=all_ability_events,
         gold_xp_timeline=gold_xp_timeline,
+        objectives=objectives,
+        buildings=buildings,
+        first_blood_time=128,
+        **building_status_bitmasks(buildings, objectives),
     )
