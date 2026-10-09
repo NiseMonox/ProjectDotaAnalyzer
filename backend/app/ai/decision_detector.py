@@ -4,60 +4,61 @@ Analyzes a MatchData object and a target player_slot to identify all critical
 decision points in the match. The primary focus is death analysis (inferring
 death timestamps from multiple data sources), but also detects bad trades,
 overextensions, missed CS, good plays, and teamfight engagement quality.
+
+Positions are world units (``backend/app/geo.py``); tower positions come
+from the replay's buildings when present (see :mod:`vision`).
 """
 from __future__ import annotations
 
-import math
+import bisect
+import logging
 from collections import defaultdict
 
+from .. import geo
 from ..models import (
     AbilityEvent,
     LaningDamageEvent,
-    LaningSnapshot,
     MatchData,
     PlayerData,
-    TeamfightEvent,
     TeamfightPlayer,
 )
 from .models import DeathEvent, DecisionPoint
+from .phases import LANING_END, game_phase
+from .positions import lane_role_of, player_position, role_for_position
+from .vision import (
+    _distance,
+    estimate_position,
+    has_position,
+    in_own_base,
+    nearest_tower_distance,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-LANING_PHASE_END = 600  # 10 minutes in seconds
-DEATH_DEDUP_WINDOW = 5  # seconds: two inferred deaths within this = same death
-RESPAWN_HP_RATIO = 0.85  # snapshot HP jumps above this after 0 => probable respawn
-LOW_HP_RATIO = 0.08  # HP ratio threshold to suspect death
-OVEREXTEND_TOWER_DIST = 35.0  # map-percentage units from nearest allied tower
-BAD_TRADE_HP_RATIO = 2.0  # enemy lost < 1/ratio of what player lost => bad trade
-BAD_TRADE_MIN_DAMAGE = 80  # minimum damage received to consider a trade
-LANING_CS_CHECK_INTERVAL = 60  # seconds between CS benchmark checks
-EXPECTED_CS_PER_MIN = {1: 5.0, 2: 7.0, 3: 4.0, 4: 1.0, 0: 2.0}  # by lane_role, 0=unknown
+LANING_PHASE_END = LANING_END  # kept for backward compatibility
+DEATH_DEDUP_WINDOW = 5    # seconds: two inferred deaths within this = same death
+RESPAWN_HP_RATIO = 0.85   # snapshot HP jumps above this after 0 => probable respawn
+LOW_HP_RATIO = 0.08       # HP ratio threshold to suspect death
 
-# Approximate tower positions in map-percentage coords (0-100 range).
-# These are rough positions; good enough for overextension detection.
-RADIANT_TOWERS = [
-    # Safe lane (bot)
-    (72, 20), (78, 12), (83, 8),
-    # Mid
-    (48, 42), (40, 50),
-    # Off lane (top)
-    (18, 72), (12, 78), (8, 83),
-    # Base
-    (22, 22), (15, 15),
-]
-DIRE_TOWERS = [
-    # Safe lane (top)
-    (28, 80), (22, 88), (17, 92),
-    # Mid
-    (52, 58), (60, 50),
-    # Off lane (bot)
-    (82, 28), (88, 22), (92, 17),
-    # Base
-    (78, 78), (85, 85),
-]
+# Overextension (world units): far from every standing allied tower and
+# closer to the enemy's structures than to ours, or right under an enemy tower.
+OVEREXTEND_TOWER_DIST = 3000.0
+TOWER_DIVE_RADIUS = 900.0
+
+BAD_TRADE_HP_RATIO = 2.0   # received >= ratio x dealt => bad trade
+BAD_TRADE_MIN_DAMAGE = 80  # minimum damage received to consider a trade
+BAD_TRADE_WINDOW = 15      # seconds per trade window
+MAX_BAD_TRADES = 4         # keep only the worst trade episodes
+
+# Missed CS: compared against the pro CS curve of the player's derived role
+# (supports are never judged on last hits). Minutes 1-2 are too noisy.
+MISSED_CS_FIRST_MINUTE = 3
+MISSED_CS_RATIO = 0.6
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +66,6 @@ DIRE_TOWERS = [
 # ---------------------------------------------------------------------------
 
 def _find_player(match: MatchData, player_slot: int) -> PlayerData | None:
-    """Return the PlayerData for the given slot, or None."""
     for p in match.players:
         if p.player_slot == player_slot:
             return p
@@ -73,86 +73,71 @@ def _find_player(match: MatchData, player_slot: int) -> PlayerData | None:
 
 
 def _player_team(player_slot: int) -> str:
-    """Determine team from slot number (0-4 = radiant, 128-132 = dire)."""
+    """Team from slot number (0-4 = radiant, 128-132 = dire)."""
     return "radiant" if player_slot < 128 else "dire"
 
 
+def _enemy_team(team: str) -> str:
+    return "dire" if team == "radiant" else "radiant"
+
+
 def map_dist(x1: float, y1: float, x2: float, y2: float) -> float:
-    """Euclidean distance in map-percentage space."""
-    return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-
-
-def _nearest_allied_tower_dist(x: float, y: float, team: str) -> float:
-    """Distance from (x,y) to the nearest allied tower."""
-    towers = RADIANT_TOWERS if team == "radiant" else DIRE_TOWERS
-    if not towers:
-        return 999.0
-    return min(map_dist(x, y, tx, ty) for tx, ty in towers)
-
-
-def game_to_map(game_x: float, game_y: float) -> tuple[float, float]:
-    """Convert game coordinates (-4000..3875) to map percentage (0..100).
-
-    Uses the OpenDota formula: (coord + 4000) / 7937.5 * 100.
-    If the input already appears to be in 0-100 range, pass through.
-    """
-    if 0 <= game_x <= 100 and 0 <= game_y <= 100:
-        return game_x, game_y
-    mx = (game_x + 4000) / 7937.5 * 100
-    my = (game_y + 4000) / 7937.5 * 100
-    return mx, my
-
-
-# Backward-compat aliases (these helpers were previously module-private).
-_dist = map_dist
-_game_to_map = game_to_map
+    """Euclidean distance between two world-space points."""
+    return _distance(x1, y1, x2, y2)
 
 
 def _game_phase(time: int) -> str:
-    """Return game phase string for a given time."""
-    if time < 30:          # before 0:30 — rune contest / first creep wave
-        return "pregame"
-    elif time <= LANING_PHASE_END:
-        return "laning"
-    elif time <= 1500:  # 25 minutes
-        return "mid_game"
-    return "late_game"
+    """Game phase for a time (shared definition in :mod:`phases`)."""
+    return game_phase(time)
+
+
+def is_overextended(match: MatchData, team: str, x: float, y: float, time_s: int) -> bool:
+    """Whether a position at ``time_s`` is an overextension for ``team``.
+
+    True when the hero stands right under an enemy tower (tower dive), or is
+    more than ``OVEREXTEND_TOWER_DIST`` from every standing allied tower and
+    closer to enemy structures than to allied ones. The own base never counts.
+    """
+    if not has_position((x, y)) or in_own_base(team, x, y):
+        return False
+    enemy = _enemy_team(team)
+    d_ally = nearest_tower_distance(match, team, x, y, time_s)
+    d_enemy = nearest_tower_distance(match, enemy, x, y, time_s)
+    ex, ey = geo.ANCIENT_POSITIONS[enemy]
+    d_enemy = min(d_enemy, _distance(x, y, ex, ey))
+    if d_enemy <= TOWER_DIVE_RADIUS:
+        return True
+    return d_ally > OVEREXTEND_TOWER_DIST and d_enemy < d_ally
 
 
 def _dedup_deaths(deaths: list[DeathEvent]) -> list[DeathEvent]:
-    """Remove duplicate deaths that are within DEATH_DEDUP_WINDOW of each other.
+    """Merge inferred deaths within DEATH_DEDUP_WINDOW of each other.
 
-    Keeps the death with the most information (e.g. has position or killer).
+    Keeps the most informative record (killer, position, teamfight flag).
     """
     if not deaths:
         return []
-    deaths_sorted = sorted(deaths, key=lambda d: d.time)
     result: list[DeathEvent] = []
-    for death in deaths_sorted:
+    for death in sorted(deaths, key=lambda d: d.time):
         if result and abs(death.time - result[-1].time) <= DEATH_DEDUP_WINDOW:
-            # Merge: keep the one with more info
             existing = result[-1]
-            # Prefer the one with a known killer
-            if not existing.killer_hero and death.killer_hero:
-                result[-1] = death
-            # Prefer the one with a position
-            elif (existing.x == 0 and existing.y == 0
-                  and (death.x != 0 or death.y != 0)):
-                result[-1] = death
-            # Prefer teamfight-flagged
-            elif not existing.is_teamfight and death.is_teamfight:
-                # Merge teamfight info into existing
-                result[-1] = DeathEvent(
-                    time=existing.time,
-                    player_slot=existing.player_slot,
-                    hero_name=existing.hero_name,
-                    killer_hero=existing.killer_hero or death.killer_hero,
-                    x=existing.x if existing.x != 0 else death.x,
-                    y=existing.y if existing.y != 0 else death.y,
-                    is_teamfight=True,
-                    teamfight_idx=death.teamfight_idx,
-                )
-            # Otherwise keep existing (earlier detection is usually more accurate)
+            merged = DeathEvent(
+                time=existing.time,
+                player_slot=existing.player_slot,
+                hero_name=existing.hero_name,
+                killer_hero=existing.killer_hero or death.killer_hero,
+                x=existing.x,
+                y=existing.y,
+                is_teamfight=existing.is_teamfight or death.is_teamfight,
+                teamfight_idx=existing.teamfight_idx if existing.is_teamfight else death.teamfight_idx,
+                source=existing.source if existing.source != "gold" else death.source,
+            )
+            if not has_position((merged.x, merged.y)) and has_position((death.x, death.y)):
+                merged.x, merged.y = death.x, death.y
+            # Teamfight records carry the most precise time.
+            if death.is_teamfight and not existing.is_teamfight:
+                merged.time = death.time
+            result[-1] = merged
         else:
             result.append(death)
     return result
@@ -162,10 +147,17 @@ def _dedup_deaths(deaths: list[DeathEvent]) -> list[DeathEvent]:
 # Death Detection: multiple strategies combined
 # ---------------------------------------------------------------------------
 
-def _detect_teamfight_deaths(
-    match: MatchData, player: PlayerData
-) -> list[DeathEvent]:
-    """Strategy 1: Extract deaths from teamfight data (most reliable)."""
+def _tf_position_at(tfp: TeamfightPlayer, offset: float | None) -> tuple[float, float]:
+    """Position of a teamfight participant closest to ``offset`` seconds."""
+    if offset is not None and tfp.positions:
+        best = min(tfp.positions, key=lambda p: abs(p.time_offset - offset))
+        if has_position((best.x, best.y)):
+            return (best.x, best.y)
+    return (tfp.x, tfp.y)
+
+
+def _detect_teamfight_deaths(match: MatchData, player: PlayerData) -> list[DeathEvent]:
+    """Strategy 1: deaths recorded in teamfight data (most reliable)."""
     deaths: list[DeathEvent] = []
     for tf_idx, tf in enumerate(match.teamfights):
         for tfp in tf.players:
@@ -173,164 +165,115 @@ def _detect_teamfight_deaths(
                 continue
             if tfp.deaths > 0 and tfp.death_time_offset is not None:
                 death_time = tf.start_time + int(tfp.death_time_offset)
-                # Try to find killer from kill_targets of other players
                 killer = ""
-                for other_tfp in tf.players:
-                    if other_tfp.player_slot == player.player_slot:
+                for other in tf.players:
+                    if other.player_slot == player.player_slot or _player_team(other.player_slot) == player.team:
                         continue
-                    for kt in other_tfp.kill_targets:
-                        if kt.get("target") == player.hero_name:
-                            killer = other_tfp.hero_name
-                            break
-                    if killer:
+                    if any(kt.get("target") == player.hero_name for kt in other.kill_targets):
+                        killer = other.hero_name
                         break
-
-                mx, my = game_to_map(tfp.x, tfp.y)
+                x, y = _tf_position_at(tfp, tfp.death_time_offset)
                 deaths.append(DeathEvent(
                     time=death_time,
                     player_slot=player.player_slot,
                     hero_name=player.hero_name,
                     killer_hero=killer,
-                    x=mx,
-                    y=my,
+                    x=x,
+                    y=y,
                     is_teamfight=True,
                     teamfight_idx=tf_idx,
+                    source="teamfight",
                 ))
             break  # found our player in this teamfight
     return deaths
 
 
-def _detect_laning_deaths(
-    match: MatchData, player: PlayerData
-) -> list[DeathEvent]:
-    """Strategy 2: Infer deaths from laning snapshots.
+def _detect_laning_deaths(match: MatchData, player: PlayerData) -> list[DeathEvent]:
+    """Strategy 2: infer deaths from laning snapshots.
 
-    If a snapshot shows very low HP followed by a snapshot with HP jumping
-    back to a high ratio (respawn), or if HP drops to 0, that indicates death.
+    HP at 0, or very low HP followed by a jump back to (almost) full HP
+    (respawn) between consecutive snapshots.
     """
     deaths: list[DeathEvent] = []
     snapshots = player.laning_snapshots
     if len(snapshots) < 2:
         return deaths
 
-    for i in range(len(snapshots) - 1):
-        curr = snapshots[i]
-        nxt = snapshots[i + 1]
-
+    for curr, nxt in zip(snapshots, snapshots[1:]):
         if curr.max_hp <= 0 or nxt.max_hp <= 0:
             continue
-
-        curr_hp_ratio = curr.hp / curr.max_hp
-        nxt_hp_ratio = nxt.hp / nxt.max_hp
-
-        # Pattern: HP drops to very low, then jumps back high (died and respawned)
-        is_death = False
-
-        if curr.hp == 0:
-            is_death = True
-        elif (curr_hp_ratio <= LOW_HP_RATIO
-              and nxt_hp_ratio >= RESPAWN_HP_RATIO
-              and nxt.hp > curr.hp + curr.max_hp * 0.5):
-            is_death = True
-
+        curr_ratio = curr.hp / curr.max_hp
+        nxt_ratio = nxt.hp / nxt.max_hp
+        is_death = curr.hp == 0 or (
+            curr_ratio <= LOW_HP_RATIO
+            and nxt_ratio >= RESPAWN_HP_RATIO
+            and nxt.hp > curr.hp + curr.max_hp * 0.5
+        )
         if is_death:
-            # Death probably happened just before or at this snapshot
-            mx, my = game_to_map(curr.x, curr.y)
             deaths.append(DeathEvent(
                 time=curr.time,
                 player_slot=player.player_slot,
                 hero_name=player.hero_name,
-                x=mx,
-                y=my,
+                x=curr.x,
+                y=curr.y,
+                source="laning",
             ))
-
     return deaths
 
 
-def _detect_deaths_from_gold_timeline(
-    match: MatchData, player: PlayerData
-) -> list[DeathEvent]:
-    """Strategy 3: Detect deaths from significant gold drops in gold_t.
-
-    When a hero dies, they lose gold. A sudden drop in net worth between
-    consecutive minutes is a strong signal.
-    """
+def _detect_deaths_from_gold_timeline(match: MatchData, player: PlayerData) -> list[DeathEvent]:
+    """Strategy 3: significant drops in the per-minute gold series."""
     deaths: list[DeathEvent] = []
     gold_t = player.gold_t
-    if len(gold_t) < 2:
+    if len(gold_t) < 3:
         return deaths
-
-    for i in range(2, len(gold_t)):  # Start at minute 2 to avoid early noise
+    for i in range(2, len(gold_t)):  # minute 2+ to avoid early noise
         gold_drop = gold_t[i - 1] - gold_t[i]
-        # Minimum gold loss to suspect a death (scales with level/time)
-        # At minute i, expected death cost is roughly 30 * level
         min_drop = max(50, 20 * (i + 1))
         if gold_drop >= min_drop:
-            # Death happened somewhere in this minute
-            death_time = i * 60  # approximate to minute boundary
             deaths.append(DeathEvent(
-                time=death_time,
+                time=i * 60,  # approximated to the minute boundary
                 player_slot=player.player_slot,
                 hero_name=player.hero_name,
+                source="gold",
             ))
-
     return deaths
 
 
-def _detect_deaths_from_ability_events(
-    match: MatchData, player: PlayerData
-) -> list[DeathEvent]:
-    """Strategy 4: Cross-reference killed_by with ability events.
-
-    We know from killed_by WHICH heroes killed this player and how many times.
-    We look for bursts of enemy abilities targeting our hero to estimate timing.
-    """
+def _detect_deaths_from_ability_events(match: MatchData, player: PlayerData) -> list[DeathEvent]:
+    """Strategy 4: clusters of enemy abilities on the player, matched with
+    the killers known from ``killed_by``."""
     deaths: list[DeathEvent] = []
     if not player.killed_by:
         return deaths
 
-    # Collect all ability events where enemies target this player
-    # (target field matches our hero_name)
-    target_events: list[AbilityEvent] = []
-    for ae in match.ability_events:
-        if ae.target == player.hero_name and ae.player_slot != player.player_slot:
-            target_events.append(ae)
-
-    if not target_events:
-        return deaths
-
-    # Group by killer heroes we know about from killed_by
     killer_heroes = set(player.killed_by.keys())
     events_by_killer: dict[str, list[AbilityEvent]] = defaultdict(list)
-    for ae in target_events:
-        if ae.hero_name in killer_heroes:
-            events_by_killer[ae.hero_name].append(ae)
+    for ae in match.ability_events:
+        if ae.target == player.hero_name and ae.player_slot != player.player_slot:
+            if ae.hero_name in killer_heroes:
+                events_by_killer[ae.hero_name].append(ae)
 
-    # For each killer, find clusters of events (potential kill moments)
     for killer_hero, events in events_by_killer.items():
         kill_count = player.killed_by[killer_hero]
-        events_sorted = sorted(events, key=lambda e: e.time)
-
-        # Find clusters: group events within 10 seconds
         clusters: list[list[AbilityEvent]] = []
-        current_cluster: list[AbilityEvent] = []
-        for evt in events_sorted:
-            if current_cluster and evt.time - current_cluster[-1].time > 10:
-                clusters.append(current_cluster)
-                current_cluster = [evt]
+        current: list[AbilityEvent] = []
+        for evt in sorted(events, key=lambda e: e.time):
+            if current and evt.time - current[-1].time > 10:
+                clusters.append(current)
+                current = [evt]
             else:
-                current_cluster.append(evt)
-        if current_cluster:
-            clusters.append(current_cluster)
+                current.append(evt)
+        if current:
+            clusters.append(current)
 
-        # Take the top N clusters by event density as potential kills
-        clusters.sort(key=lambda c: len(c), reverse=True)
+        clusters.sort(key=len, reverse=True)
         for cluster in clusters[:kill_count]:
-            # Death time ~ end of the cluster (last ability hit)
             last_event = cluster[-1]
-            x, y = 0.0, 0.0
-            if last_event.x is not None and last_event.y is not None:
-                x, y = game_to_map(last_event.x, last_event.y)
+            # Prefer the victim's own position; the caster stood nearby.
+            x, y = estimate_position(match, player.player_slot, last_event.time)
+            if not has_position((x, y)) and last_event.x is not None and last_event.y is not None:
+                x, y = float(last_event.x), float(last_event.y)
             deaths.append(DeathEvent(
                 time=last_event.time,
                 player_slot=player.player_slot,
@@ -338,90 +281,74 @@ def _detect_deaths_from_ability_events(
                 killer_hero=killer_hero,
                 x=x,
                 y=y,
+                source="abilities",
             ))
-
     return deaths
 
 
-def _enrich_deaths_with_killed_by(
-    deaths: list[DeathEvent], player: PlayerData
-) -> None:
-    """Fill in killer_hero on deaths that don't have it, using killed_by dict.
-
-    We match unattributed deaths to remaining kill counts from killed_by.
-    """
+def _enrich_deaths_with_killed_by(deaths: list[DeathEvent], player: PlayerData) -> None:
+    """Fill in killer_hero on unattributed deaths using the killed_by counts."""
     if not player.killed_by:
         return
-
-    # Count how many deaths already have each killer attributed
     attributed: dict[str, int] = defaultdict(int)
     for d in deaths:
         if d.killer_hero:
             attributed[d.killer_hero] += 1
-
-    # Remaining kills per killer
-    remaining: dict[str, int] = {}
+    killer_list: list[str] = []
     for killer, count in player.killed_by.items():
         left = count - attributed.get(killer, 0)
         if left > 0:
-            remaining[killer] = left
-
-    if not remaining:
-        return
-
-    # Assign remaining killers to unattributed deaths in chronological order
+            killer_list.extend([killer] * left)
+    killer_list.sort()  # deterministic assignment
     unattributed = [d for d in deaths if not d.killer_hero]
-    killer_list: list[str] = []
-    for killer, count in remaining.items():
-        killer_list.extend([killer] * count)
-    # Sort killers alphabetically for determinism, then assign
-    killer_list.sort()
-
-    for i, death in enumerate(unattributed):
-        if i < len(killer_list):
-            death.killer_hero = killer_list[i]
+    for death, killer in zip(unattributed, killer_list):
+        death.killer_hero = killer
 
 
-def _flag_teamfight_deaths(
-    deaths: list[DeathEvent], match: MatchData
-) -> None:
+def _flag_teamfight_deaths(deaths: list[DeathEvent], match: MatchData) -> None:
     """Mark deaths that occur during a teamfight if not already flagged."""
     for death in deaths:
         if death.is_teamfight:
             continue
         for tf_idx, tf in enumerate(match.teamfights):
-            # Consider a generous window around the teamfight
             if tf.start_time - 5 <= death.time <= tf.end_time + 5:
                 death.is_teamfight = True
                 death.teamfight_idx = tf_idx
                 break
 
 
-def _validate_death_count(
-    deaths: list[DeathEvent], player: PlayerData
-) -> list[DeathEvent]:
-    """Ensure we don't report more deaths than the player actually had.
+def _fill_death_positions(deaths: list[DeathEvent], match: MatchData) -> None:
+    """Estimate a position for deaths that do not carry one.
 
-    If we have too many, keep the most confident ones (teamfight > laning > inferred).
-    If we have too few, that's acceptable -- we report what we can find.
+    Deaths inferred from the per-minute gold series only know the minute,
+    so a position guessed at the minute mark would be misleading.
+    """
+    for death in deaths:
+        if death.source != "gold" and not has_position((death.x, death.y)):
+            death.x, death.y = estimate_position(match, death.player_slot, death.time)
+
+
+def _validate_death_count(deaths: list[DeathEvent], player: PlayerData) -> list[DeathEvent]:
+    """Never report more deaths than the player actually had.
+
+    Keeps the most confident ones (teamfight > known killer > known position).
     """
     expected = player.deaths
     if expected <= 0 or len(deaths) <= expected:
         return deaths
 
-    # Prioritize: teamfight deaths first, then those with killers, then others
     def _confidence(d: DeathEvent) -> int:
         score = 0
         if d.is_teamfight:
             score += 3
         if d.killer_hero:
             score += 2
-        if d.x != 0 or d.y != 0:
+        if has_position((d.x, d.y)):
             score += 1
         return score
 
-    deaths.sort(key=lambda d: (-_confidence(d), d.time))
-    return deaths[:expected]
+    ranked = sorted(deaths, key=lambda d: (-_confidence(d), d.time))
+    return ranked[:expected]
 
 
 # ---------------------------------------------------------------------------
@@ -429,46 +356,37 @@ def _validate_death_count(
 # ---------------------------------------------------------------------------
 
 def _detect_death_decisions(
-    deaths: list[DeathEvent], player: PlayerData, lang: str = "zh"
+    deaths: list[DeathEvent], player: PlayerData, lang: str = "zh",
 ) -> list[DecisionPoint]:
-    """Create a DecisionPoint for every death."""
+    """One DecisionPoint per death (overextension is noted in the brief)."""
     decisions: list[DecisionPoint] = []
-    team = _player_team(player.player_slot)
-
+    en = lang == "en"
     for death in deaths:
-        phase = _game_phase(death.time)
-        if lang == "en":
-            killer_info = f"killed by {death.killer_hero}" if death.killer_hero else "died"
-        else:
-            killer_info = f"被{death.killer_hero}击杀" if death.killer_hero else "阵亡"
-
+        phase = game_phase(death.time)
+        killer = death.killer_hero
         if death.is_teamfight:
-            if lang == "en":
-                brief = f"Killed by {death.killer_hero} in teamfight" if death.killer_hero else "Died in teamfight"
+            if en:
+                brief = f"Killed by {killer} in a teamfight" if killer else "Died in a teamfight"
             else:
-                brief = f"团战中{killer_info}"
+                brief = f"团战中被{killer}击杀" if killer else "团战中阵亡"
         elif phase == "pregame":
-            if lang == "en":
-                brief = f"Killed during bounty rune contest by {death.killer_hero}" if death.killer_hero else "Died during bounty rune contest"
+            if en:
+                brief = f"Killed by {killer} during the bounty rune contest" if killer else "Died during the bounty rune contest"
             else:
-                killer_text = f"被{death.killer_hero}击杀" if death.killer_hero else "阵亡"
-                brief = f"赏金符争夺中{killer_text}"
+                brief = f"赏金符争夺中被{killer}击杀" if killer else "赏金符争夺中阵亡"
         elif phase == "laning":
-            if lang == "en":
-                brief = f"Laning phase: {killer_info}"
+            if en:
+                brief = f"Laning phase: killed by {killer}" if killer else "Laning phase: died"
             else:
-                brief = f"对线期{killer_info}"
+                brief = f"对线期被{killer}击杀" if killer else "对线期阵亡"
         else:
-            brief = f"{killer_info}"
+            if en:
+                brief = f"Killed by {killer}" if killer else "Died"
+            else:
+                brief = f"被{killer}击杀" if killer else "阵亡"
 
-        # Check if overextension contributed
-        if death.x != 0 or death.y != 0:
-            tower_dist = _nearest_allied_tower_dist(death.x, death.y, team)
-            if tower_dist > OVEREXTEND_TOWER_DIST:
-                if lang == "en":
-                    brief += " (overextended)"
-                else:
-                    brief += "（位置过深）"
+        if death.overextended:
+            brief += " (overextended)" if en else "（位置过深）"
 
         decisions.append(DecisionPoint(
             time=death.time,
@@ -479,452 +397,319 @@ def _detect_death_decisions(
             brief=brief,
             related_death=death,
         ))
-
     return decisions
 
 
-def _detect_overextend_decisions(
-    deaths: list[DeathEvent], player: PlayerData, lang: str = "zh"
-) -> list[DecisionPoint]:
-    """Detect overextension: player died far from allied towers."""
-    decisions: list[DecisionPoint] = []
-    team = _player_team(player.player_slot)
+def _detect_bad_trades(match: MatchData, player: PlayerData, lang: str = "zh") -> list[DecisionPoint]:
+    """Laning trades where the player took far more hero damage than dealt.
 
-    for death in deaths:
-        if death.x == 0 and death.y == 0:
-            continue
-        tower_dist = _nearest_allied_tower_dist(death.x, death.y, team)
-        if tower_dist > OVEREXTEND_TOWER_DIST:
-            if lang == "en":
-                brief = f"Overextended into enemy territory, ~{tower_dist:.0f} units from nearest allied tower"
-            else:
-                brief = f"过于深入敌方区域，距离最近友方塔约{tower_dist:.0f}单位"
-            decisions.append(DecisionPoint(
-                time=death.time,
-                point_type="overextend",
-                player_slot=player.player_slot,
-                hero_name=player.hero_name,
-                severity="major",
-                brief=brief,
-                related_death=death,
-            ))
-
-    return decisions
-
-
-def _detect_bad_trades(
-    match: MatchData, player: PlayerData, lang: str = "zh"
-) -> list[DecisionPoint]:
-    """Detect bad trades during laning: player takes significantly more damage
-    than they deal in a short window."""
-    decisions: list[DecisionPoint] = []
-    damage_events = player.laning_damage_events
-    if not damage_events:
-        return decisions
-
-    # Collect damage dealt BY player (from other players' damage events
-    # where the source is our player). We'll approximate by checking
-    # match-level ability events targeting the opponent during laning.
-    # But laning_damage_events are damage this player DEALT, with target_idx
-    # being the target. We need to figure out damage RECEIVED.
-    #
-    # Actually, laning_damage_events on a PlayerData is damage dealt BY that player.
-    # We need to check OTHER players' laning_damage_events targeting our player.
-
-    # Build a map of damage received by our player in time windows
-    player_idx = None
-    for idx, p in enumerate(match.players):
-        if p.player_slot == player.player_slot:
-            player_idx = idx
-            break
-
+    ``laning_damage_events`` on a PlayerData are damage dealt BY that player;
+    damage received is read from the enemies' events targeting this player.
+    Adjacent windows are merged into one trade episode and only the worst
+    ``MAX_BAD_TRADES`` episodes are kept.
+    """
+    player_idx = next(
+        (i for i, p in enumerate(match.players) if p.player_slot == player.player_slot),
+        None,
+    )
     if player_idx is None:
-        return decisions
+        return []
 
-    # Collect damage taken from enemies in 15-second windows
-    damage_received_by_window: dict[int, list[LaningDamageEvent]] = defaultdict(list)
-    damage_dealt_by_window: dict[int, list[LaningDamageEvent]] = defaultdict(list)
-
+    received: dict[int, list[tuple[LaningDamageEvent, str]]] = defaultdict(list)
+    dealt: dict[int, int] = defaultdict(int)
     for p in match.players:
         if p.team == player.team:
             continue
         for de in p.laning_damage_events:
-            if de.target_idx == player_idx:
-                window = de.time // 15
-                damage_received_by_window[window].append(de)
+            if de.target_idx == player_idx and de.time < LANING_END:
+                received[de.time // BAD_TRADE_WINDOW].append((de, p.hero_name))
+    for de in player.laning_damage_events:
+        if de.time < LANING_END:
+            dealt[de.time // BAD_TRADE_WINDOW] += de.damage
 
-    for de in damage_events:
-        window = de.time // 15
-        damage_dealt_by_window[window].append(de)
-
-    # Analyze each window
-    for window_key in sorted(damage_received_by_window.keys()):
-        received = damage_received_by_window[window_key]
-        dealt = damage_dealt_by_window.get(window_key, [])
-
-        total_received = sum(de.damage for de in received)
-        total_dealt = sum(de.damage for de in dealt)
-
+    # Bad windows, then merged into consecutive episodes.
+    bad_windows: list[int] = []
+    for window in sorted(received):
+        total_received = sum(de.damage for de, _ in received[window])
+        total_dealt = dealt.get(window, 0)
         if total_received < BAD_TRADE_MIN_DAMAGE:
             continue
-
-        # Bad trade: received much more than dealt
         if total_dealt == 0 or total_received / max(total_dealt, 1) >= BAD_TRADE_HP_RATIO:
-            time_approx = received[0].time
-            attacker_names = set()
-            for p in match.players:
-                if p.team != player.team:
-                    for de in p.laning_damage_events:
-                        if de.target_idx == player_idx and de.time // 15 == window_key:
-                            attacker_names.add(p.hero_name)
+            bad_windows.append(window)
 
-            if lang == "en":
-                attackers = ", ".join(attacker_names) if attacker_names else "enemy heroes"
-                if total_dealt == 0:
-                    brief = f"Took {total_received} damage from {attackers} with no effective retaliation"
-                else:
-                    brief = (
-                        f"Unfavorable trade with {attackers}"
-                        f" (took {total_received}, dealt only {total_dealt})"
-                    )
+    episodes: list[list[int]] = []
+    for window in bad_windows:
+        if episodes and window - episodes[-1][-1] <= 1:
+            episodes[-1].append(window)
+        else:
+            episodes.append([window])
+
+    scored: list[tuple[int, int, int, list[str]]] = []
+    for ep in episodes:
+        events = [item for w in ep for item in received[w]]
+        total_received = sum(de.damage for de, _ in events)
+        total_dealt = sum(dealt.get(w, 0) for w in ep)
+        attackers = sorted({name for _, name in events})
+        start_time = min(de.time for de, _ in events)
+        scored.append((total_received, total_dealt, start_time, attackers))
+
+    scored.sort(key=lambda s: s[0], reverse=True)
+    decisions: list[DecisionPoint] = []
+    for total_received, total_dealt, start_time, attackers in scored[:MAX_BAD_TRADES]:
+        if lang == "en":
+            names = ", ".join(attackers) if attackers else "enemy heroes"
+            if total_dealt == 0:
+                brief = f"Took {total_received} damage from {names} with no effective retaliation"
             else:
-                attackers = "、".join(attacker_names) if attacker_names else "敌方英雄"
-                if total_dealt == 0:
-                    brief = f"被{attackers}消耗{total_received}血量，未造成有效反击"
-                else:
-                    brief = (
-                        f"与{attackers}交换血量不利"
-                        f"（受到{total_received}伤害，仅造成{total_dealt}伤害）"
-                    )
-
-            decisions.append(DecisionPoint(
-                time=time_approx,
-                point_type="bad_trade",
-                player_slot=player.player_slot,
-                hero_name=player.hero_name,
-                severity="major" if total_received >= 200 else "minor",
-                brief=brief,
-            ))
-
+                brief = f"Unfavorable trade with {names} (took {total_received}, dealt only {total_dealt})"
+        else:
+            names = "、".join(attackers) if attackers else "敌方英雄"
+            if total_dealt == 0:
+                brief = f"被{names}消耗{total_received}血量，未造成有效反击"
+            else:
+                brief = f"与{names}交换血量不利（受到{total_received}伤害，仅造成{total_dealt}伤害）"
+        decisions.append(DecisionPoint(
+            time=start_time,
+            point_type="bad_trade",
+            player_slot=player.player_slot,
+            hero_name=player.hero_name,
+            severity="major" if total_received >= 200 else "minor",
+            brief=brief,
+        ))
+    decisions.sort(key=lambda d: d.time)
     return decisions
+
+
+def _role_for_cs(player: PlayerData, position: int | None) -> str:
+    """Role tag used for the CS benchmark ("" = do not judge CS)."""
+    role = role_for_position(position)
+    if role:
+        return role
+    return {1: "carry", 2: "mid", 3: "offlane"}.get(lane_role_of(player), "")
+
+
+def _cs_at_minute(player: PlayerData, minute: int) -> int | None:
+    """Last hits at an exact minute mark (snapshots, else lh_t)."""
+    target = minute * 60
+    snaps = player.laning_snapshots
+    if snaps:
+        times = [s.time for s in snaps]
+        i = bisect.bisect_left(times, target)
+        best = None
+        for j in (i - 1, i):
+            if 0 <= j < len(snaps) and (best is None or abs(snaps[j].time - target) < abs(best.time - target)):
+                best = snaps[j]
+        if best is not None and abs(best.time - target) <= 5:
+            return best.last_hits
+    if len(player.lh_t) > minute:
+        return player.lh_t[minute]
+    return None
 
 
 def _detect_missed_cs(
-    match: MatchData, player: PlayerData, lang: str = "zh"
+    match: MatchData, player: PlayerData, lang: str = "zh", position: int | None = None,
 ) -> list[DecisionPoint]:
-    """Detect CS gaps during laning compared to expected rates."""
+    """CS gaps during laning against the role's CS curve.
+
+    Supports (pos 4/5) are not judged on last hits. At most one point is
+    kept for the early (minutes 3-6) and one for the late (7-10) laning
+    stage: the worst ratio of actual to expected CS.
+    """
+    role = _role_for_cs(player, position)
+    if role not in ("carry", "mid", "offlane"):
+        return []
+    try:
+        from .pro_patterns import get_cs_benchmark
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("CS benchmarks unavailable: %s", exc)
+        return []
+
+    worst: dict[str, tuple[float, DecisionPoint]] = {}
+    last_minute = min(LANING_END // 60, max(0, (match.duration or LANING_END) // 60))
+    for minute in range(MISSED_CS_FIRST_MINUTE, last_minute + 1):
+        actual = _cs_at_minute(player, minute)
+        if actual is None:
+            continue
+        expected = get_cs_benchmark(player.hero_name, role, minute)
+        if expected <= 0 or actual >= expected * MISSED_CS_RATIO:
+            continue
+        ratio = actual / expected
+        deficit = expected - actual
+        dp = DecisionPoint(
+            time=minute * 60,
+            point_type="missed_cs",
+            player_slot=player.player_slot,
+            hero_name=player.hero_name,
+            severity="minor",
+            brief=(
+                f"Minute {minute}: {actual} last hits, below the expected {expected:.0f} (deficit {deficit:.0f})"
+                if lang == "en" else
+                f"第{minute}分钟补刀{actual}个，低于预期{expected:.0f}个（差距{deficit:.0f}个）"
+            ),
+        )
+        bucket = "early" if minute <= 6 else "late"
+        if bucket not in worst or ratio < worst[bucket][0]:
+            worst[bucket] = (ratio, dp)
+    return sorted((dp for _ratio, dp in worst.values()), key=lambda d: d.time)
+
+
+def _detect_good_plays(match: MatchData, player: PlayerData, lang: str = "zh") -> list[DecisionPoint]:
+    """Positive plays: multi-kills, kill streaks, successful smoke ganks."""
     decisions: list[DecisionPoint] = []
-    snapshots = player.laning_snapshots
-    if len(snapshots) < 2:
-        return decisions
+    en = lang == "en"
 
-    role = player.lane_role if player.lane_role else player.lane
-    expected_per_min = EXPECTED_CS_PER_MIN.get(role, 4.0)
-
-    # Check CS at each minute mark during laning
-    checked_minutes: set[int] = set()
-    for snap in snapshots:
-        if snap.time <= 0 or snap.time > LANING_PHASE_END:
+    multi_kill_names = (
+        {"2": "Double Kill", "3": "Triple Kill", "4": "Ultra Kill", "5": "Rampage"}
+        if en else
+        {"2": "双杀", "3": "三杀", "4": "四杀", "5": "五杀（Rampage）"}
+    )
+    for count_str, times in player.multi_kills.items():
+        try:
+            count = int(count_str)
+        except (TypeError, ValueError):
             continue
-        minute = snap.time // 60
-        if minute in checked_minutes or minute < 1:
+        if count < 2:
             continue
-        checked_minutes.add(minute)
-
-        expected_cs = expected_per_min * minute
-        actual_cs = snap.last_hits
-
-        # Significant gap: less than 60% of expected
-        if expected_cs > 0 and actual_cs < expected_cs * 0.6:
-            deficit = expected_cs - actual_cs
+        name = multi_kill_names.get(str(count), f"{count}-kill combo" if en else f"{count}连杀")
+        for _ in range(int(times or 0)):
+            # Multi-kill counters carry no timestamp (time=0 = unknown).
             decisions.append(DecisionPoint(
-                time=snap.time,
-                point_type="missed_cs",
+                time=0,
+                point_type="good_play",
                 player_slot=player.player_slot,
                 hero_name=player.hero_name,
-                severity="minor",
-                brief=(
-                    f"Minute {minute}: {actual_cs} last hits, below expected {expected_cs:.0f} (deficit: {deficit:.0f})"
-                    if lang == "en" else
-                    f"第{minute}分钟补刀{actual_cs}个，"
-                    f"低于预期{expected_cs:.0f}个（差距{deficit:.0f}个）"
-                ),
+                severity="positive",
+                brief=f"Achieved a {name}" if en else f"完成{name}",
             ))
 
-    # Deduplicate: only keep the worst CS gap per 2-minute window
-    if len(decisions) > 1:
-        best_per_window: dict[int, DecisionPoint] = {}
-        for dp in decisions:
-            window = dp.time // 120
-            if window not in best_per_window:
-                best_per_window[window] = dp
-            # keep the one with the larger deficit (longer brief text as proxy)
-        decisions = list(best_per_window.values())
-
-    return decisions
-
-
-def _detect_good_plays(
-    match: MatchData, player: PlayerData, lang: str = "zh"
-) -> list[DecisionPoint]:
-    """Detect positive plays: multi-kills, kill streaks, successful smoke ganks."""
-    decisions: list[DecisionPoint] = []
-
-    # Multi-kills (double kill, triple kill, etc.)
-    if lang == "en":
-        multi_kill_names = {
-            "2": "Double Kill",
-            "3": "Triple Kill",
-            "4": "Ultra Kill",
-            "5": "Rampage",
-        }
-    else:
-        multi_kill_names = {
-            "2": "双杀",
-            "3": "三杀",
-            "4": "四杀",
-            "5": "五杀（Rampage）",
-        }
-    for count_str, times in player.multi_kills.items():
-        if int(count_str) >= 2:
-            if lang == "en":
-                name = multi_kill_names.get(count_str, f"{count_str}-kill combo")
-            else:
-                name = multi_kill_names.get(count_str, f"{count_str}连杀")
-            for _ in range(times):
-                # We don't have exact timestamps for multi-kills,
-                # so we won't add a time-specific decision.
-                # Instead, we note it as a general positive moment.
-                decisions.append(DecisionPoint(
-                    time=0,  # unknown exact time
-                    point_type="good_play",
-                    player_slot=player.player_slot,
-                    hero_name=player.hero_name,
-                    severity="positive",
-                    brief=f"Achieved {name}" if lang == "en" else f"完成{name}",
-                ))
-
-    # Kill streaks
-    if lang == "en":
-        streak_names = {
-            "3": "Killing Spree",
-            "4": "Dominating",
-            "5": "Mega Kill",
-            "6": "Unstoppable",
-            "7": "Wicked Sick",
-            "8": "Monster Kill",
-            "9": "Godlike",
-            "10": "Beyond Godlike",
-        }
-    else:
-        streak_names = {
-            "3": "大杀特杀",
-            "4": "主宰比赛",
-            "5": "杀人如麻",
-            "6": "妖怪般的杀戮",
-            "7": "超越神的杀戮",
-            "8": "接近传说的杀戮",
-            "9": "传说般的杀戮",
-            "10": "万夫莫敌",
-        }
+    streak_names = (
+        {"3": "Killing Spree", "4": "Dominating", "5": "Mega Kill", "6": "Unstoppable",
+         "7": "Wicked Sick", "8": "Monster Kill", "9": "Godlike", "10": "Beyond Godlike"}
+        if en else
+        {"3": "大杀特杀", "4": "主宰比赛", "5": "杀人如麻", "6": "无人能挡",
+         "7": "变态杀戮", "8": "妖怪般的杀戮", "9": "如同神一般", "10": "超神"}
+    )
     for streak_str, times in player.kill_streaks.items():
-        streak_num = int(streak_str)
-        if streak_num >= 3:
-            if lang == "en":
-                name = streak_names.get(streak_str, f"{streak_str} kill streak")
-            else:
-                name = streak_names.get(streak_str, f"{streak_str}连杀")
-            for _ in range(times):
-                decisions.append(DecisionPoint(
-                    time=0,
-                    point_type="good_play",
-                    player_slot=player.player_slot,
-                    hero_name=player.hero_name,
-                    severity="positive",
-                    brief=f"Achieved {name} streak" if lang == "en" else f"达成{name}连杀",
-                ))
-
-    # Successful smoke ganks
-    team = _player_team(player.player_slot)
-    for smoke in match.smokes:
-        if smoke.team != team:
+        try:
+            streak = int(streak_str)
+        except (TypeError, ValueError):
             continue
-        if player.player_slot not in smoke.player_slots:
+        if streak < 3:
+            continue
+        name = streak_names.get(str(streak), f"{streak} kill streak" if en else f"{streak}连杀")
+        for _ in range(int(times or 0)):
+            decisions.append(DecisionPoint(
+                time=0,
+                point_type="good_play",
+                player_slot=player.player_slot,
+                hero_name=player.hero_name,
+                severity="positive",
+                brief=f"Achieved a {name} streak" if en else f"达成{name}",
+            ))
+
+    team = _player_team(player.player_slot)
+    obj_names = (
+        {"tower": "a tower", "barracks": "barracks", "ancient": "the Ancient", "roshan": "Roshan"}
+        if en else
+        {"tower": "防御塔", "barracks": "兵营", "ancient": "遗迹", "roshan": "肉山"}
+    )
+    for smoke in match.smokes:
+        if smoke.team != team or player.player_slot not in smoke.player_slots:
             continue
         if smoke.result == "kill" and smoke.kills_gained > 0:
-            if lang == "en":
-                brief = f"Successful smoke gank, {smoke.kills_gained} kill(s)"
-            else:
-                brief = f"烟雾突袭成功，击杀{smoke.kills_gained}人"
-            decisions.append(DecisionPoint(
-                time=smoke.time,
-                point_type="good_play",
-                player_slot=player.player_slot,
-                hero_name=player.hero_name,
-                severity="positive",
-                brief=brief,
-            ))
+            brief = (f"Successful smoke gank: {smoke.kills_gained} kill(s)" if en
+                     else f"烟雾突袭成功，击杀{smoke.kills_gained}人")
         elif smoke.result == "objective" and smoke.objective_taken:
-            if lang == "en":
-                obj_names = {
-                    "tower": "tower",
-                    "roshan": "Roshan",
-                }
-            else:
-                obj_names = {
-                    "tower": "防御塔",
-                    "roshan": "肉山",
-                }
-            obj_name = obj_names.get(smoke.objective_taken, smoke.objective_taken)
-            if lang == "en":
-                brief = f"Smoke play secured {obj_name}"
-            else:
-                brief = f"烟雾行动成功推进{obj_name}"
-            decisions.append(DecisionPoint(
-                time=smoke.time,
-                point_type="good_play",
-                player_slot=player.player_slot,
-                hero_name=player.hero_name,
-                severity="positive",
-                brief=brief,
-            ))
-
+            obj = obj_names.get(smoke.objective_taken, smoke.objective_taken)
+            brief = f"Smoke play secured {obj}" if en else f"烟雾行动成功拿下{obj}"
+        else:
+            continue
+        decisions.append(DecisionPoint(
+            time=smoke.time,
+            point_type="good_play",
+            player_slot=player.player_slot,
+            hero_name=player.hero_name,
+            severity="positive",
+            brief=brief,
+        ))
     return decisions
 
 
-def _detect_fight_engagement(
-    match: MatchData, player: PlayerData, lang: str = "zh"
-) -> list[DecisionPoint]:
-    """Analyze teamfight participation quality."""
+def _detect_fight_engagement(match: MatchData, player: PlayerData, lang: str = "zh") -> list[DecisionPoint]:
+    """Teamfight participation quality."""
     decisions: list[DecisionPoint] = []
+    en = lang == "en"
+    team = _player_team(player.player_slot)
 
-    for tf_idx, tf in enumerate(match.teamfights):
-        our_player: TeamfightPlayer | None = None
-        for tfp in tf.players:
-            if tfp.player_slot == player.player_slot:
-                our_player = tfp
-                break
-
-        if our_player is None:
+    for tf in match.teamfights:
+        ours = next((tfp for tfp in tf.players if tfp.player_slot == player.player_slot), None)
+        if ours is None:
             continue
+        team_kills = sum(t.kills for t in tf.players if _player_team(t.player_slot) == team)
+        team_deaths = sum(t.deaths for t in tf.players if _player_team(t.player_slot) == team)
 
-        # Calculate participation metrics
-        team = _player_team(player.player_slot)
-        team_kills = 0
-        team_deaths = 0
-        for tfp in tf.players:
-            tfp_team = _player_team(tfp.player_slot)
-            if tfp_team == team:
-                team_kills += tfp.kills
-                team_deaths += tfp.deaths
-
-        # Notably bad teamfight: died without contributing
-        if (our_player.deaths > 0
-                and our_player.kills == 0
-                and our_player.damage_dealt < 200):
-            dmg = our_player.damage_dealt
-            if lang == "en":
-                brief = f"Died in teamfight with minimal contribution ({dmg} damage, 0 kills)"
-            else:
-                brief = (
-                    f"团战中阵亡但贡献极低"
-                    f"（造成{dmg}伤害，0击杀）"
-                )
-            decisions.append(DecisionPoint(
-                time=tf.start_time,
-                point_type="fight_engage",
-                player_slot=player.player_slot,
-                hero_name=player.hero_name,
-                severity="major",
-                brief=brief,
-            ))
-        # Notably good teamfight: high kills without dying
-        elif (our_player.kills >= 2 and our_player.deaths == 0):
-            kills = our_player.kills
-            if lang == "en":
-                brief = f"Excellent teamfight ({kills} kills, 0 deaths)"
-            else:
-                brief = (
-                    f"团战表现出色"
-                    f"（{kills}击杀，0阵亡）"
-                )
-            decisions.append(DecisionPoint(
-                time=tf.start_time,
-                point_type="fight_engage",
-                player_slot=player.player_slot,
-                hero_name=player.hero_name,
-                severity="positive",
-                brief=brief,
-            ))
-        # Lost teamfight where player was key death
-        elif (our_player.deaths > 0
-              and team_deaths > team_kills
-              and our_player.death_time_offset is not None
-              and our_player.death_time_offset < 3.0):
-            if lang == "en":
-                brief = "Instantly killed at teamfight start — poor engagement positioning"
-            else:
-                brief = "团战初期即被秒杀，可能开团位置不佳"
-            decisions.append(DecisionPoint(
-                time=tf.start_time,
-                point_type="fight_engage",
-                player_slot=player.player_slot,
-                hero_name=player.hero_name,
-                severity="major",
-                brief=brief,
-            ))
-
+        if ours.deaths > 0 and ours.kills == 0 and ours.damage_dealt < 200:
+            dmg = ours.damage_dealt
+            brief = (f"Died in a teamfight with minimal contribution ({dmg} damage, 0 kills)" if en
+                     else f"团战中阵亡但贡献极低（造成{dmg}伤害，0击杀）")
+            severity = "major"
+        elif ours.kills >= 2 and ours.deaths == 0:
+            brief = (f"Excellent teamfight ({ours.kills} kills, 0 deaths)" if en
+                     else f"团战表现出色（{ours.kills}击杀，0阵亡）")
+            severity = "positive"
+        elif (ours.deaths > 0 and team_deaths > team_kills
+              and ours.death_time_offset is not None and ours.death_time_offset < 3.0):
+            brief = ("Killed instantly at the start of a lost teamfight — poor engagement positioning" if en
+                     else "团战初期即被秒杀，开团站位可能不佳")
+            severity = "major"
+        else:
+            continue
+        decisions.append(DecisionPoint(
+            time=tf.start_time,
+            point_type="fight_engage",
+            player_slot=player.player_slot,
+            hero_name=player.hero_name,
+            severity=severity,
+            brief=brief,
+        ))
     return decisions
 
 
 def _detect_laning_overextend(
-    match: MatchData, player: PlayerData, deaths: list[DeathEvent], lang: str = "zh"
+    match: MatchData, player: PlayerData, deaths: list[DeathEvent], lang: str = "zh",
 ) -> list[DecisionPoint]:
-    """Detect overextension during laning from snapshots (even without a death).
+    """Non-fatal laning overextensions: low HP in an overextended spot.
 
-    Look for moments where the player is far from their tower and at low HP.
+    Moments within 10 s of a death are skipped (the death covers them);
+    at most one point per 30 seconds.
     """
     decisions: list[DecisionPoint] = []
-    snapshots = player.laning_snapshots
-    if not snapshots:
-        return decisions
-
     team = _player_team(player.player_slot)
-    death_times = {d.time for d in deaths}
+    death_times = [d.time for d in deaths]
 
-    for snap in snapshots:
-        if snap.time > LANING_PHASE_END or snap.max_hp <= 0:
+    for snap in player.laning_snapshots:
+        if snap.time >= LANING_END or snap.max_hp <= 0 or snap.hp <= 0:
             continue
-
         hp_ratio = snap.hp / snap.max_hp
-        mx, my = game_to_map(snap.x, snap.y)
-        tower_dist = _nearest_allied_tower_dist(mx, my, team)
-
-        # Far from tower AND low HP (but not already a death)
-        if (tower_dist > OVEREXTEND_TOWER_DIST
-                and hp_ratio < 0.4
-                and not any(abs(snap.time - dt) <= 10 for dt in death_times)):
-            if lang == "en":
-                brief = f"Overextended during laning with low HP ({hp_ratio:.0%}), at risk of being killed"
-            else:
-                brief = f"对线期位置过深且血量偏低（{hp_ratio:.0%}HP），有被击杀风险"
-            decisions.append(DecisionPoint(
-                time=snap.time,
-                point_type="overextend",
-                player_slot=player.player_slot,
-                hero_name=player.hero_name,
-                severity="minor",
-                brief=brief,
-            ))
-
-    # Deduplicate: at most one overextend per 30 seconds
-    if len(decisions) > 1:
-        deduped: list[DecisionPoint] = [decisions[0]]
-        for dp in decisions[1:]:
-            if dp.time - deduped[-1].time > 30:
-                deduped.append(dp)
-        decisions = deduped
-
+        if hp_ratio >= 0.4 or any(abs(snap.time - dt) <= 10 for dt in death_times):
+            continue
+        if not is_overextended(match, team, snap.x, snap.y, snap.time):
+            continue
+        if decisions and snap.time - decisions[-1].time <= 30:
+            continue
+        brief = (
+            f"Overextended during laning with low HP ({hp_ratio:.0%}) — at risk of being killed"
+            if lang == "en" else
+            f"对线期位置过深且血量偏低（{hp_ratio:.0%}），有被击杀风险"
+        )
+        decisions.append(DecisionPoint(
+            time=snap.time,
+            point_type="overextend",
+            player_slot=player.player_slot,
+            hero_name=player.hero_name,
+            severity="minor",
+            brief=brief,
+        ))
     return decisions
 
 
@@ -932,84 +717,58 @@ def _detect_laning_overextend(
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def detect_deaths(match: MatchData, player: PlayerData) -> list[DeathEvent]:
+    """All inferred deaths of ``player``, deduplicated and sorted by time."""
+    all_deaths: list[DeathEvent] = []
+    all_deaths.extend(_detect_teamfight_deaths(match, player))
+    all_deaths.extend(_detect_laning_deaths(match, player))
+    all_deaths.extend(_detect_deaths_from_gold_timeline(match, player))
+    all_deaths.extend(_detect_deaths_from_ability_events(match, player))
+
+    all_deaths = _dedup_deaths(all_deaths)
+    _enrich_deaths_with_killed_by(all_deaths, player)
+    _flag_teamfight_deaths(all_deaths, match)
+    all_deaths = [d for d in all_deaths if d.time >= 0]
+    all_deaths = _validate_death_count(all_deaths, player)
+    _fill_death_positions(all_deaths, match)
+    for death in all_deaths:
+        death.overextended = is_overextended(match, player.team, death.x, death.y, death.time)
+    all_deaths.sort(key=lambda d: d.time)
+    return all_deaths
+
+
 def detect_decisions(
-    match: MatchData, player_slot: int, lang: str = "zh"
+    match: MatchData, player_slot: int, lang: str = "zh", position: int | None = None,
 ) -> tuple[list[DeathEvent], list[DecisionPoint]]:
-    """Analyze a match for a specific player and return all death events
-    and significant decision points.
+    """Analyze a match for one player.
 
     Args:
         match: Full parsed match data.
         player_slot: The player slot to analyze (0-4 radiant, 128-132 dire).
         lang: Language for user-facing text ("zh" or "en").
+        position: Derived position 1-5 (see :mod:`positions`); derived here
+            when omitted.
 
     Returns:
-        A tuple of (death_events, decision_points), each sorted by time.
-        death_events: All inferred death events for the player.
-        decision_points: All significant decision moments (includes deaths).
+        (death_events, decision_points), each sorted by time. Every death
+        yields exactly one "death" decision point.
     """
     player = _find_player(match, player_slot)
     if player is None:
         return [], []
+    if position is None:
+        pos = player_position(match, player_slot)
+        position = pos.number if pos else None
 
-    # --- Phase 1: Death Detection (multiple strategies) ---
-    all_deaths: list[DeathEvent] = []
+    all_deaths = detect_deaths(match, player)
 
-    # Strategy 1: Teamfight deaths (highest confidence)
-    all_deaths.extend(_detect_teamfight_deaths(match, player))
-
-    # Strategy 2: Laning snapshot deaths
-    all_deaths.extend(_detect_laning_deaths(match, player))
-
-    # Strategy 3: Gold timeline drops
-    all_deaths.extend(_detect_deaths_from_gold_timeline(match, player))
-
-    # Strategy 4: Ability event cross-reference
-    all_deaths.extend(_detect_deaths_from_ability_events(match, player))
-
-    # Deduplicate deaths within DEATH_DEDUP_WINDOW seconds
-    all_deaths = _dedup_deaths(all_deaths)
-
-    # Enrich: fill in killer_hero where possible
-    _enrich_deaths_with_killed_by(all_deaths, player)
-
-    # Flag deaths that overlap with teamfights
-    _flag_teamfight_deaths(all_deaths, match)
-
-    # Filter out deaths before game start (artifacts)
-    all_deaths = [d for d in all_deaths if d.time >= 0]
-
-    # Validate: don't exceed known death count
-    all_deaths = _validate_death_count(all_deaths, player)
-
-    # Final sort by time
-    all_deaths.sort(key=lambda d: d.time)
-
-    # --- Phase 2: Decision Point Detection ---
     all_decisions: list[DecisionPoint] = []
-
-    # Death decisions (one per death, severity=critical)
     all_decisions.extend(_detect_death_decisions(all_deaths, player, lang))
-
-    # Overextension (deaths far from towers)
-    all_decisions.extend(_detect_overextend_decisions(all_deaths, player, lang))
-
-    # Bad trades during laning
     all_decisions.extend(_detect_bad_trades(match, player, lang))
-
-    # Missed CS during laning
-    all_decisions.extend(_detect_missed_cs(match, player, lang))
-
-    # Good plays (multi-kills, streaks, successful smokes)
+    all_decisions.extend(_detect_missed_cs(match, player, lang, position=position))
     all_decisions.extend(_detect_good_plays(match, player, lang))
-
-    # Teamfight engagement quality
     all_decisions.extend(_detect_fight_engagement(match, player, lang))
-
-    # Laning overextension (non-fatal)
     all_decisions.extend(_detect_laning_overextend(match, player, all_deaths, lang))
 
-    # Sort all decisions by time
     all_decisions.sort(key=lambda d: d.time)
-
     return all_deaths, all_decisions

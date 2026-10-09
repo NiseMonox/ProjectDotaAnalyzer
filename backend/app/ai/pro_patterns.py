@@ -1,34 +1,36 @@
 """Professional-level benchmark data and pattern comparison engine.
 
-Provides Immortal-rank (~7000+ MMR) benchmark data for CS, GPM, deaths,
+Provides Immortal-rank (~7000+ MMR) reference data for CS, GPM, deaths,
 damage, item timings, ward placement, and kill participation. Compares
 individual player performance against these benchmarks and produces
 language-aware reports.
 
-Self-updating values: the learning pipeline (``learning/stats_learner.py``)
-writes per-hero OpenDota percentiles to ``backend/data/learned/
-_benchmarks_raw.json``. When that file is present, hero-specific GPM and
-hero-damage-per-minute percentiles (p90/p50/p10 -> good/average/poor) overlay
-the hardcoded role tables below; the hardcoded values remain the fallback
-when the file or a hero entry is missing. CS, deaths, wards, kill
-participation and item timing tables stay hardcoded: OpenDota's whole-game
-global percentiles do not map cleanly onto those role/minute-specific curves.
+Roles come from :mod:`positions` (derived position 1-5), the single source
+of truth for "which role did this player play"; :func:`resolve_role` never
+raises.
 
-Patch reference: 7.37
+Learned overlay: the learning pipeline (``learning/stats_learner.py``)
+writes per-hero OpenDota percentiles to ``backend/data/learned/
+_benchmarks_raw.json``. Those are WHOLE-POPULATION statistics (all ranks),
+not pro data, so when they replace the hardcoded GPM / damage-per-minute
+tables the comparison is labelled accordingly (``benchmark_source`` =
+``"opendota_population"`` instead of ``"pro_reference"``). CS, deaths, wards,
+kill participation and item timing tables stay hardcoded.
+
+The game patch is never hardcoded here: ``PATCH_VERSION`` resolves through
+``data_manager`` at access time.
 """
 from __future__ import annotations
 
 import json
 import logging
-import math
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..models import MatchData, PlayerData
-
-from .knowledge_base import HERO_DATA
 
 logger = logging.getLogger(__name__)
 
@@ -50,17 +52,41 @@ __all__ = [
     "get_cs_benchmark",
     "get_item_timing_benchmark",
     "format_pro_comparison",
+    "get_patch_version",
 ]
 
-# Dynamic patch version: prefer data_manager's version, fallback to hardcoded
-def _resolve_patch_version() -> str:
-    try:
-        from .data_manager import get_patch_version
-        return get_patch_version()
-    except ImportError:
-        return "7.37"
+# Benchmark provenance codes (serialized as ``benchmark_source``).
+SOURCE_PRO = "pro_reference"
+SOURCE_POPULATION = "opendota_population"
 
-PATCH_VERSION = _resolve_patch_version()
+
+def get_patch_version() -> str:
+    """Current game patch from data_manager ("" when unknown)."""
+    try:
+        from . import data_manager
+    except Exception:
+        return ""
+    for name in ("get_current_patch", "get_patch_version"):
+        fn = getattr(data_manager, name, None)
+        if not callable(fn):
+            continue
+        try:
+            value = fn()
+        except Exception as exc:
+            logger.debug("data_manager.%s failed: %s", name, exc)
+            continue
+        if value:
+            return str(value)
+    return ""
+
+
+def __getattr__(name: str):
+    # PEP 562: ``PATCH_VERSION`` is resolved on every access so it never
+    # goes stale after a game-data update.
+    if name == "PATCH_VERSION":
+        return get_patch_version()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # ===================================================================
 # Learned benchmark overlay (written by learning/stats_learner.py)
@@ -72,6 +98,7 @@ _LEARNED_OVERLAY_METRICS: set[str] = {"gold_per_min", "hero_damage_per_min"}
 
 _learned_bench_cache: dict[str, dict] = {}
 _learned_bench_mtime: float | None = None
+_learned_bench_lock = threading.Lock()
 
 
 def _learned_benchmarks_path() -> Path:
@@ -88,30 +115,34 @@ def _learned_hero_slug(name: str) -> str:
 
 
 def _load_learned_benchmarks() -> dict[str, dict]:
-    """Lazily load per-hero percentiles, re-reading when the file changes."""
+    """Lazily load per-hero percentiles, re-reading when the file changes.
+
+    Thread-safe: the cache is swapped atomically under a lock.
+    """
     global _learned_bench_cache, _learned_bench_mtime
     path = _learned_benchmarks_path()
     try:
         mtime = path.stat().st_mtime
     except OSError:
-        _learned_bench_cache, _learned_bench_mtime = {}, None
+        with _learned_bench_lock:
+            _learned_bench_cache, _learned_bench_mtime = {}, None
         return {}
     if _learned_bench_mtime == mtime:
         return _learned_bench_cache
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-        heroes = payload.get("heroes", {})
-        _learned_bench_cache = heroes if isinstance(heroes, dict) else {}
-        logger.info(
-            "Learned benchmarks loaded: %d heroes overlay hardcoded tables",
-            len(_learned_bench_cache),
-        )
-    except Exception as exc:
-        logger.warning("Failed to load learned benchmarks: %s", exc)
-        _learned_bench_cache = {}
-    _learned_bench_mtime = mtime
-    return _learned_bench_cache
+    with _learned_bench_lock:
+        if _learned_bench_mtime == mtime:
+            return _learned_bench_cache
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            heroes = payload.get("heroes", {}) if isinstance(payload, dict) else {}
+            cache = heroes if isinstance(heroes, dict) else {}
+            logger.info("Learned benchmarks loaded: %d heroes", len(cache))
+        except Exception as exc:
+            logger.warning("Failed to load learned benchmarks: %s", exc)
+            cache = {}
+        _learned_bench_cache, _learned_bench_mtime = cache, mtime
+        return cache
 
 
 def _learned_metric_bench(hero_name: str, metric: str) -> dict | None:
@@ -133,11 +164,26 @@ def _learned_metric_bench(hero_name: str, metric: str) -> dict | None:
     if p50 is None or p90 is None:
         return None
     p10 = values.get("p10")
-    return {
-        "good": int(round(p90)),
-        "average": int(round(p50)),
-        "poor": int(round(p10)) if p10 is not None else None,
-    }
+    try:
+        return {
+            "good": int(round(float(p90))),
+            "average": int(round(float(p50))),
+            "poor": int(round(float(p10))) if p10 is not None else None,
+            "source": SOURCE_POPULATION,
+        }
+    except (TypeError, ValueError):
+        return None
+
+
+def _metric_bench(hero_name: str, metric: str, role_table: dict, role: str) -> dict | None:
+    """Benchmark for a metric: learned population percentiles, else pro table."""
+    learned = _learned_metric_bench(hero_name, metric)
+    if learned is not None:
+        return learned
+    row = role_table.get(role)
+    if row is None:
+        return None
+    return {**row, "source": SOURCE_PRO}
 
 
 # ===================================================================
@@ -333,6 +379,7 @@ class PatternComparison:
     benchmark_poor: float | None = None
     rating: str = ""      # "excellent", "good", "average", "below_average", "poor"
     description: str = ""  # Explanation
+    benchmark_source: str = SOURCE_PRO  # "pro_reference" | "opendota_population"
 
 
 @dataclass
@@ -348,7 +395,7 @@ class ProPatternReport:
 
 
 # ===================================================================
-# Lane role mapping
+# Role resolution (positions.py is the single source of truth)
 # ===================================================================
 
 _LANE_ROLE_MAP: dict[int, str] = {
@@ -357,37 +404,62 @@ _LANE_ROLE_MAP: dict[int, str] = {
     3: "offlane",
     4: "support_4",
 }
+_DEFAULT_ROLE = "offlane"
 
 
-def resolve_role(player: PlayerData, hero_name: str) -> str:
-    """Determine the player's role from hero data or lane_role field.
+def resolve_role(
+    player: PlayerData | None,
+    hero_name: str,
+    position: int | None = None,
+    match: MatchData | None = None,
+) -> str:
+    """Role tag ("carry", "mid", "offlane", "support_4", "support_5").
 
     Priority:
-    1. HERO_DATA knowledge base (most accurate)
-    2. player.lane_role integer mapping
-    3. Fallback to ``"offlane"`` as a reasonable middle ground
+    1. ``position`` (1-5) when the caller already derived it;
+    2. the position derived from the whole match (``match`` + ``player``);
+    3. the player's own lane role, refined by the hero archetype;
+    4. the hero archetype from the knowledge base;
+    5. ``"offlane"`` as a neutral middle ground.
+
+    Never raises (``player`` may be None).
     """
-    # Check knowledge base first
-    if hero_name in HERO_DATA:
-        role = HERO_DATA[hero_name].get("role", "")
+    try:
+        from .positions import (
+            hero_typical_position,
+            lane_role_of,
+            player_position,
+            role_for_position,
+        )
+    except Exception:  # pragma: no cover - defensive
+        return _DEFAULT_ROLE
+    try:
+        role = role_for_position(position)
         if role:
             return role
-
-    # Map lane_role integer
-    if player.lane_role in _LANE_ROLE_MAP:
-        role = _LANE_ROLE_MAP[player.lane_role]
-        # Heuristic: if lane_role says carry but obs/sen placed >= 5,
-        # likely a support mis-classified
-        if role == "carry" and (player.obs_placed + player.sen_placed) >= 5:
-            return "support_5"
-        return role
-
-    # Fallback: use lane field as secondary signal
-    lane_map = {1: "carry", 2: "mid", 3: "offlane"}
-    if player.lane in lane_map:
-        return lane_map[player.lane]
-
-    return "offlane"
+        if match is not None and player is not None:
+            pos = player_position(match, player.player_slot)
+            if pos is not None and pos.role:
+                return pos.role
+        archetype = role_for_position(hero_typical_position(hero_name)) if hero_name else ""
+        if player is not None:
+            lane_role = lane_role_of(player)
+            supportish = archetype in ("support_4", "support_5") or (
+                (player.obs_placed or 0) + (player.sen_placed or 0) >= 5
+            )
+            if lane_role == 2:
+                return "mid"
+            if lane_role == 1:
+                return "support_5" if supportish else "carry"
+            if lane_role == 3:
+                return "support_4" if supportish else "offlane"
+            if lane_role == 4:
+                return archetype if archetype in ("support_4", "support_5") else "support_4"
+        if archetype:
+            return archetype
+    except Exception as exc:
+        logger.debug("resolve_role failed for %s: %s", hero_name, exc)
+    return _DEFAULT_ROLE
 
 
 # ===================================================================
@@ -495,7 +567,7 @@ def get_cs_benchmark(hero_name: str, role: str, minute: int) -> float:
     """
     if hero_name in CS_HERO_OVERRIDES:
         return _interpolate_cs(CS_HERO_OVERRIDES[hero_name], minute)
-    effective_role = role if role in CS_BENCHMARKS else "offlane"
+    effective_role = role if role in CS_BENCHMARKS else _DEFAULT_ROLE
     return _interpolate_cs(CS_BENCHMARKS[effective_role], minute)
 
 
@@ -511,65 +583,71 @@ def get_item_timing_benchmark(item_name: str, role: str) -> dict | None:
 
 
 def get_benchmark_context(hero_name: str, role: str, game_time: int, lang: str = "zh") -> str:
-    """Return text with relevant benchmarks for a specific game time.
+    """Benchmarks relevant at ``game_time`` as prompt text.
 
-    Useful for injecting into LLM prompts alongside decision contexts.
+    Hardcoded values are labelled as pro reference; learned OpenDota values
+    are labelled as all-rank population medians.
     """
-    minute = game_time // 60
-    effective_role = role if role in CS_BENCHMARKS else "offlane"
-    role_labels = _ROLE_LABELS.get(lang, _ROLE_LABELS["zh"])
-    role_label = role_labels.get(effective_role, effective_role)
+    minute = max(0, game_time // 60)
+    effective_role = role if role in CS_BENCHMARKS else _DEFAULT_ROLE
+    role_label = _ROLE_LABELS.get(lang, _ROLE_LABELS["zh"]).get(effective_role, effective_role)
+    en = lang == "en"
+    lines: list[str] = ["### Benchmark Reference" if en else "### 基准参考"]
 
-    if lang == "en":
-        lines: list[str] = ["### Pro Benchmark Reference"]
-        role_cs = _interpolate_cs(CS_BENCHMARKS[effective_role], minute)
-        lines.append(f"- Expected CS at {minute} min for {role_label}: ~{int(role_cs)}")
-        if hero_name in CS_HERO_OVERRIDES:
-            hero_cs = _interpolate_cs(CS_HERO_OVERRIDES[hero_name], minute)
-            lines.append(f"- Pro-level CS for {hero_name} at {minute} min: ~{int(hero_cs)}")
-        gpm_data = _learned_metric_bench(hero_name, "gold_per_min") or GPM_BENCHMARKS.get(effective_role)
-        if gpm_data:
-            lines.append(f"- Expected GPM: {gpm_data['average']}+")
-        deaths_data = DEATHS_PER_30MIN.get(effective_role)
-        if deaths_data:
-            scaled = deaths_data["average"] * minute / 30 if minute > 0 else 0
-            lines.append(f"- Expected deaths by {minute} min: <={scaled:.1f}")
-        dmg_data = _learned_metric_bench(hero_name, "hero_damage_per_min") or DAMAGE_PER_MIN.get(effective_role)
-        if dmg_data:
-            lines.append(f"- Expected damage per minute: {dmg_data['average']}+")
-    else:
-        lines = ["### 职业基准参考"]
-        role_cs = _interpolate_cs(CS_BENCHMARKS[effective_role], minute)
-        lines.append(f"- 该时间点（{minute}分钟）{role_label}预期补刀: ~{int(role_cs)}")
-        if hero_name in CS_HERO_OVERRIDES:
-            hero_cs = _interpolate_cs(CS_HERO_OVERRIDES[hero_name], minute)
-            lines.append(f"- 职业选手该英雄{minute}分钟补刀: ~{int(hero_cs)}")
-        gpm_data = _learned_metric_bench(hero_name, "gold_per_min") or GPM_BENCHMARKS.get(effective_role)
-        if gpm_data:
-            lines.append(f"- 预期GPM: {gpm_data['average']}+")
-        deaths_data = DEATHS_PER_30MIN.get(effective_role)
-        if deaths_data:
-            scaled = deaths_data["average"] * minute / 30 if minute > 0 else 0
-            lines.append(f"- 该时间点预期死亡次数: <={scaled:.1f}")
-        dmg_data = _learned_metric_bench(hero_name, "hero_damage_per_min") or DAMAGE_PER_MIN.get(effective_role)
-        if dmg_data:
-            lines.append(f"- 预期每分钟伤害: {dmg_data['average']}+")
+    role_cs = _interpolate_cs(CS_BENCHMARKS[effective_role], minute)
+    lines.append(
+        f"- Pro-level CS at {minute} min for {role_label}: ~{int(role_cs)}" if en
+        else f"- 职业水平{role_label}在{minute}分钟的补刀: ~{int(role_cs)}"
+    )
+    if hero_name in CS_HERO_OVERRIDES:
+        hero_cs = _interpolate_cs(CS_HERO_OVERRIDES[hero_name], minute)
+        lines.append(
+            f"- Pro-level CS for {hero_name} at {minute} min: ~{int(hero_cs)}" if en
+            else f"- 职业选手{hero_name}在{minute}分钟的补刀: ~{int(hero_cs)}"
+        )
 
+    for metric, table, en_name, zh_name in (
+        ("gold_per_min", GPM_BENCHMARKS, "GPM", "GPM"),
+        ("hero_damage_per_min", DAMAGE_PER_MIN, "hero damage per minute", "每分钟英雄伤害"),
+    ):
+        bench = _metric_bench(hero_name, metric, table, effective_role)
+        if not bench:
+            continue
+        if bench.get("source") == SOURCE_POPULATION:
+            lines.append(
+                f"- {hero_name} median {en_name} on OpenDota (all ranks, not pro): {bench['average']}" if en
+                else f"- {hero_name}在OpenDota全分段的{zh_name}中位数（非职业数据）: {bench['average']}"
+            )
+        else:
+            lines.append(
+                f"- Pro reference {en_name} for {role_label}: {bench['average']}+" if en
+                else f"- 职业参考{zh_name}（{role_label}）: {bench['average']}+"
+            )
+
+    deaths_data = DEATHS_PER_30MIN.get(effective_role)
+    if deaths_data and minute > 0:
+        scaled = deaths_data["average"] * minute / 30
+        lines.append(
+            f"- Typical deaths by {minute} min (pro reference): <={scaled:.1f}" if en
+            else f"- 职业参考：{minute}分钟时死亡次数 <={scaled:.1f}"
+        )
     return "\n".join(lines)
 
 
-def compare_player(player: PlayerData, match: MatchData, lang: str = "zh") -> ProPatternReport:
-    """Compare a player's performance against pro benchmarks.
+def compare_player(
+    player: PlayerData, match: MatchData, lang: str = "zh", position: int | None = None,
+) -> ProPatternReport:
+    """Compare a player's performance against benchmarks.
 
     Evaluates CS, deaths, GPM, hero damage, item timings, ward placement,
-    and kill participation. Returns a ``ProPatternReport`` with individual
-    ``PatternComparison`` entries and an overall summary.
+    and kill participation. ``position`` (1-5) is the derived position from
+    :mod:`positions`; it is derived from ``match`` when omitted.
     """
     hero_name = player.hero_name
-    role = resolve_role(player, hero_name)
+    role = resolve_role(player, hero_name, position=position, match=match)
     role_labels = _ROLE_LABELS.get(lang, _ROLE_LABELS["zh"])
     role_label = role_labels.get(role, role)
-    effective_role = role if role in CS_BENCHMARKS else "offlane"
+    effective_role = role if role in CS_BENCHMARKS else _DEFAULT_ROLE
     mlabels = _METRIC_LABELS.get(lang, _METRIC_LABELS["zh"])
 
     report = ProPatternReport(
@@ -660,17 +738,22 @@ def compare_player(player: PlayerData, match: MatchData, lang: str = "zh") -> Pr
     # ------------------------------------------------------------------
     # 3. GPM comparison (learned hero-specific values overlay role table)
     # ------------------------------------------------------------------
-    gpm_bench = _learned_metric_bench(hero_name, "gold_per_min") or GPM_BENCHMARKS.get(effective_role)
+    gpm_bench = _metric_bench(hero_name, "gold_per_min", GPM_BENCHMARKS, effective_role)
     if gpm_bench:
         gpm = player.gold_per_min
         rating = _rate_higher_is_better(
             gpm, gpm_bench["good"], gpm_bench["average"], gpm_bench["poor"]
         )
         rating_disp = _get_rating_label(rating, lang)
+        population = gpm_bench.get("source") == SOURCE_POPULATION
         if lang == "en":
-            desc = f"GPM {gpm}, {role_label} benchmark {gpm_bench['average']}, rating: {rating_disp}"
+            ref = (f"{hero_name} OpenDota median (all ranks) {gpm_bench['average']}" if population
+                   else f"{role_label} pro reference {gpm_bench['average']}")
+            desc = f"GPM {gpm}, {ref}, rating: {rating_disp}"
         else:
-            desc = f"GPM {gpm}，{role_label}基准{gpm_bench['average']}，评价：{rating_disp}"
+            ref = (f"{hero_name}在OpenDota全分段中位数{gpm_bench['average']}" if population
+                   else f"{role_label}职业参考{gpm_bench['average']}")
+            desc = f"GPM {gpm}，{ref}，评价：{rating_disp}"
         report.comparisons.append(PatternComparison(
             metric="gpm",
             metric_label=mlabels["gpm"],
@@ -680,22 +763,28 @@ def compare_player(player: PlayerData, match: MatchData, lang: str = "zh") -> Pr
             benchmark_poor=gpm_bench["poor"],
             rating=rating,
             description=desc,
+            benchmark_source=gpm_bench.get("source", SOURCE_PRO),
         ))
 
     # ------------------------------------------------------------------
     # 4. Hero damage per minute (learned hero-specific values overlay)
     # ------------------------------------------------------------------
-    dmg_bench = _learned_metric_bench(hero_name, "hero_damage_per_min") or DAMAGE_PER_MIN.get(effective_role)
+    dmg_bench = _metric_bench(hero_name, "hero_damage_per_min", DAMAGE_PER_MIN, effective_role)
     if dmg_bench:
         dpm = player.hero_damage / duration_min if duration_min > 0 else 0
         rating = _rate_higher_is_better(
             dpm, dmg_bench["good"], dmg_bench["average"], dmg_bench["poor"]
         )
         rating_disp = _get_rating_label(rating, lang)
+        population = dmg_bench.get("source") == SOURCE_POPULATION
         if lang == "en":
-            desc = f"Damage/min {dpm:.0f}, {role_label} benchmark {dmg_bench['average']}, rating: {rating_disp}"
+            ref = (f"{hero_name} OpenDota median (all ranks) {dmg_bench['average']}" if population
+                   else f"{role_label} pro reference {dmg_bench['average']}")
+            desc = f"Damage/min {dpm:.0f}, {ref}, rating: {rating_disp}"
         else:
-            desc = f"每分钟伤害{dpm:.0f}，{role_label}基准{dmg_bench['average']}，评价：{rating_disp}"
+            ref = (f"{hero_name}在OpenDota全分段中位数{dmg_bench['average']}" if population
+                   else f"{role_label}职业参考{dmg_bench['average']}")
+            desc = f"每分钟伤害{dpm:.0f}，{ref}，评价：{rating_disp}"
         report.comparisons.append(PatternComparison(
             metric="damage_per_min",
             metric_label=mlabels["damage_per_min"],
@@ -705,6 +794,7 @@ def compare_player(player: PlayerData, match: MatchData, lang: str = "zh") -> Pr
             benchmark_poor=dmg_bench["poor"],
             rating=rating,
             description=desc,
+            benchmark_source=dmg_bench.get("source", SOURCE_PRO),
         ))
 
     # ------------------------------------------------------------------
@@ -717,7 +807,7 @@ def compare_player(player: PlayerData, match: MatchData, lang: str = "zh") -> Pr
             if p.team == player.team:
                 team_kills += p.kills
         if team_kills > 0:
-            kp = (player.kills + player.assists) / team_kills * 100
+            kp = min(100.0, (player.kills + player.assists) / team_kills * 100)
         else:
             kp = 0.0
         rating = _rate_higher_is_better(
@@ -810,11 +900,15 @@ def compare_player(player: PlayerData, match: MatchData, lang: str = "zh") -> Pr
     # ------------------------------------------------------------------
     # 7. Item timing comparisons
     # ------------------------------------------------------------------
-    for item_event in player.items:
+    timed_items: set[str] = set()
+    for item_event in sorted(player.items, key=lambda i: i.time):
         item_name = item_event.item_name
+        if item_name in timed_items:
+            continue  # only the first purchase counts
         bench = get_item_timing_benchmark(item_name, effective_role)
         if bench is None:
             continue
+        timed_items.add(item_name)
 
         actual_time = item_event.time
         good_t = bench["good"]
@@ -964,6 +1058,7 @@ def format_pro_comparison(report: ProPatternReport) -> dict:
                 "benchmark_poor": c.benchmark_poor,
                 "rating": c.rating,
                 "description": c.description,
+                "benchmark_source": c.benchmark_source,
             }
             for c in report.comparisons
         ],

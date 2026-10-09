@@ -1,32 +1,33 @@
 """Derive Dota 2 positions (1-5) from match data.
 
-Dota positions are role assignments, not lanes:
+Single source of truth for "which role did this player play". Dota positions
+are role assignments, not lanes:
+
   Position 1 (carry)         — safe-lane core, takes most farm
   Position 2 (mid)           — solo mid lane
   Position 3 (offlaner)      — off-lane core
   Position 4 (support)       — soft support, often roams
   Position 5 (hard support)  — hard support, usually with the carry
 
-We derive each player's position by combining three signals, in order of
+Each player's position is derived from three signals, in order of
 trustworthiness:
 
-1. **Lane** — OpenDota's parsed lane (1=safe-side bot, 2=mid, 3=off-side top
-   *from Radiant's perspective*; flipped for Dire). lane=4/0 means the parser
-   couldn't fit them into a single lane (almost always a roaming support in
-   modern Dota; "Jungle" as a real position is essentially extinct post-7.20).
-2. **Net worth ranking within lane pair** — the safe lane has pos 1 + pos 5;
-   the off lane has pos 3 + pos 4. The higher-net-worth player is the core.
-3. **Hero archetype** from `knowledge_base.HERO_DATA["role"]` — used as a
-   tiebreaker for unclassified players (lane=4 / lane=0).
+1. **Lane role** — ``PlayerData.lane_role`` is relative to the team
+   (1=safe, 2=mid, 3=off, 4=jungle/roaming, 0=unknown). When it is missing it
+   is derived from the absolute ``lane`` (1=bottom, 2=mid, 3=top) and the
+   team: Radiant's safe lane is the bottom, Dire's is the top.
+2. **Farm ranking within a lane** — the safe lane holds pos 1 + pos 5, the
+   off lane pos 3 + pos 4; the higher net-worth player is the core.
+3. **Hero archetype** from the knowledge base — tiebreaker for players that
+   could not be placed by lane (roamers / unknown lane).
 
-The resulting Position tuple is what UI labels and LLM prompts should use,
-not raw lane numbers.
+Every position 1-5 is assigned at most once per team.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..models import PlayerData
+from ..models import MatchData, PlayerData
 
 # Position labels — single source of truth.
 _POSITION_LABELS_ZH = {
@@ -44,14 +45,23 @@ _POSITION_LABELS_EN = {
     5: "Position 5 (Hard Support)",
 }
 
-# Map knowledge_base role tags -> typical position number.
-_ROLE_TO_POS = {
-    "carry": 1,
-    "mid": 2,
-    "offlane": 3,
-    "support_4": 4,
-    "support_5": 5,
+# Role tags used by the knowledge base / pro benchmarks <-> position number.
+POSITION_TO_ROLE: dict[int, str] = {
+    1: "carry",
+    2: "mid",
+    3: "offlane",
+    4: "support_4",
+    5: "support_5",
 }
+ROLE_TO_POSITION: dict[str, int] = {role: pos for pos, role in POSITION_TO_ROLE.items()}
+# Loose aliases some data sources use.
+ROLE_TO_POSITION.update({"support": 5, "hard_support": 5, "soft_support": 4, "roamer": 4})
+
+# Relative lane roles (PlayerData.lane_role).
+LANE_ROLE_SAFE = 1
+LANE_ROLE_MID = 2
+LANE_ROLE_OFF = 3
+LANE_ROLE_ROAM = 4
 
 
 @dataclass
@@ -67,163 +77,143 @@ class Position:
     def label(self, lang: str = "zh") -> str:
         return self.label_en if lang == "en" else self.label_zh
 
+    @property
+    def role(self) -> str:
+        return POSITION_TO_ROLE.get(self.number, "")
 
-def _hero_typical_position(hero_name: str) -> int:
-    """Look up the hero's typical position from the knowledge base.
 
-    Returns 0 if unknown. Imported lazily to avoid circular imports.
+def role_for_position(number: int | None) -> str:
+    """Map a position number (1-5) to a role tag, "" when unknown."""
+    try:
+        return POSITION_TO_ROLE.get(int(number), "") if number is not None else ""
+    except (TypeError, ValueError):
+        return ""
+
+
+def position_for_role(role: str | None) -> int:
+    """Map a role tag to a position number (1-5), 0 when unknown."""
+    if not role:
+        return 0
+    return ROLE_TO_POSITION.get(str(role).lower(), 0)
+
+
+def _make(number: int, confidence: str, method: str) -> Position:
+    return Position(
+        number=number,
+        label_zh=_POSITION_LABELS_ZH[number],
+        label_en=_POSITION_LABELS_EN[number],
+        confidence=confidence,
+        method=method,
+    )
+
+
+def hero_typical_position(hero_name: str) -> int:
+    """The hero's typical position from the knowledge base (0 if unknown).
+
+    Imported lazily to avoid circular imports; never raises.
     """
     try:
         from .knowledge_base import get_hero_info
 
-        info = get_hero_info(hero_name, lang="en")
-        return _ROLE_TO_POS.get(info.get("role", "unknown"), 0)
+        info = get_hero_info(hero_name, lang="en") or {}
+        return position_for_role(info.get("role", ""))
     except Exception:
         return 0
 
 
-def _is_safe_lane(player: PlayerData) -> bool:
-    """Map (lane, team) -> is-safe-lane.
+# Backward-compatible private alias.
+_hero_typical_position = hero_typical_position
 
-    Radiant safe = bottom (lane 1); Dire safe = top (lane 3).
+
+def lane_role_of(player: PlayerData) -> int:
+    """Relative lane role (1=safe, 2=mid, 3=off, 4=roaming, 0=unknown).
+
+    Uses ``lane_role`` when the source provided it, otherwise derives it from
+    the absolute ``lane`` and the team.
     """
-    if player.team == "radiant":
-        return player.lane == 1
-    return player.lane == 3
+    if player.lane_role in (1, 2, 3, 4):
+        return player.lane_role
+    lane = player.lane
+    if lane == 2:
+        return LANE_ROLE_MID
+    if lane == 4:
+        return LANE_ROLE_ROAM
+    if lane in (1, 3):
+        safe_lane = 1 if player.team == "radiant" else 3
+        return LANE_ROLE_SAFE if lane == safe_lane else LANE_ROLE_OFF
+    return 0
 
 
-def _is_off_lane(player: PlayerData) -> bool:
-    if player.team == "radiant":
-        return player.lane == 3
-    return player.lane == 1
-
-
-def _is_mid(player: PlayerData) -> bool:
-    return player.lane == 2 or player.lane_role == 2
+def _farm_key(p: PlayerData) -> tuple[int, int, int]:
+    """Farm ranking key: net worth, then GPM, then last hits."""
+    return (p.net_worth or 0, p.gold_per_min or 0, p.last_hits or 0)
 
 
 def derive_team_positions(team_players: list[PlayerData]) -> dict[int, Position]:
-    """Compute positions 1-5 for one team (5 players).
+    """Compute positions 1-5 for one team (up to 5 players).
 
-    Returns {player_slot: Position}. Falls back gracefully when fewer than 5
-    players are present or when lane data is missing entirely.
+    Returns {player_slot: Position}. Each position number is used at most
+    once; falls back gracefully when fewer than 5 players are present or when
+    lane data is missing entirely.
     """
     if not team_players:
         return {}
 
     positions: dict[int, Position] = {}
-    nw_sorted = sorted(team_players, key=lambda p: p.net_worth, reverse=True)
+    available = [1, 2, 3, 4, 5]
+
+    def _take(p: PlayerData, number: int, confidence: str, method: str) -> None:
+        positions[p.player_slot] = _make(number, confidence, method)
+        available.remove(number)
+
+    roles = {p.player_slot: lane_role_of(p) for p in team_players}
 
     # --- Step 1: lock in the mid player.
-    mid_candidates = [p for p in team_players if _is_mid(p)]
-    mid_player: PlayerData | None = None
+    mid_candidates = [p for p in team_players if roles[p.player_slot] == LANE_ROLE_MID]
     if mid_candidates:
-        # If multiple players are flagged as mid (rare), pick the one whose
-        # archetype is "mid", else the one with higher net worth.
+        # Several players flagged mid (rare): prefer a mid archetype, then farm.
         mid_candidates.sort(
-            key=lambda p: (_hero_typical_position(p.hero_name) == 2, p.net_worth),
+            key=lambda p: (hero_typical_position(p.hero_name) == 2, _farm_key(p)),
             reverse=True,
         )
-        mid_player = mid_candidates[0]
-        positions[mid_player.player_slot] = Position(
-            number=2,
-            label_zh=_POSITION_LABELS_ZH[2],
-            label_en=_POSITION_LABELS_EN[2],
-            confidence="high",
-            method="lane+nw",
-        )
+        _take(mid_candidates[0], 2, "high", "lane+nw")
 
-    remaining = [p for p in team_players if p.player_slot not in positions]
-
-    # --- Step 2: split remaining 4 into safe-lane vs off-lane vs unclassified.
-    safe = [p for p in remaining if _is_safe_lane(p)]
-    off = [p for p in remaining if _is_off_lane(p)]
-    rest = [p for p in remaining if p.player_slot not in {q.player_slot for q in safe + off}]
-
-    def _assign_pair(pair: list[PlayerData], core_pos: int, support_pos: int):
-        if not pair:
+    # --- Step 2: safe lane -> core 1 + support 5, off lane -> core 3 + support 4.
+    def _assign_lane(lane_role: int, core_pos: int, support_pos: int) -> None:
+        group = [
+            p for p in team_players
+            if p.player_slot not in positions and roles[p.player_slot] == lane_role
+        ]
+        if not group:
             return
-        if len(pair) == 1:
-            # Lone player on a lane — likely the core; complement goes to rest.
-            p = pair[0]
-            positions[p.player_slot] = Position(
-                number=core_pos,
-                label_zh=_POSITION_LABELS_ZH[core_pos],
-                label_en=_POSITION_LABELS_EN[core_pos],
-                confidence="medium",
-                method="lane+nw",
-            )
+        group.sort(key=_farm_key, reverse=True)
+        if len(group) == 1:
+            # Lone player on a lane: most likely the core.
+            _take(group[0], core_pos, "medium", "lane+nw")
             return
-        pair.sort(key=lambda p: p.net_worth, reverse=True)
-        positions[pair[0].player_slot] = Position(
-            number=core_pos,
-            label_zh=_POSITION_LABELS_ZH[core_pos],
-            label_en=_POSITION_LABELS_EN[core_pos],
-            confidence="high",
-            method="lane+nw",
-        )
-        for support_player in pair[1:]:
-            positions[support_player.player_slot] = Position(
-                number=support_pos,
-                label_zh=_POSITION_LABELS_ZH[support_pos],
-                label_en=_POSITION_LABELS_EN[support_pos],
-                confidence="high",
-                method="lane+nw",
-            )
+        _take(group[0], core_pos, "high", "lane+nw")
+        # Poorest player of the lane is the hard-laning support; anyone in
+        # between (3 players in one lane) is decided in step 3.
+        _take(group[-1], support_pos, "high" if len(group) == 2 else "medium", "lane+nw")
 
-    _assign_pair(safe, core_pos=1, support_pos=5)
-    _assign_pair(off, core_pos=3, support_pos=4)
+    _assign_lane(LANE_ROLE_SAFE, core_pos=1, support_pos=5)
+    _assign_lane(LANE_ROLE_OFF, core_pos=3, support_pos=4)
 
-    # --- Step 3: the leftovers (lane=0 or lane=4 — almost always supports
-    # in modern Dota). Use hero archetype + remaining net-worth gaps to
-    # decide pos 4 vs pos 5.
-    used_positions = {pos.number for pos in positions.values()}
-    available_positions = [p for p in (1, 2, 3, 4, 5) if p not in used_positions]
-
-    for p in sorted(rest, key=lambda x: x.net_worth):
-        archetype = _hero_typical_position(p.hero_name)
-        chosen: int = 0
-        method = "archetype+nw"
-
-        # First try: archetype's typical position is still available.
-        if archetype in available_positions:
-            chosen = archetype
-        # Else: pick whichever support slot is open, preferring 5 if the player
-        # has the lowest net worth on the team (classic hard support pattern).
-        else:
-            for candidate in (5, 4, 3, 2, 1):
-                if candidate in available_positions:
-                    chosen = candidate
-                    method = "nw_only"
-                    break
-
-        if chosen == 0:
-            continue
-        available_positions.remove(chosen)
-        positions[p.player_slot] = Position(
-            number=chosen,
-            label_zh=_POSITION_LABELS_ZH[chosen],
-            label_en=_POSITION_LABELS_EN[chosen],
-            confidence="medium" if archetype == chosen else "low",
-            method=method,
-        )
-
-    # --- Step 4: any player still unclassified gets pure net-worth ranking
-    # against the still-open slots. This handles lane=0/4 with no archetype.
-    for p in nw_sorted:
-        if p.player_slot in positions:
-            continue
-        if not available_positions:
+    # --- Step 3: leftovers (roamers, unknown lane, 3rd player in a lane).
+    # Prefer the hero archetype when its position is still open, else the
+    # lowest open support slot for the poorest players.
+    rest = [p for p in team_players if p.player_slot not in positions]
+    for p in sorted(rest, key=_farm_key):
+        if not available:
             break
-        chosen = available_positions[0]
-        available_positions.pop(0)
-        positions[p.player_slot] = Position(
-            number=chosen,
-            label_zh=_POSITION_LABELS_ZH[chosen],
-            label_en=_POSITION_LABELS_EN[chosen],
-            confidence="low",
-            method="nw_only",
-        )
+        archetype = hero_typical_position(p.hero_name)
+        if archetype in available:
+            _take(p, archetype, "medium", "archetype+nw")
+            continue
+        for candidate in (5, 4, 3, 1, 2):
+            if candidate in available:
+                _take(p, candidate, "low", "nw_only")
+                break
 
     return positions
 
@@ -232,10 +222,15 @@ def derive_match_positions(players: list[PlayerData]) -> dict[int, Position]:
     """Compute positions for all players in a match (both teams)."""
     radiant = [p for p in players if p.team == "radiant"]
     dire = [p for p in players if p.team == "dire"]
-    out = {}
+    out: dict[int, Position] = {}
     out.update(derive_team_positions(radiant))
     out.update(derive_team_positions(dire))
     return out
+
+
+def player_position(match: MatchData, player_slot: int) -> Position | None:
+    """Derived position of one player of ``match`` (None when not found)."""
+    return derive_match_positions(match.players).get(player_slot)
 
 
 def position_label(position: Position | None, lang: str = "zh", fallback: str = "") -> str:

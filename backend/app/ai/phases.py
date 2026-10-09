@@ -1,34 +1,94 @@
-"""Slice a Dota match into game-time phases and aggregate per-phase stats.
+"""Game-phase helpers and per-phase stat aggregation.
 
-Phases:
-  laning      0–10 min     pre-fight, lane setup, last-hits
+Single source of truth for phase boundaries used across the AI pipeline:
+
+* :func:`game_phase` classifies one moment (decision points, contexts,
+  knowledge retrieval): ``pregame`` (< 0:30, rune contest), ``laning``
+  (< 10:00), ``mid_game`` (< 25:00), ``late_game``. All upper bounds are
+  exclusive.
+* :data:`PHASE_BOUNDS` are the 10-minute review windows used for the
+  per-phase reviews (same 10:00 laning boundary):
+
+  laning      0–10 min     lane setup, last-hits
   early_mid   10–20 min    rotations, first towers, key item spikes
   mid_late    20–30 min    teamfights, Roshan, map control
   late        30–40 min    high-ground attempts, big buybacks
   ultra_late  40+ min      throne plays, end-game decisions
 
-For each phase that the match actually reached, we extract the player's
-KDA in the window, net-worth/level delta, gold/xp per minute in that
-window, deaths in window, key teamfights, and a brief synopsis of the
-team-level state (gold lead, towers).
+For each phase that the match actually reached, :func:`slice_player_phases`
+extracts the player's KDA in the window, gold/xp per minute in that window,
+deaths, teamfights the player took part in, and the team-level state at the
+end of the window (gold/xp lead, towers).
 
 This module is pure data extraction — no LLM calls, no rendering.
 """
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass, field
 from typing import Iterable
 
 from ..models import MatchData, PlayerData
 
-# Phase definitions: (key, start_seconds, end_seconds_or_None_for_open_ended)
+# ---------------------------------------------------------------------------
+# Moment classification (shared by detector, context builder, prompts)
+# ---------------------------------------------------------------------------
+
+PREGAME_END = 30          # rune contest / first creep wave
+LANING_END = 10 * 60
+MID_GAME_END = 25 * 60
+
+GAME_PHASES: tuple[str, ...] = ("pregame", "laning", "mid_game", "late_game")
+
+
+def game_phase(time_s: int) -> str:
+    """Classify a game second into pregame / laning / mid_game / late_game."""
+    if time_s < PREGAME_END:
+        return "pregame"
+    if time_s < LANING_END:
+        return "laning"
+    if time_s < MID_GAME_END:
+        return "mid_game"
+    return "late_game"
+
+
+def is_laning(time_s: int) -> bool:
+    """Whether a game second falls in the laning stage (incl. pregame)."""
+    return time_s < LANING_END
+
+
+# Cumulative XP needed per level (Dota 2, 7.3x). Index i = XP for level i+1.
+_XP_TABLE: tuple[int, ...] = (
+    0, 240, 640, 1160, 1760, 2440, 3200, 4000, 4900, 5900,          # 1-10
+    7000, 8200, 9500, 10900, 12400, 14000, 15700, 17500, 19400,     # 11-19
+    21400, 23600, 26000, 28600, 31400, 34400, 38400, 43400,         # 20-27
+    49400, 56400, 63900,                                            # 28-30
+)
+
+
+def level_from_xp(xp: int) -> int:
+    """Estimate the hero level from total XP (1..30)."""
+    if xp <= 0:
+        return 1
+    return max(1, min(30, bisect.bisect_right(_XP_TABLE, xp)))
+
+
+# ---------------------------------------------------------------------------
+# Review windows
+# ---------------------------------------------------------------------------
+
+# (key, start_seconds, end_seconds_or_None_for_open_ended)
 PHASE_BOUNDS: list[tuple[str, int, int | None]] = [
-    ("laning",     0,    10 * 60),
-    ("early_mid",  10*60, 20*60),
-    ("mid_late",   20*60, 30*60),
-    ("late",       30*60, 40*60),
-    ("ultra_late", 40*60, None),  # open-ended
+    ("laning",     0,            LANING_END),
+    ("early_mid",  LANING_END,   20 * 60),
+    ("mid_late",   20 * 60,      30 * 60),
+    ("late",       30 * 60,      40 * 60),
+    ("ultra_late", 40 * 60,      None),  # open-ended
 ]
+
+# A trailing phase shorter than this is merged into the previous one: a
+# 30-second "early_mid" window is noise and would waste an LLM call.
+_MIN_PHASE_SECONDS = 180
 
 
 @dataclass
@@ -36,15 +96,15 @@ class PhaseStats:
     """Aggregated stats for one player in one phase window."""
 
     phase: str
-    time_range: str           # human-friendly, e.g. "0-10 min" or "40+ min"
+    time_range: str           # e.g. "0-10 min" or "40+ min"
     start_sec: int
-    end_sec: int              # inclusive upper bound (clamped to match duration)
+    end_sec: int              # exclusive upper bound (clamped to match duration)
     duration_sec: int
 
     # Per-player numbers in this window.
     kills: int = 0
     deaths: int = 0
-    assists: int = 0          # rough — counts assists where ally killed during window
+    assists: int = 0          # rough proxy from teamfights the player took part in
     last_hits_delta: int = 0
     gold_delta: int = 0
     xp_delta: int = 0
@@ -55,8 +115,8 @@ class PhaseStats:
 
     # Key events in this window.
     death_times: list[int] = field(default_factory=list)
-    teamfight_count: int = 0
-    teamfight_wins: int = 0    # this team's gold delta > 0 during the fight
+    teamfight_count: int = 0   # teamfights the player took part in
+    teamfight_wins: int = 0    # ...of which the player's team won
     towers_taken_radiant: int = 0
     towers_taken_dire: int = 0
     smokes_used_self_team: int = 0
@@ -93,11 +153,17 @@ class PhaseStats:
         }
 
 
-def _clamp_minute(m: int, series: list[int] | None) -> int:
-    """Read series[m] safely, returning 0 if out of range."""
-    if not series or m < 0 or m >= len(series):
+def series_at(series: list[int] | None, minute: int) -> int:
+    """Read a per-minute series at ``minute``, clamped to the series range.
+
+    Past the end the last value is returned (series usually stop at the
+    final minute); empty series read as 0.
+    """
+    if not series:
         return 0
-    return series[m]
+    if minute <= 0:
+        return series[0]
+    return series[min(minute, len(series) - 1)]
 
 
 def _format_range(start_sec: int, end_sec: int, open_ended: bool) -> str:
@@ -107,13 +173,48 @@ def _format_range(start_sec: int, end_sec: int, open_ended: bool) -> str:
 
 
 def applicable_phases(match_duration_sec: int) -> list[tuple[str, int, int | None]]:
-    """Return only the phases this match actually reached."""
+    """Return the review windows this match reached.
+
+    A trailing window shorter than ``_MIN_PHASE_SECONDS`` is folded into the
+    previous one (whose end then becomes open-ended, i.e. the match end).
+    """
     out: list[tuple[str, int, int | None]] = []
     for key, start, end in PHASE_BOUNDS:
         if match_duration_sec <= start:
             break
         out.append((key, start, end))
+    if len(out) >= 2:
+        key, start, _end = out[-1]
+        if match_duration_sec - start < _MIN_PHASE_SECONDS:
+            out.pop()
+            prev_key, prev_start, _ = out[-1]
+            out[-1] = (prev_key, prev_start, None)
     return out
+
+
+def _tower_owner(unit: str) -> str:
+    """Team owning a destroyed tower unit name, "" when not a tower."""
+    unit = unit.lower()
+    if "tower" not in unit:
+        return ""
+    if "goodguys" in unit or "radiant" in unit:
+        return "radiant"
+    if "badguys" in unit or "dire" in unit:
+        return "dire"
+    return ""
+
+
+def _participated(tp) -> bool:
+    return bool(tp.damage_dealt or tp.damage_taken or tp.kills or tp.deaths or tp.healing)
+
+
+def _radiant_won_fight(tf) -> bool | None:
+    """True/False when the fight had a clear winner, None for an even trade."""
+    if tf.gold_delta:
+        return tf.gold_delta > 0
+    if tf.radiant_deaths != tf.dire_deaths:
+        return tf.radiant_deaths < tf.dire_deaths
+    return None
 
 
 def slice_player_phases(
@@ -141,117 +242,97 @@ def slice_player_phases(
     # Normalize once so a generator input is not exhausted mid-loop.
     known_death_times = sorted(death_times) if death_times is not None else None
 
-    # Pre-index helpful lookups.
     obj_events = match.objectives or []
     teamfights = match.teamfights or []
     smokes = match.smokes or []
+    is_radiant = player.team == "radiant"
 
     for key, start, end_or_none in applicable_phases(duration):
         open_ended = end_or_none is None
         end = duration if open_ended else min(end_or_none, duration)
         if end <= start:
             continue
+        last_window = open_ended or end >= duration
 
         start_min = start // 60
-        end_min = end // 60  # int division; level/net-worth read at end_min
+        end_min = end // 60
 
-        gold_start = _clamp_minute(start_min, player.gold_t)
-        gold_end = _clamp_minute(end_min, player.gold_t)
-        xp_start = _clamp_minute(start_min, player.xp_t)
-        xp_end = _clamp_minute(end_min, player.xp_t)
-        lh_start = _clamp_minute(start_min, player.lh_t)
-        lh_end = _clamp_minute(end_min, player.lh_t)
-
-        gold_delta = gold_end - gold_start
-        xp_delta = xp_end - xp_start
-        lh_delta = lh_end - lh_start
+        gold_delta = series_at(player.gold_t, end_min) - series_at(player.gold_t, start_min)
+        xp_delta = series_at(player.xp_t, end_min) - series_at(player.xp_t, start_min)
+        lh_delta = series_at(player.lh_t, end_min) - series_at(player.lh_t, start_min)
         minutes = max(1, end_min - start_min)
 
-        # Approximate level at end-of-phase: use xp_t curve to back-compute
-        # is overkill; fall back to player.level when phase covers end of game.
-        level_at_end = player.level if open_ended or end >= duration else 0
+        if last_window and player.level:
+            level_at_end = player.level
+        elif player.xp_t:
+            level_at_end = level_from_xp(series_at(player.xp_t, end_min))
+        else:
+            level_at_end = 0
 
-        # Deaths in window — prefer the precise death times detected upstream
-        # (decision_detector DeathEvents passed in by coach). Fallback: scan
-        # `match.objectives` for CHAT_MESSAGE_HERO_KILL with this slot as
-        # target (OpenDota emits these, but the format varies by dump and
-        # target_slot is often absent, silently yielding 0 deaths).
+        def _in_window(t: int) -> bool:
+            return start <= t < end or (last_window and t == end)
+
         deaths_here: list[int] = []
         if known_death_times is not None:
-            deaths_here = [dt for dt in known_death_times if start <= dt < end]
+            deaths_here = [dt for dt in known_death_times if _in_window(dt)]
         else:
             for obj in obj_events:
                 t = obj.get("time", 0)
-                if not (start <= t < end):
+                if not _in_window(t):
                     continue
                 if obj.get("type") in ("CHAT_MESSAGE_HERO_KILL", "hero_kill"):
-                    # This event format varies; some OpenDota dumps put the
-                    # killed hero in "key", and the killer slot in "slot".
-                    target_slot = obj.get("target_slot")
-                    if target_slot == player.player_slot:
+                    if obj.get("target_slot") == player.player_slot:
                         deaths_here.append(t)
 
-        # Kills in window — use teamfights (most reliable structured data).
+        # Kills / teamfights the player took part in (most reliable structured data).
         kills_here = 0
         assists_here = 0
         teamfight_count = 0
         teamfight_wins = 0
         for tf in teamfights:
-            tf_start = tf.start_time
-            tf_end = tf.end_time
-            if tf_end <= start or tf_start >= end:
+            if tf.end_time <= start or tf.start_time >= end:
                 continue
-            teamfight_count += 1
             tf_player = next(
                 (tp for tp in tf.players if tp.player_slot == player.player_slot),
                 None,
             )
-            if tf_player:
-                kills_here += tf_player.kills
-            # team-level result: positive gold_delta means radiant won the fight
-            radiant_won = tf.gold_delta > 0
-            if (radiant_won and player.team == "radiant") or (
-                not radiant_won and player.team == "dire"
-            ):
+            if tf_player is None or not _participated(tf_player):
+                continue
+            teamfight_count += 1
+            kills_here += tf_player.kills
+            radiant_won = _radiant_won_fight(tf)
+            if radiant_won is not None and radiant_won == is_radiant:
                 teamfight_wins += 1
-            # Crude assist proxy: any teammate had kills in this fight while
-            # the player was present and not dead -> +1 assist
-            if tf_player and tf_player.kills == 0 and tf_player.deaths == 0:
+            # Crude assist proxy: teammates got kills while the player took
+            # part without a kill or death of their own.
+            if tf_player.kills == 0 and tf_player.deaths == 0:
                 ally_kills = sum(
                     tp.kills for tp in tf.players
                     if tp.player_slot != player.player_slot
-                    and ((player.team == "radiant" and tp.player_slot < 128) or
-                         (player.team == "dire" and tp.player_slot >= 128))
+                    and (tp.player_slot < 128) == is_radiant
                 )
                 assists_here += min(ally_kills, 2)  # cap to avoid runaway
 
-        # Towers taken in window (per side).
+        # Towers taken in window (per side). "building_kill" also covers
+        # barracks/fort, so only count units that are towers.
         towers_radiant = 0
         towers_dire = 0
         for obj in obj_events:
             t = obj.get("time", 0)
             if not (start <= t < end):
                 continue
-            otype = obj.get("type", "")
-            if otype not in ("CHAT_MESSAGE_TOWER_KILL", "building_kill", "tower_kill"):
+            if obj.get("type", "") not in ("CHAT_MESSAGE_TOWER_KILL", "building_kill", "tower_kill"):
                 continue
-            # Tower belongs to the team whose unit is being killed; the
-            # killer side is the *other* one.
-            unit = (obj.get("key") or obj.get("unit") or "").lower()
-            if "goodguys" in unit or "radiant" in unit:
-                towers_dire += 1  # dire killed a radiant tower
-            elif "badguys" in unit or "dire" in unit:
+            owner = _tower_owner(str(obj.get("key") or obj.get("unit") or ""))
+            if owner == "radiant":
+                towers_dire += 1      # dire destroyed a radiant tower
+            elif owner == "dire":
                 towers_radiant += 1
 
-        # Smokes used by player's team in window.
         smoke_count_self = sum(
             1 for s in smokes
             if start <= s.time < end and s.team == player.team
         )
-
-        # Gold/XP lead at end of window.
-        radiant_gold_lead = _clamp_minute(end_min, match.radiant_gold_adv)
-        radiant_xp_lead = _clamp_minute(end_min, match.radiant_xp_adv)
 
         out.append(PhaseStats(
             phase=key,
@@ -268,15 +349,15 @@ def slice_player_phases(
             gpm_in_phase=int(gold_delta / minutes),
             xpm_in_phase=int(xp_delta / minutes),
             level_at_end=level_at_end,
-            net_worth_at_end=player.net_worth if open_ended or end >= duration else 0,
+            net_worth_at_end=player.net_worth if last_window else 0,
             death_times=deaths_here,
             teamfight_count=teamfight_count,
             teamfight_wins=teamfight_wins,
             towers_taken_radiant=towers_radiant,
             towers_taken_dire=towers_dire,
             smokes_used_self_team=smoke_count_self,
-            radiant_gold_lead=radiant_gold_lead,
-            radiant_xp_lead=radiant_xp_lead,
+            radiant_gold_lead=series_at(match.radiant_gold_adv, end_min),
+            radiant_xp_lead=series_at(match.radiant_xp_adv, end_min),
         ))
 
     return out
