@@ -7,17 +7,97 @@ Provides higher-level analysis on top of parsed match data:
 - Smoke effectiveness analysis
 - Teamfight analysis
 - Ability usage patterns
+
+Enumerations in the payload are stable lowercase codes (lane names, gold /
+XP reasons, rune types, ...); the frontend translates them. Positions are
+passed through unchanged in world units (see ``geo.py``).
 """
 from __future__ import annotations
 
-from .models import MatchData
+from .models import MatchData, PlayerData
+
+# Natural ward lifetimes (seconds). Sentries last 7 min in current patches;
+# using the shorter value never mistakes a natural expiry for a deward.
+OBSERVER_LIFETIME_S = 360
+SENTRY_LIFETIME_S = 420
+
+# PlayerData.lane_role (relative, OpenDota convention) → lane code.
+# lane_role=4 is OpenDota's "jungle" bucket; in modern Dota that is mostly
+# roaming supports / pushed-out offlaners, so it maps to "roaming".
+LANE_ROLE_CODES = {1: "safe", 2: "mid", 3: "off", 4: "roaming"}
+# PlayerData.lane (absolute map lane, OpenDota convention) → side code.
+LANE_SIDE_CODES = {1: "bottom", 2: "mid", 3: "top", 4: "jungle", 5: "jungle"}
+
+# Source 2 EDOTA_GoldModifyReason (same numbering in OpenDota and Clarity).
+GOLD_REASON_CODES = {
+    "0": "other", "1": "death", "2": "buyback", "3": "purchase", "4": "purchase",
+    "5": "abandon", "6": "sell", "7": "ability_cost", "8": "cheat",
+    "9": "selection_penalty", "10": "passive", "11": "building", "12": "hero",
+    "13": "creep", "14": "neutral", "15": "roshan", "16": "courier",
+    "17": "bounty_rune", "18": "shared", "19": "ability", "20": "ward",
+    "21": "courier",
+}
+# Source 2 EDOTA_ModifyXP_Reason.
+XP_REASON_CODES = {
+    "0": "other", "1": "hero", "2": "creep", "3": "roshan",
+    "4": "tome", "5": "outpost", "6": "shared",
+}
+# DOTA_RUNES enum (OpenDota runes / runes_log keys).
+RUNE_CODES = {
+    "0": "double_damage", "1": "haste", "2": "illusion", "3": "invisibility",
+    "4": "regeneration", "5": "bounty", "6": "arcane", "7": "water",
+    "8": "wisdom", "9": "shield",
+}
 
 
-def format_time(seconds: int) -> str:
-    """Convert seconds to MM:SS format."""
+def format_time(seconds: int | float | None) -> str:
+    """Convert seconds to MM:SS format (negative times get a leading '-')."""
+    seconds = int(seconds or 0)
     sign = "-" if seconds < 0 else ""
     seconds = abs(seconds)
     return f"{sign}{seconds // 60}:{seconds % 60:02d}"
+
+
+def _code_for(key, table: dict[str, str]) -> str:
+    """Map a numeric enum key to its code; unknown keys become unknown_<key>."""
+    key = str(key)
+    return table.get(key) or f"unknown_{key}"
+
+
+def _slot_map(match: MatchData) -> dict[int, PlayerData]:
+    return {p.player_slot: p for p in match.players}
+
+
+def _team_for_slot(slot: int | None, slot_map: dict[int, PlayerData]) -> str | None:
+    """Team of a player slot ("radiant"/"dire"), or None when unknown."""
+    if slot is None:
+        return None
+    player = slot_map.get(slot)
+    if player is not None and player.team in ("radiant", "dire"):
+        return player.team
+    if 0 <= slot < 128:
+        return "radiant"
+    if 128 <= slot < 256:
+        return "dire"
+    return None
+
+
+def _resolve_event_slot(entry: dict, match: MatchData, slot_map: dict[int, PlayerData]) -> int | None:
+    """Player slot of an OpenDota objective/chat entry.
+
+    ``player_slot`` is the real slot (0-4 / 128-132); ``slot`` is the
+    player *index* 0-9, so it must not be compared against 128.
+    """
+    slot = entry.get("player_slot")
+    if isinstance(slot, int) and not isinstance(slot, bool):
+        return slot
+    index = entry.get("slot")
+    if not isinstance(index, int) or isinstance(index, bool):
+        return None
+    ordered = sorted(match.players, key=lambda p: p.player_slot)
+    if 0 <= index < len(ordered):
+        return ordered[index].player_slot
+    return None
 
 
 def analyze_item_builds(match: MatchData) -> list[dict]:
@@ -86,16 +166,22 @@ def analyze_skill_builds(match: MatchData) -> list[dict]:
 
 def analyze_wards(match: MatchData) -> dict:
     """Analyze ward placements for both teams."""
+    slot_map = _slot_map(match)
     radiant_obs = []
     radiant_sent = []
     dire_obs = []
     dire_sent = []
+    all_wards = []
 
     for ward in match.wards:
-        player = next(
-            (p for p in match.players if p.player_slot == ward.player_slot), None
+        player = slot_map.get(ward.player_slot)
+        hero_name = player.hero_name if player else ""
+        team = getattr(ward, "team", None)
+        if team not in ("radiant", "dire"):
+            team = _team_for_slot(ward.player_slot, slot_map)
+        lifetime = (
+            ward.destroyed_time - ward.time if ward.destroyed_time is not None else None
         )
-        hero_name = player.hero_name if player else "Unknown"
 
         ward_info = {
             "x": ward.x,
@@ -105,96 +191,94 @@ def analyze_wards(match: MatchData) -> dict:
             "player_slot": ward.player_slot,
             "hero_name": hero_name,
             "survived": ward.destroyed_time is None,
-            "lifetime": (ward.destroyed_time - ward.time) if ward.destroyed_time else None,
+            "lifetime": lifetime,
+            "destroyed_time": ward.destroyed_time,
         }
 
-        team = "radiant" if ward.player_slot < 128 else "dire"
-        if ward.ward_type == "observer":
-            (radiant_obs if team == "radiant" else dire_obs).append(ward_info)
-        else:
-            (radiant_sent if team == "radiant" else dire_sent).append(ward_info)
+        # Wards whose owner/team is unknown are listed in all_wards only.
+        if team == "radiant":
+            (radiant_obs if ward.ward_type == "observer" else radiant_sent).append(ward_info)
+        elif team == "dire":
+            (dire_obs if ward.ward_type == "observer" else dire_sent).append(ward_info)
+
+        all_wards.append({
+            "ward_type": ward.ward_type,
+            "x": ward.x,
+            "y": ward.y,
+            "time": ward.time,
+            "time_str": format_time(ward.time),
+            "player_slot": ward.player_slot,
+            "team": team,
+            "hero_name": hero_name,
+            "destroyed_time": ward.destroyed_time,
+        })
 
     # Advanced ward statistics
     def _avg_lifetime(wards_list):
         lifetimes = [w["lifetime"] for w in wards_list if w["lifetime"] is not None]
-        return round(sum(lifetimes) / max(1, len(lifetimes)), 1) if lifetimes else 0
+        return round(sum(lifetimes) / len(lifetimes), 1) if lifetimes else 0
 
-    def _deward_count(wards_list, ward_type="observer"):
-        # Observer wards last 360s max, sentries 480s.
-        # If destroyed before natural expiry, it was dewarded.
-        max_life = 360 if ward_type == "observer" else 480
+    def _deward_count(wards_list, max_life):
+        # Destroyed before natural expiry (5 s tolerance) = dewarded. Wards
+        # "destroyed" by the game ending are not dewards.
+        game_end = match.duration - 1
         return sum(
             1 for w in wards_list
-            if w["lifetime"] is not None and w["lifetime"] < max_life - 5  # 5s tolerance
+            if w["lifetime"] is not None
+            and w["lifetime"] < max_life - 5
+            and (match.duration <= 0 or w["destroyed_time"] < game_end)
+        )
+
+    def _active(wards_list, max_life, t0, t1):
+        return sum(
+            1 for w in wards_list
+            if w["time"] <= t1 and w["time"] + (w["lifetime"] if w["lifetime"] is not None else max_life) >= t0
         )
 
     # Ward density per 5-minute phase
-    all_wards_flat = radiant_obs + radiant_sent + dire_obs + dire_sent
     ward_density = []
-    for m_start in range(0, match.duration // 60 + 1, 5):
+    for m_start in range(0, max(0, match.duration) // 60 + 1, 5):
         t0, t1 = m_start * 60, (m_start + 5) * 60
-        r_active = sum(1 for w in radiant_obs + radiant_sent
-                       if w["time"] <= t1 and (w["time"] + (w["lifetime"] or 360)) >= t0)
-        d_active = sum(1 for w in dire_obs + dire_sent
-                       if w["time"] <= t1 and (w["time"] + (w["lifetime"] or 360)) >= t0)
         ward_density.append({
             "phase": f"{m_start}-{m_start + 5}",
-            "radiant": r_active,
-            "dire": d_active,
+            "radiant": _active(radiant_obs, OBSERVER_LIFETIME_S, t0, t1)
+            + _active(radiant_sent, SENTRY_LIFETIME_S, t0, t1),
+            "dire": _active(dire_obs, OBSERVER_LIFETIME_S, t0, t1)
+            + _active(dire_sent, SENTRY_LIFETIME_S, t0, t1),
         })
 
+    def _team_stats(obs, sent):
+        return {
+            "observers": obs,
+            "sentries": sent,
+            "total_obs": len(obs),
+            "total_sent": len(sent),
+            "avg_obs_lifetime": _avg_lifetime(obs),
+            "avg_sent_lifetime": _avg_lifetime(sent),
+            "dewarded_obs": _deward_count(obs, OBSERVER_LIFETIME_S),
+            "dewarded_sent": _deward_count(sent, SENTRY_LIFETIME_S),
+        }
+
     return {
-        "radiant": {
-            "observers": radiant_obs,
-            "sentries": radiant_sent,
-            "total_obs": len(radiant_obs),
-            "total_sent": len(radiant_sent),
-            "avg_obs_lifetime": _avg_lifetime(radiant_obs),
-            "avg_sent_lifetime": _avg_lifetime(radiant_sent),
-            "dewarded_obs": _deward_count(radiant_obs, "observer"),
-            "dewarded_sent": _deward_count(radiant_sent, "sentry"),
-        },
-        "dire": {
-            "observers": dire_obs,
-            "sentries": dire_sent,
-            "total_obs": len(dire_obs),
-            "total_sent": len(dire_sent),
-            "avg_obs_lifetime": _avg_lifetime(dire_obs),
-            "avg_sent_lifetime": _avg_lifetime(dire_sent),
-            "dewarded_obs": _deward_count(dire_obs, "observer"),
-            "dewarded_sent": _deward_count(dire_sent, "sentry"),
-        },
+        "radiant": _team_stats(radiant_obs, radiant_sent),
+        "dire": _team_stats(dire_obs, dire_sent),
         "ward_density": ward_density,
         "duration": match.duration,
-        "all_wards": [
-            {
-                "ward_type": w.ward_type,
-                "x": w.x,
-                "y": w.y,
-                "time": w.time,
-                "time_str": format_time(w.time),
-                "player_slot": w.player_slot,
-                "team": "radiant" if w.player_slot < 128 else "dire",
-                "hero_name": next(
-                    (p.hero_name for p in match.players if p.player_slot == w.player_slot),
-                    "Unknown",
-                ),
-                "destroyed_time": w.destroyed_time,
-            }
-            for w in match.wards
-        ],
+        "all_wards": all_wards,
     }
 
 
 def analyze_smokes(match: MatchData) -> dict:
     """Analyze smoke usage for both teams."""
+    slot_map = _slot_map(match)
     radiant_smokes = []
     dire_smokes = []
+    other_smokes = []  # team unknown: timeline only
 
     for smoke in match.smokes:
         participants = []
         for slot in smoke.player_slots:
-            player = next((p for p in match.players if p.player_slot == slot), None)
+            player = slot_map.get(slot)
             if player:
                 participants.append({
                     "player_slot": slot,
@@ -221,8 +305,10 @@ def analyze_smokes(match: MatchData) -> dict:
 
         if smoke.team == "radiant":
             radiant_smokes.append(smoke_info)
-        else:
+        elif smoke.team == "dire":
             dire_smokes.append(smoke_info)
+        else:
+            other_smokes.append(smoke_info)
 
     def _smoke_stats(smoke_list):
         total = len(smoke_list)
@@ -230,6 +316,7 @@ def analyze_smokes(match: MatchData) -> dict:
         objectives = sum(1 for s in smoke_list if s["result"] == "objective")
         traded = sum(1 for s in smoke_list if s["result"] == "traded")
         no_contact = sum(1 for s in smoke_list if s["result"] == "no_contact")
+        caught = sum(1 for s in smoke_list if s["result"] == "caught")
         # Profitable trades (more kills than deaths) count as successful
         traded_won = sum(
             1 for s in smoke_list
@@ -246,19 +333,21 @@ def analyze_smokes(match: MatchData) -> dict:
             "traded": traded,
             "traded_won": traded_won,
             "no_contact": no_contact,
+            "caught": caught,
         }
 
     return {
         "radiant": _smoke_stats(radiant_smokes),
         "dire": _smoke_stats(dire_smokes),
         "timeline": sorted(
-            radiant_smokes + dire_smokes, key=lambda s: s["time"]
+            radiant_smokes + dire_smokes + other_smokes, key=lambda s: s["time"]
         ),
     }
 
 
 def analyze_teamfights(match: MatchData) -> list[dict]:
     """Analyze teamfight data."""
+    slot_map = _slot_map(match)
     results = []
     for i, tf in enumerate(match.teamfights, 1):
         duration = tf.end_time - tf.start_time
@@ -272,7 +361,7 @@ def analyze_teamfights(match: MatchData) -> list[dict]:
                 "player_slot": tp.player_slot,
                 "hero_name": tp.hero_name,
                 "hero_slug": tp.hero_slug,
-                "team": "radiant" if tp.player_slot < 128 else "dire",
+                "team": _team_for_slot(tp.player_slot, slot_map),
                 "x": tp.x,
                 "y": tp.y,
                 "damage_dealt": tp.damage_dealt,
@@ -306,12 +395,18 @@ def analyze_teamfights(match: MatchData) -> list[dict]:
         kill_timeline = []
         for p in players_detail:
             if p["deaths"] > 0 and p["death_time_offset"] is not None:
-                killer_name = None
-                for k in players_detail:
-                    for kt in k["kill_targets"]:
-                        if kt["target"] == p["hero_name"] and abs(kt["time_offset"] - p["death_time_offset"]) < 0.5:
-                            killer_name = k["hero_name"]
-                            break
+                victim_names = {p["hero_name"], p["hero_slug"]} - {""}
+                killer_name = next(
+                    (
+                        k["hero_name"]
+                        for k in players_detail
+                        for kt in k["kill_targets"]
+                        if kt.get("target") in victim_names
+                        and kt.get("time_offset") is not None
+                        and abs(kt["time_offset"] - p["death_time_offset"]) < 0.5
+                    ),
+                    None,
+                )
                 kill_timeline.append({
                     "victim": p["hero_name"],
                     "victim_slug": p["hero_slug"],
@@ -389,44 +484,83 @@ def analyze_abilities(match: MatchData) -> dict:
     }
 
 
+def _effective_lane_role(p: PlayerData) -> int:
+    """Relative lane role (1 safe, 2 mid, 3 off, 4 roaming/jungle, 0 unknown).
+
+    Uses ``lane_role`` when set, otherwise derives it from the absolute
+    ``lane`` (1 bottom, 2 mid, 3 top, 4/5 jungle) and the player's team:
+    bottom is Radiant's safe lane and Dire's off lane, top the reverse.
+    """
+    if p.lane_role in LANE_ROLE_CODES:
+        return p.lane_role
+    if p.lane == 2:
+        return 2
+    if p.lane in (4, 5):
+        return 4
+    if p.lane in (1, 3) and p.team in ("radiant", "dire"):
+        safe_lane = 1 if p.team == "radiant" else 3
+        return 1 if p.lane == safe_lane else 3
+    return 0
+
+
+def _at_ten_minutes(timeline: list[int]) -> int | None:
+    """Value at minute 10 of a per-minute timeline (last value if shorter)."""
+    if not timeline:
+        return None
+    return timeline[10] if len(timeline) > 10 else timeline[-1]
+
+
+def _snapshot_at_ten(p: PlayerData):
+    """Latest laning snapshot at or before 10:00, or None."""
+    best = None
+    for snap in p.laning_snapshots:
+        if snap.time <= 600 and (best is None or snap.time >= best.time):
+            best = snap
+    return best
+
+
 def analyze_laning(match: MatchData) -> dict:
-    """Analyze laning phase data for all players."""
-    # OpenDota's lane_role=4 is officially "Jungle", but in modern Dota
-    # (7.20+) dedicated jungling is dead — that bucket is mostly roaming
-    # supports / pushed-out offlaners. is_roaming below still overrides.
-    LANE_NAMES = {1: "安全路", 2: "中路", 3: "劣势路", 4: "游走"}
+    """Analyze laning phase data for all players.
+
+    ``lane_name`` is a code: "safe" | "mid" | "off" | "roaming" | "unknown"
+    (from the relative lane role); ``lane_side`` is the absolute map lane:
+    "bottom" | "mid" | "top" | "jungle" | "unknown".
+    """
+    # LaningDamageEvent.target_idx is the index of the target in
+    # match.players (0-9, as emitted by the clarity Java analyzer and mock
+    # data), NOT player_slot (dire slots are 128+).
+    damage_taken_by_idx: dict[int, int] = {}
+    for other_p in match.players:
+        for e in other_p.laning_damage_events:
+            damage_taken_by_idx[e.target_idx] = damage_taken_by_idx.get(e.target_idx, 0) + e.damage
 
     players = []
     for idx, p in enumerate(match.players):
-        lane = p.lane or 0
-        lane_role = p.lane_role or 0
-        lane_name = LANE_NAMES.get(lane, "未知")
-        if p.is_roaming:
-            lane_name = "游走"
+        lane_role = _effective_lane_role(p)
+        lane_name = "roaming" if p.is_roaming else LANE_ROLE_CODES.get(lane_role, "unknown")
+        snap = _snapshot_at_ten(p)
 
-        lh_ten = p.lh_t[10] if len(p.lh_t) > 10 else p.lh_t[-1] if p.lh_t else 0
-        dn_ten = 0  # denies timeline not available; use 0
-        gold_ten = p.gold_t[10] if len(p.gold_t) > 10 else p.gold_t[-1] if p.gold_t else 0
-        xp_ten = p.xp_t[10] if len(p.xp_t) > 10 else p.xp_t[-1] if p.xp_t else 0
-
-        # Computed laning stats
-        # target_idx is the index of the target in match.players (0-9, as
-        # emitted by the clarity Java analyzer and mock data), NOT player_slot
-        # (dire slots are 128+), so match against the list index here.
-        total_damage_taken_laning = sum(
-            e.damage for other_p in match.players
-            for e in other_p.laning_damage_events
-            if e.target_idx == idx
-        )
+        lh_ten = _at_ten_minutes(p.lh_t)
+        if lh_ten is None:
+            lh_ten = snap.last_hits if snap else sum(1 for c in p.laning_creep_kills if c.time <= 600)
+        if snap is not None:
+            dn_ten = snap.denies
+        else:
+            dn_ten = sum(1 for d in p.laning_denies if d.time <= 600)
+        gold_ten = _at_ten_minutes(p.gold_t)
+        if gold_ten is None:
+            gold_ten = snap.net_worth if snap else 0
+        xp_ten = _at_ten_minutes(p.xp_t) or 0
 
         players.append({
             "player_slot": p.player_slot,
             "hero_name": p.hero_name,
             "hero_slug": p.hero_slug,
             "team": p.team,
-            "lane": lane,
+            "lane": p.lane or 0,
             "lane_role": lane_role,
             "lane_name": lane_name,
+            "lane_side": LANE_SIDE_CODES.get(p.lane or 0, "unknown"),
             "is_roaming": p.is_roaming,
             "lane_efficiency": p.lane_efficiency,
             "lane_efficiency_pct": p.lane_efficiency_pct,
@@ -444,7 +578,7 @@ def analyze_laning(match: MatchData) -> dict:
             "total_lh_laning": len(p.laning_creep_kills),
             "total_denies_laning": len(p.laning_denies),
             "total_damage_dealt_laning": sum(e.damage for e in p.laning_damage_events),
-            "total_damage_taken_laning": total_damage_taken_laning,
+            "total_damage_taken_laning": damage_taken_by_idx.get(idx, 0),
             "regen_items_used": len(p.laning_regen_events),
         })
 
@@ -497,14 +631,11 @@ def analyze_combat(match: MatchData) -> dict:
 
 
 def analyze_farm(match: MatchData) -> dict:
-    """Analyze farming patterns, gold/xp sources, and last hit timelines."""
-    GOLD_REASON_NAMES = {
-        "0": "其他", "1": "死亡", "2": "买活", "6": "出售",
-        "11": "建筑", "12": "英雄", "13": "小兵", "14": "肉山", "15": "信使",
-    }
-    XP_REASON_NAMES = {
-        "1": "英雄", "2": "小兵", "3": "肉山", "5": "建筑", "4": "其他",
-    }
+    """Analyze farming patterns, gold/xp sources, and last hit timelines.
+
+    ``reasons`` dicts are keyed by codes from GOLD_REASON_CODES /
+    XP_REASON_CODES (unknown numeric reasons become ``unknown_<n>``).
+    """
 
     unit_kills = []
     gold_reasons_list = []
@@ -530,18 +661,16 @@ def analyze_farm(match: MatchData) -> dict:
             "roshans_killed": p.roshans_killed,
         })
 
-        # Map gold reason keys to Chinese names
-        reasons_mapped = {}
+        reasons_mapped: dict[str, int] = {}
         for key, amount in p.gold_reasons.items():
-            name = GOLD_REASON_NAMES.get(str(key), f"未知({key})")
-            reasons_mapped[name] = reasons_mapped.get(name, 0) + amount
+            code = _code_for(key, GOLD_REASON_CODES)
+            reasons_mapped[code] = reasons_mapped.get(code, 0) + amount
         gold_reasons_list.append({**base, "reasons": reasons_mapped})
 
-        # Map xp reason keys to Chinese names
-        xp_mapped = {}
+        xp_mapped: dict[str, int] = {}
         for key, amount in p.xp_reasons.items():
-            name = XP_REASON_NAMES.get(str(key), f"未知({key})")
-            xp_mapped[name] = xp_mapped.get(name, 0) + amount
+            code = _code_for(key, XP_REASON_CODES)
+            xp_mapped[code] = xp_mapped.get(code, 0) + amount
         xp_reasons_list.append({**base, "reasons": xp_mapped})
 
         lh_timeline.append({**base, "lh_t": p.lh_t})
@@ -568,7 +697,7 @@ def analyze_purchases(match: MatchData) -> dict:
         # Build enriched purchase log
         purchase_log = []
         for entry in p.purchase_log:
-            time_val = entry.get("time", 0)
+            time_val = int(entry.get("time") or 0)
             purchase_log.append({
                 "time": time_val,
                 "key": entry.get("key", ""),
@@ -586,7 +715,7 @@ def analyze_purchases(match: MatchData) -> dict:
         if starting_items:
             phases["starting"] = starting_items
 
-        for m_start in range(0, max_time // 60 + 5, 5):
+        for m_start in range(0, max(0, max_time) // 60 + 5, 5):
             phase_key = f"{m_start}-{m_start + 5}"
             t0, t1 = m_start * 60, (m_start + 5) * 60
             phase_items = [
@@ -632,54 +761,61 @@ def analyze_graphs(match: MatchData) -> dict:
     }
 
 
-def analyze_objectives(match: MatchData) -> dict:
-    """Analyze objectives (towers, rax, roshan) and rune pickups."""
-    RUNE_NAMES = {
-        "0": "双倍", "1": "急速", "2": "幻象", "3": "隐身",
-        "4": "恢复", "5": "奥术", "6": "赏金", "7": "圣水",
-    }
+def _team_from_unit_name(name) -> str | None:
+    """Team encoded in a unit name ("..._goodguys_..." / "..._badguys_...")."""
+    if not isinstance(name, str):
+        return None
+    if "goodguys" in name:
+        return "radiant"
+    if "badguys" in name:
+        return "dire"
+    return None
 
-    # Build slug-to-player lookup
-    slot_to_player = {p.player_slot: p for p in match.players}
+
+def analyze_objectives(match: MatchData) -> dict:
+    """Analyze objectives (towers, rax, roshan) and rune pickups.
+
+    ``team`` is the team credited with the objective (None when unknown).
+    Rune counts are keyed by RUNE_CODES codes.
+    """
+    slot_map = _slot_map(match)
+    slug_to_player = {p.hero_slug: p for p in match.players if p.hero_slug}
 
     objectives = []
     for obj in match.objectives:
-        time_val = obj.get("time", 0)
-        obj_type = obj.get("type", "")
-        slot = obj.get("player_slot", obj.get("slot"))
-        unit = obj.get("unit", "")
+        time_val = int(obj.get("time") or 0)
+        unit = obj.get("unit") or ""
         key = obj.get("key", "")
+        slot = _resolve_event_slot(obj, match, slot_map)
+        player = slot_map.get(slot) if slot is not None else None
+        if player is None and isinstance(unit, str) and unit.startswith("npc_dota_hero_"):
+            player = slug_to_player.get(unit[len("npc_dota_hero_"):])
 
-        # Determine team
         team = obj.get("team")
-        if team is None and slot is not None:
-            team = "radiant" if slot < 128 else "dire"
-        elif team is None and unit:
-            if "goodguys" in unit or "radiant" in unit.lower():
-                team = "radiant"
-            elif "badguys" in unit or "dire" in unit.lower():
-                team = "dire"
-
-        # Map team int to string if needed
-        if isinstance(team, int):
+        if isinstance(team, int) and not isinstance(team, bool):
             team = "radiant" if team == 2 else "dire" if team == 3 else None
-
-        hero_name = ""
-        hero_slug = ""
-        if slot is not None:
-            player = slot_to_player.get(slot)
-            if player:
-                hero_name = player.hero_name
-                hero_slug = player.hero_slug
+        elif team not in ("radiant", "dire"):
+            team = None
+        if team is None and player is not None:
+            team = player.team
+        if team is None and slot is not None:
+            team = _team_for_slot(slot, slot_map)
+        if team is None:
+            team = _team_from_unit_name(unit)
+        if team is None:
+            # A destroyed building is credited to the other team.
+            owner = _team_from_unit_name(key)
+            if owner is not None:
+                team = "dire" if owner == "radiant" else "radiant"
 
         objectives.append({
             "time": time_val,
             "time_str": format_time(time_val),
-            "type": obj_type,
+            "type": obj.get("type", ""),
             "team": team,
             "key": key or unit,
-            "hero_name": hero_name,
-            "hero_slug": hero_slug,
+            "hero_name": player.hero_name if player else "",
+            "hero_slug": player.hero_slug if player else "",
         })
 
     objectives.sort(key=lambda o: o["time"])
@@ -693,10 +829,10 @@ def analyze_objectives(match: MatchData) -> dict:
             "hero_slug": p.hero_slug,
             "team": p.team,
         }
-        rune_counts = {}
+        rune_counts: dict[str, int] = {}
         for key, count in p.runes.items():
-            rune_name = RUNE_NAMES.get(str(key), f"未知({key})")
-            rune_counts[rune_name] = count
+            code = _code_for(key, RUNE_CODES)
+            rune_counts[code] = rune_counts.get(code, 0) + (count or 0)
         total = sum(rune_counts.values())
         if total > 0:
             runes.append({**base, "runes": rune_counts, "total": total})
@@ -778,26 +914,22 @@ def analyze_draft(match: MatchData) -> dict:
 
 def analyze_chat(match: MatchData) -> dict:
     """Analyze chat messages."""
-    slot_to_player = {p.player_slot: p for p in match.players}
+    slot_map = _slot_map(match)
 
     messages = []
     for msg in match.chat:
-        time_val = msg.get("time", 0)
-        slot = msg.get("player_slot", msg.get("slot"))
+        time_val = int(msg.get("time") or 0)
+        slot = _resolve_event_slot(msg, match, slot_map)
         msg_type = msg.get("type", "chat")
         key = msg.get("key", "")
 
         hero_name = ""
         hero_slug = ""
-        team = None
-        if slot is not None:
-            player = slot_to_player.get(slot)
-            if player:
-                hero_name = player.hero_name
-                hero_slug = player.hero_slug
-                team = player.team
-            else:
-                team = "radiant" if slot < 128 else "dire"
+        player = slot_map.get(slot) if slot is not None else None
+        if player:
+            hero_name = player.hero_name
+            hero_slug = player.hero_slug
+        team = _team_for_slot(slot, slot_map)
 
         messages.append({
             "time": time_val,
@@ -833,6 +965,10 @@ def full_analysis(match: MatchData) -> dict:
             "start_time": match.start_time,
             "region": match.region,
             "patch": match.patch,
+            # Building positions in world units ([] when unknown) and whether
+            # the replay was only partially parsed.
+            "buildings": getattr(match, "buildings", []),
+            "partial": getattr(match, "partial", False),
             "players": [
                 {
                     "player_slot": p.player_slot,
@@ -855,9 +991,14 @@ def full_analysis(match: MatchData) -> dict:
                     "net_worth": p.net_worth,
                     "final_items": p.final_items,
                     "final_item_keys": p.final_item_keys,
+                    "neutral_item": getattr(p, "neutral_item", ""),
                     "backpack": p.backpack,
                     "purchase_log": [
-                        {"time": entry.get("time", 0), "key": entry.get("key", ""), "time_str": format_time(entry.get("time", 0))}
+                        {
+                            "time": int(entry.get("time") or 0),
+                            "key": entry.get("key", ""),
+                            "time_str": format_time(entry.get("time")),
+                        }
                         for entry in p.purchase_log
                     ] if p.purchase_log else [
                         {"time": e.time, "key": e.item_key or e.item_name, "time_str": format_time(e.time)}

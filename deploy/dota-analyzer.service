@@ -8,10 +8,18 @@ Type=simple
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/dota-analyzer
+# All app settings (DEEPSEEK_API_KEY, ADMIN_TOKEN, rate limits, ...) live in
+# .env — see .env.example. The app also reads this file itself.
 EnvironmentFile=/opt/dota-analyzer/.env
-ExecStart=/opt/dota-analyzer/backend/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8001
+Environment=PYTHONUNBUFFERED=1
+# Single worker on purpose: rate limits, caches and in-flight de-duplication
+# are per process. Behind nginx, switch --host to 127.0.0.1 (see README).
+# --timeout-graceful-shutdown stops open SSE streams from delaying restarts.
+ExecStart=/opt/dota-analyzer/backend/venv/bin/uvicorn backend.app.main:app \
+    --host 0.0.0.0 --port 8001 --workers 1 --timeout-graceful-shutdown 15
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 

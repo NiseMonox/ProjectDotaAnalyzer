@@ -1,5 +1,13 @@
+# Runtime dependencies (Python 3.10+). Install: pip install -r backend/requirements.txt
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
-python-multipart==0.0.9
+# >=0.0.18 fixes CVE-2024-53981 (multipart boundary DoS); still provides the
+# `multipart` module starlette 0.38 imports.
+python-multipart==0.0.20
 pydantic==2.9.0
 aiofiles==24.1.0
+# AI coach LLM client (DeepSeek, OpenAI-compatible). Without it the coach
+# silently falls back to rule-based reports.
+openai>=1.30,<4
+# Loads <project>/.env (backend/app/config.py)
+python-dotenv>=1.0,<2
