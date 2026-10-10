@@ -1,7 +1,8 @@
-"""RAG knowledge retrieval engine: weighted tag matching + BM25 lexical relevance.
+"""RAG knowledge retrieval engine: weighted tags + BM25, plus a dense term for principles.
 
 In-memory knowledge storage and retrieval for the AI coaching system, with no
-external dependencies.
+external dependencies (the dense scores are computed by :mod:`rag` and handed
+to :meth:`KnowledgeStore.rank`).
 
 Ranking (deterministic, see :meth:`KnowledgeStore.rank`):
 
@@ -12,11 +13,30 @@ Ranking (deterministic, see :meth:`KnowledgeStore.rank`):
    hundreds of chunks contribute little.
 2. A BM25 lexical score over the chunk text (CJK bigrams + Latin words)
    rewards chunks that actually talk about the heroes / situation.
-3. ``0.7 * sqrt(tag score) + 0.3 * lexical score`` (both normalised to the
-   best candidate), times priority, times a penalty for learned chunks that
-   were produced on a different patch. Ties break on ``chunk_id``.
+3. Lexical formula: ``0.7 * sqrt(tag score) + 0.3 * lexical score`` (both
+   normalised to the best *eligible* candidate), times priority, times a
+   penalty for learned chunks that were produced on a different patch.
+   Ties break on ``chunk_id``.
+   Pooled hybrid formula, used when dense scores are given: ``0.6 * sqrt(tag
+   score) + 0.1 * lexical score + 0.3 * dense``, same multipliers. The dense
+   term ranks the *generic* chunks only (no hero / matchup / item tag): their
+   cosine to the situation query, min-max normalised inside that pool. A
+   chunk it does not rank gets the neutral constant 0.5: an entity chunk
+   (tags decide its relevance; cosine similarity mostly matches hero names)
+   and a generic chunk that has no vector (a learned or operator text on a
+   server without an embedding model).
 4. Chunks are picked best-first within ONE token budget (estimated with
-   :func:`estimate_tokens`), at most 3 per category and one per dedupe key.
+   :func:`estimate_tokens`), at most 3 per category, one per dedupe key and
+   at most 2 written by an LLM or a third party.
+
+Eligibility (the entity gate, :func:`_entities_match`): a chunk about a
+matchup needs that matchup in the query; otherwise a chunk about specific
+heroes needs one of those heroes in the game — the player's own hero for a
+farm / item-timing statistic (:data:`ECONOMY_TAG`), which describes players
+of that hero; otherwise a chunk about items needs the player to own one (or
+to be a listed ``buyer:`` of it). Such a statistic is also halved for every
+decision that is not about farming (``topic:`` is a scoped namespace like
+``phase:`` and ``role:``).
 
 Tags use one canonical normalisation (:func:`normalize_tag`) for both chunk
 producers and query building: hero tags are internal hero names
@@ -31,7 +51,7 @@ import math
 import re
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -150,17 +170,20 @@ class SimpleBM25:
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
+# Namespaces that name a concrete hero / item / matchup.
+_ENTITY_PREFIXES = ("hero:", "item:", "matchup:")
+
 _ROLE_ALIASES = {
-    "carry": "carry", "pos1": "carry", "position_1": "carry", "position1": "carry",
-    "safelane": "carry", "safe_lane": "carry", "hard_carry": "carry",
-    "mid": "mid", "pos2": "mid", "position_2": "mid", "position2": "mid",
+    "carry": "carry", "pos1": "carry", "pos_1": "carry", "position_1": "carry",
+    "position1": "carry", "safelane": "carry", "safe_lane": "carry", "hard_carry": "carry",
+    "mid": "mid", "pos2": "mid", "pos_2": "mid", "position_2": "mid", "position2": "mid",
     "midlane": "mid", "mid_lane": "mid", "midlaner": "mid",
-    "offlane": "offlane", "pos3": "offlane", "position_3": "offlane", "position3": "offlane",
-    "offlaner": "offlane", "off_lane": "offlane",
-    "support_4": "support_4", "pos4": "support_4", "position_4": "support_4",
+    "offlane": "offlane", "pos3": "offlane", "pos_3": "offlane", "position_3": "offlane",
+    "position3": "offlane", "offlaner": "offlane", "off_lane": "offlane",
+    "support_4": "support_4", "pos4": "support_4", "pos_4": "support_4", "position_4": "support_4",
     "position4": "support_4", "soft_support": "support_4", "roamer": "support_4",
     "roaming_support": "support_4", "support4": "support_4",
-    "support_5": "support_5", "pos5": "support_5", "position_5": "support_5",
+    "support_5": "support_5", "pos5": "support_5", "pos_5": "support_5", "position_5": "support_5",
     "position5": "support_5", "hard_support": "support_5", "support": "support_5",
     "support5": "support_5",
 }
@@ -203,6 +226,15 @@ def item_tag(name: Any) -> str:
     return f"item:{_item_slug(name)}"
 
 
+def buyer_tag(name: Any) -> str:
+    """``buyer:<internal name>``: the hero is a typical buyer of the chunk's item.
+
+    Unlike ``hero:`` it does not make the chunk "about" that hero: only the
+    player's own hero is ever queried with it (see :func:`build_query`).
+    """
+    return f"buyer:{_hero_slug(name)}"
+
+
 def matchup_tag(hero: Any, opponent: Any) -> str:
     """``matchup:<hero>:<opponent>`` (directional: tips are from *hero*'s side)."""
     return f"matchup:{_hero_slug(hero)}:{_hero_slug(opponent)}"
@@ -230,9 +262,9 @@ def normalize_tag(tag: Any) -> str | None:
     rest = rest.strip()
     if not rest:
         return None
-    if namespace == "hero":
+    if namespace in ("hero", "buyer"):
         value = _hero_slug(rest)
-        return f"hero:{value}" if value else None
+        return f"{namespace}:{value}" if value else None
     if namespace == "matchup":
         a, _, b = rest.partition(":")
         a_slug, b_slug = _hero_slug(a), _hero_slug(b)
@@ -260,6 +292,46 @@ def normalize_tags(tags: Iterable[Any]) -> set[str]:
     return out
 
 
+def _known_entity(tag: str) -> bool:
+    """Whether a normalised hero / matchup / item tag names something we know."""
+    try:
+        from .data_manager import is_known_hero, is_known_item
+    except Exception:  # pragma: no cover - data layer unavailable
+        return True
+    namespace, _, rest = tag.partition(":")
+    if namespace == "hero":
+        return rest == "all" or is_known_hero(rest)
+    if namespace == "matchup":
+        a, _, b = rest.partition(":")
+        return is_known_hero(a) and is_known_hero(b)
+    if namespace == "item":
+        return is_known_item(rest)
+    return True
+
+
+def scoped_tags(tags: Iterable[Any]) -> set[str] | None:
+    """Normalised tags of a third-party (learned) chunk, or None to drop it.
+
+    :func:`normalize_tag` keeps a name it cannot resolve as a plain slug
+    (``item:midas`` before the alias existed, ``hero:xyz``). No query ever
+    emits such a tag, so it would silently change who sees the chunk:
+
+    - an unresolved hero or matchup tag: the chunk is dropped (None) —
+      without the tag it would be shown for every hero;
+    - an unresolved item tag is removed when a hero or matchup tag still
+      scopes the chunk, otherwise the chunk is dropped as well.
+    """
+    normalised = normalize_tags(tags)
+    unknown = {t for t in normalised if t.startswith(_ENTITY_PREFIXES) and not _known_entity(t)}
+    if not unknown:
+        return normalised
+    if any(not t.startswith("item:") for t in unknown):
+        return None
+    kept = normalised - unknown
+    scoped = any(t.startswith(("hero:", "matchup:")) and t != "hero:all" for t in kept)
+    return kept if scoped else None
+
+
 def _query_slug(name: str) -> str:
     """Backward-compatible helper: canonical hero slug of *name*."""
     return _hero_slug(name)
@@ -277,11 +349,78 @@ _POSITION_ROLE_TAGS = {
 # Sources produced by the self-learning pipeline (vs builtin / editorial).
 LEARNED_SOURCES = ("opendota_stats", "match_mining", "llm_distilled", "learned")
 
+# Topic of a chunk or a query (a scoped namespace: a chunk that states a
+# topic is halved for a query about another one). Farm and item-timing
+# statistics carry ECONOMY_TAG (the store builder tags them): they say how
+# fast a hero's players usually earn and buy, which explains a missed-CS
+# decision and next to nothing about a death, a fight or a kill (first run
+# with real learned data: 9.5 % of the sources listed under deaths and 32 %
+# of those under good plays were such statistics).
+ECONOMY_TAG = "topic:economy"
+FIGHT_TAG = "topic:fight"
+_ECONOMY_CATEGORIES = frozenset({"economy_patterns", "item_coaching"})
+
+
+def is_economy_statistic(category: str, source: str, tags: Iterable[str]) -> bool:
+    """Whether a learned chunk is a farm / item-timing statistic.
+
+    Hero benchmarks and item timings (OpenDota), item orders of a hero in
+    pro matches, and what the distiller files under the same categories.
+    The per-position pattern lines of the match miner (CS, deaths, kill
+    participation, wards in one chunk) are not: they are role background.
+    """
+    if not is_learned_source(source) or (source or "").startswith("video"):
+        return False
+    return category in _ECONOMY_CATEGORIES or (category == "pro_pattern" and is_entity_scoped(tags))
+
 
 def is_learned_source(source: str) -> bool:
     """Whether a chunk source comes from the self-learning pipeline."""
     source = source or ""
     return source in LEARNED_SOURCES or source.startswith("video")
+
+
+# Source types shown next to a verdict (rag.types.SOURCE_TYPES); prose of
+# the untrusted ones was written by an LLM or a third party.
+_UNTRUSTED_SOURCE_TYPES = frozenset({"llm_distilled", "video"})
+
+
+def source_type_of(source: str) -> str:
+    """Source-type code of a chunk ``source``.
+
+    ``editorial`` | ``builtin`` | ``operator`` | ``opendota_stats`` |
+    ``match_mining`` | ``llm_distilled`` | ``video``. ``learned`` — what the
+    store builder gives a learned chunk whose own source it does not know —
+    counts as ``llm_distilled`` (untrusted); any other string is the label
+    of an operator file (``backend/data/knowledge``) and counts as
+    ``operator``.
+    """
+    source = source or ""
+    if source.startswith("video"):
+        return "video"
+    if source in ("opendota_stats", "match_mining", "llm_distilled"):
+        return source
+    if source == "learned":
+        return "llm_distilled"
+    if source == "builtin":
+        return "builtin"
+    if source in ("editorial", "gamedata"):
+        return "editorial"
+    return "operator"
+
+
+def is_untrusted_source(source: str) -> bool:
+    """Whether a chunk ``source`` is prose written by an LLM or a third party."""
+    return source_type_of(source) in _UNTRUSTED_SOURCE_TYPES
+
+
+def is_entity_scoped(tags: Iterable[str]) -> bool:
+    """Whether a chunk is about specific heroes / matchups / items.
+
+    Chunks that are not ("generic": principles, role and phase notes) are
+    the pool the dense term of the ranker orders.
+    """
+    return any(t.startswith(_ENTITY_PREFIXES) and t != "hero:all" for t in tags)
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +447,12 @@ class KnowledgeChunk:
         patch_version: Patch the knowledge was produced for ("" = not patch-specific).
         dedupe_key: Chunks sharing a key are the same fact; the store keeps one
             (learned statistics are merged into the editorial chunk).
+        title: Short human title for citations, in the store's language
+            ("" = derived from the first line, see :attr:`display_title`).
+        index_text: Canonical ENGLISH text of the chunk, identical in the zh
+            and en stores: what gets embedded. "" = the chunk has no English
+            text and is ranked lexically. Set by ``knowledge_base`` when it
+            builds the stores.
     """
 
     chunk_id: str
@@ -319,6 +464,8 @@ class KnowledgeChunk:
     source: str = "builtin"
     patch_version: str = ""
     dedupe_key: str = ""
+    title: str = ""
+    index_text: str = ""
 
     def __post_init__(self) -> None:
         if not self.category and ":" in self.chunk_id:
@@ -328,6 +475,31 @@ class KnowledgeChunk:
         if self.token_estimate <= 0 and self.content:
             self.token_estimate = estimate_tokens(self.content)
 
+    @property
+    def source_type(self) -> str:
+        """Source-type code, see :func:`source_type_of`."""
+        return source_type_of(self.source)
+
+    @property
+    def trusted(self) -> bool:
+        """False for prose written by an LLM or a third party (video tips)."""
+        return not is_untrusted_source(self.source)
+
+    @property
+    def display_title(self) -> str:
+        """:attr:`title`, or the chunk's first line without markup (at most 80 characters)."""
+        if self.title:
+            return self.title
+        for line in self.content.splitlines():
+            line = _TITLE_MARKUP_RE.sub("", line).strip(" :：")
+            if line:
+                return line if len(line) <= 80 else line[:79].rstrip() + "…"
+        return self.chunk_id
+
+
+# Leading markdown / learned-label markup of a content line ("## ", "- ", "[Statistics · OpenDota] ").
+_TITLE_MARKUP_RE = re.compile(r"^\s*(?:#{1,6}\s*|[-*]\s+|\*\*|\[[^\]]{0,60}\]\s*|【[^】]{0,60}】\s*)+")
+
 
 # ---------------------------------------------------------------------------
 # Query construction
@@ -335,15 +507,22 @@ class KnowledgeChunk:
 
 # Base weight per query-tag kind (before IDF): specific beats generic.
 _W_MATCHUP = 4.0
+# The opponent's side of a matchup (a tip written for the enemy player) is
+# useful context but must rank below the player's own hero chunks.
+_REVERSE_MATCHUP_SHARE = 0.5
 _W_PLAYER_HERO = 3.0
 _W_KILLER = 2.0
 _W_SITUATION = 2.0
 _W_ENEMY = 1.5
 _W_ITEM = 1.0
+_W_BUYER = 0.5   # item tips for a typical buyer who does not own the item yet
 _W_ROLE = 1.2
 _W_MECHANIC = 1.0
 _W_PHASE = 0.5
 _W_UNIVERSAL = 0.25
+# A tag that scopes without ranking (the query's topic): far below the
+# relevance floor on its own.
+_W_SCOPE_ONLY = 0.01
 
 _POINT_TYPE_KEYWORDS = {
     "death": "death died killed gank 死亡 阵亡 被杀 被抓",
@@ -361,6 +540,15 @@ _PHASE_KEYWORDS = {
 }
 
 
+def _hero_display(name: Any) -> str:
+    """Display name of a hero for the lexical query (chunk text uses display names)."""
+    try:
+        from .data_manager import resolve_hero_name
+        return resolve_hero_name(name) or str(name or "")
+    except Exception:  # pragma: no cover - data layer unavailable
+        return str(name or "")
+
+
 def build_query(ctx) -> tuple[dict[str, float], str]:
     """Weighted query tags + BM25 query text for a :class:`DecisionContext`."""
     weights: dict[str, float] = {}
@@ -373,10 +561,13 @@ def build_query(ctx) -> tuple[dict[str, float], str]:
     dp = ctx.decision_point
     player_hero = ctx.player_state.hero_name
     add(hero_tag(player_hero), _W_PLAYER_HERO)
+    add(buyer_tag(player_hero), _W_BUYER)  # the player only, never an enemy
     add("hero:all", _W_UNIVERSAL)
     if ctx.game_phase:
         add(f"phase:{ctx.game_phase}", _W_PHASE)
     add(f"situation:{dp.point_type}", _W_SITUATION)
+    # What the decision is about, for chunks that state a topic of their own.
+    add(ECONOMY_TAG if dp.point_type == "missed_cs" else FIGHT_TAG, _W_SCOPE_ONLY)
 
     match_context = ctx.match_context or {}
     add(_POSITION_ROLE_TAGS.get(match_context.get("player_position")), _W_ROLE)
@@ -394,25 +585,57 @@ def build_query(ctx) -> tuple[dict[str, float], str]:
     if killer:
         add(hero_tag(killer), _W_KILLER)
         add(matchup_tag(player_hero, killer), _W_MATCHUP)
-        add(matchup_tag(killer, player_hero), _W_MATCHUP * 0.75)
-        text_parts.append(killer)
+        add(matchup_tag(killer, player_hero), _W_MATCHUP * _REVERSE_MATCHUP_SHARE)
+        text_parts.append(_hero_display(killer))  # killer_hero may be an npc name
     for enemy in list(ctx.enemy_states)[:5]:
         add(hero_tag(enemy.hero_name), _W_ENEMY)
         add(matchup_tag(player_hero, enemy.hero_name), _W_MATCHUP)
-        add(matchup_tag(enemy.hero_name, player_hero), _W_MATCHUP * 0.75)
+        add(matchup_tag(enemy.hero_name, player_hero), _W_MATCHUP * _REVERSE_MATCHUP_SHARE)
         text_parts.append(enemy.hero_name)
     for item in list(dict.fromkeys(ctx.player_state.items or []))[:12]:
         add(item_tag(item), _W_ITEM)
 
+    # What kind of death decides which principles apply (measured on the
+    # retrieval benchmark: without these the teamfight-positioning chunk never
+    # reached the top 10 of a teamfight death, nor the vision-safety chunk
+    # that of a pick-off).
+    teamfight_death = dp.point_type == "death" and bool(getattr(dp.related_death, "is_teamfight", False))
     if dp.point_type in ("death", "overextend"):
-        add("mechanic:vision", _W_MECHANIC)
         add("mechanic:positioning", _W_MECHANIC)
-    if dp.point_type in ("bad_trade", "missed_cs"):
-        add("mechanic:cs", _W_MECHANIC)
+        if not teamfight_death:  # a teamfight death is rarely a vision problem
+            add("mechanic:vision", _W_MECHANIC)
+    if teamfight_death:
+        add("mechanic:teamfight", _W_MECHANIC * 1.5)
+        add("mechanic:trade", _W_MECHANIC)
+    elif dp.point_type == "death":  # pick-off / gank
+        add("situation:gank", _W_SITUATION * 0.75)
+        add("situation:danger", _W_SITUATION * 0.75)
+        add("mechanic:map_awareness", _W_MECHANIC)
+    if dp.point_type == "overextend":  # staying in lane on low HP is a lost trade
+        add("situation:bad_trade", _W_SITUATION)
         add("mechanic:trading", _W_MECHANIC)
         add("mechanic:laning", _W_MECHANIC * 0.8)
+    if ctx.game_phase == "pregame":
+        # Before the horn the rune fight IS the situation, whatever the point
+        # type: the phase and rune tags weigh like a situation tag (with the
+        # 0.5 of a phase the rune-contest and level-1 chunks ended up behind
+        # every death-analysis section, or outside the block).
+        add("phase:pregame", _W_SITUATION)
+        add("mechanic:rune", _W_SITUATION)
+        add("mechanic:teamfight", _W_MECHANIC)
+    if dp.point_type in ("bad_trade", "missed_cs"):
+        add("mechanic:cs", _W_MECHANIC)
+        add("mechanic:laning", _W_MECHANIC * 0.8)
+    if dp.point_type == "bad_trade":
+        add("mechanic:trading", _W_MECHANIC)
     if dp.point_type in ("fight_engage", "good_play"):
         add("mechanic:teamfight", _W_MECHANIC)
+    if dp.point_type == "good_play" and getattr(dp, "subtype", "") == "smoke":
+        # A kill out of a smoke is judged by the smoke-gank principles first
+        # (without these tags that chunk sat at rank 5 behind teamfight
+        # positioning in all five real smoke plays).
+        add("mechanic:smoke", _W_MECHANIC)
+        add("mechanic:gank", _W_MECHANIC)
 
     if dp.brief:
         text_parts.append(dp.brief)
@@ -429,12 +652,30 @@ _PRIORITY_WEIGHT = {1: 1.2, 2: 1.0, 3: 0.85}
 _STALE_PATCH_FACTOR = 0.5
 _SCOPE_MISMATCH_FACTOR = 0.5
 _ITEM_NOT_OWNED_FACTOR = 0.6
-_SCOPED_NAMESPACES = ("phase:", "role:")
+_SCOPED_NAMESPACES = ("phase:", "role:", "topic:")
 _RELATIVE_CUTOFF = 0.3
 _TAG_SHARE = 0.7
 _LEXICAL_SHARE = 0.3
 _MIN_RELEVANCE = 0.12
 _MAX_PER_CATEGORY = 3
+# Entries of one block whose prose was written by an LLM or a third party
+# (source types llm_distilled / video): background, never the bulk of a block.
+_MAX_UNTRUSTED = 2
+# Pooled hybrid formula (used when dense scores are available). Constants
+# measured on the labelled benchmark (backend/tests/data/rag_benchmark).
+_HYBRID_TAG_SHARE = 0.6
+_HYBRID_LEXICAL_SHARE = 0.1
+_HYBRID_DENSE_SHARE = 0.3
+# Dense credit of a chunk the dense term does not rank: a hero / matchup /
+# item chunk, and a generic chunk without a vector. Neutral, not 0: on a
+# server without an embedding model the learned and operator principles have
+# no vector, and 0 pushed them behind every principle that has one (measured:
+# missed-CS nDCG@10 0.92 lexical, 0.87 with 0, 0.89 with 0.5; overall equal).
+_NEUTRAL_DENSE = 0.5
+# The dense term lifts more generic chunks over the relative cut-off; 0.5
+# keeps the share of irrelevant chunks down. On the lexical formula the same
+# value costs recall, so that one stays at 0.3.
+_HYBRID_RELATIVE_CUTOFF = 0.5
 
 
 class KnowledgeStore:
@@ -452,6 +693,7 @@ class KnowledgeStore:
         self._bm25_dirty: bool = True
         self._index_lock = threading.Lock()
         self.current_patch = current_patch or ""
+        self.revision = 0   # bumped by every mutation (caches derived from the chunks key on it)
 
     # ------------------------------------------------------------------
     # Mutation
@@ -477,6 +719,7 @@ class KnowledgeStore:
         if chunk.dedupe_key:
             self._dedupe[chunk.dedupe_key] = chunk.chunk_id
         self._bm25_dirty = True
+        self.revision += 1
 
     def remove_chunk(self, chunk_id: str) -> None:
         """Remove a chunk (no-op when absent)."""
@@ -484,6 +727,7 @@ class KnowledgeStore:
         if old is not None:
             self._unindex(old)
             self._bm25_dirty = True
+            self.revision += 1
 
     def add_chunk(self, chunk: KnowledgeChunk) -> None:
         """Add (or replace by ``chunk_id``) a chunk; tags are normalised.
@@ -492,10 +736,19 @@ class KnowledgeStore:
         chunk is merged into an editorial/builtin one (its text appended as
         labelled statistics), an editorial chunk absorbs a previously added
         learned one, and between two chunks of the same kind the one for the
-        current patch (else the first one) wins.
+        current patch (else the first one) wins. A learned chunk from
+        another patch is never merged: inside the editorial chunk it would
+        lose both its patch and the stale-patch penalty, so the editorial
+        chunk is kept alone.
+
+        A chunk written by an LLM or a third party is never "critical":
+        priority 1 (x1.2 in the ranking) is lowered to 2, whoever produced
+        the chunk.
         """
         chunk.tags = normalize_tags(chunk.tags)
         chunk.token_estimate = estimate_tokens(chunk.content)
+        if not chunk.trusted and chunk.priority < 2:
+            chunk.priority = 2
         key = chunk.dedupe_key
         existing_id = self._dedupe.get(key) if key else None
         if existing_id and existing_id != chunk.chunk_id and existing_id in self._chunks:
@@ -503,11 +756,12 @@ class KnowledgeStore:
             new_learned = is_learned_source(chunk.source)
             old_learned = is_learned_source(existing.source)
             if new_learned and not old_learned:
-                self._insert(_merge_chunks(existing, chunk))
+                if self._is_current(chunk):
+                    self._insert(_merge_chunks(existing, chunk))
                 return
             if old_learned and not new_learned:
                 self.remove_chunk(existing_id)
-                self._insert(_merge_chunks(chunk, existing))
+                self._insert(_merge_chunks(chunk, existing) if self._is_current(existing) else chunk)
                 return
             if not (self._is_current(chunk) and not self._is_current(existing)):
                 return  # keep the first one
@@ -547,8 +801,19 @@ class KnowledgeStore:
     def __len__(self) -> int:
         return len(self._chunks)
 
-    def rank(self, query_tags: dict[str, float], text: str = "") -> list[tuple[KnowledgeChunk, float]]:
+    def chunks(self) -> list[KnowledgeChunk]:
+        """Every chunk, sorted by ``chunk_id`` (treat them as read-only)."""
+        return [self._chunks[chunk_id] for chunk_id in sorted(self._chunks)]
+
+    def rank(self, query_tags: dict[str, float], text: str = "",
+             dense: dict[str, float] | None = None) -> list[tuple[KnowledgeChunk, float]]:
         """Score candidates for weighted *query_tags* + lexical *text*.
+
+        *dense* maps chunk ids to the cosine similarity between the chunk
+        and the situation query. Only generic chunks are read from it (see
+        the module docstring); when it holds none, ranking is lexical. The
+        caller decides whether the scores are worth using (enough of the
+        principles covered, see :func:`rag.runtime.query_scores`).
 
         Returns ``[(chunk, score)]`` sorted best-first (ties by chunk_id),
         filtered to chunks with meaningful relevance.
@@ -569,8 +834,29 @@ class KnowledgeStore:
             tag_scores[chunk_id] /= 1.0 + 0.1 * max(0, breadth - 3)
 
         lexical = self._ensure_index().scores(text) if text else {}
-        max_tag = max(tag_scores.values(), default=0.0)
-        max_lex = max(lexical.values(), default=0.0)
+        # The dense term orders the generic pool only (generic chunks always
+        # pass the entity gate, so every chunk of the pool is a candidate).
+        pool: dict[str, float] = {}
+        for chunk_id, cosine in (dense or {}).items():
+            chunk = self._chunks.get(chunk_id)
+            if chunk is not None and not is_entity_scoped(chunk.tags):
+                pool[chunk_id] = float(cosine)
+        hybrid = bool(pool)
+        low, high = (min(pool.values()), max(pool.values())) if hybrid else (0.0, 0.0)
+        if hybrid:
+            tag_share, lexical_share, dense_share = (
+                _HYBRID_TAG_SHARE, _HYBRID_LEXICAL_SHARE, _HYBRID_DENSE_SHARE)
+        else:
+            tag_share, lexical_share, dense_share = _TAG_SHARE, _LEXICAL_SHARE, 0.0
+        # Entity gate first: both parts are normalised to the best ELIGIBLE
+        # candidate, not to a chunk about a hero that is not in the game.
+        eligible = [
+            chunk_id for chunk_id in set(tag_scores) | set(lexical) | set(pool)
+            if chunk_id in self._chunks
+            and _entities_match(self._chunks[chunk_id].tags, query_tags)
+        ]
+        max_tag = max((tag_scores.get(c, 0.0) for c in eligible), default=0.0)
+        max_lex = max((lexical.get(c, 0.0) for c in eligible), default=0.0)
 
         scoped = [
             (ns, {t for t in query_tags if t.startswith(ns)}) for ns in _SCOPED_NAMESPACES
@@ -578,13 +864,17 @@ class KnowledgeStore:
         scoped = [(ns, wanted) for ns, wanted in scoped if wanted]
         query_items = {t for t in query_tags if t.startswith("item:")}
         results: list[tuple[KnowledgeChunk, float]] = []
-        for chunk_id in set(tag_scores) | set(lexical):
-            chunk = self._chunks.get(chunk_id)
-            if chunk is None or not _entities_match(chunk.tags, query_tags):
-                continue
+        for chunk_id in eligible:
+            chunk = self._chunks[chunk_id]
             t = math.sqrt(tag_scores.get(chunk_id, 0.0) / max_tag) if max_tag > 0 else 0.0
             lx = lexical.get(chunk_id, 0.0) / max_lex if max_lex > 0 else 0.0
-            score = _TAG_SHARE * t + _LEXICAL_SHARE * lx
+            score = tag_share * t + lexical_share * lx
+            if hybrid:
+                if chunk_id in pool:
+                    dn = (pool[chunk_id] - low) / (high - low) if high > low else _NEUTRAL_DENSE
+                else:  # not ranked by cosine: an entity chunk, or a generic chunk without a vector
+                    dn = _NEUTRAL_DENSE
+                score += dense_share * dn
             score *= _PRIORITY_WEIGHT.get(chunk.priority, 1.0)
             if is_learned_source(chunk.source) and not self._is_current(chunk):
                 score *= _STALE_PATCH_FACTOR
@@ -598,12 +888,16 @@ class KnowledgeStore:
                 results.append((chunk, round(score, 9)))
         results.sort(key=lambda cs: (-cs[1], cs[0].chunk_id))
         if results:
-            floor = results[0][1] * _RELATIVE_CUTOFF
+            floor = results[0][1] * (_HYBRID_RELATIVE_CUTOFF if hybrid else _RELATIVE_CUTOFF)
             results = [cs for cs in results if cs[1] >= floor]
         return results
 
     def retrieve(self, ctx, budget: int = 3000) -> list[KnowledgeChunk]:
-        """Retrieve relevant chunks for a :class:`DecisionContext` within *budget* tokens."""
+        """Retrieve relevant chunks for a :class:`DecisionContext` within *budget* tokens.
+
+        Lexical ranking; :func:`knowledge_base.get_knowledge_for_context`
+        adds the dense term.
+        """
         query_tags, text = build_query(ctx)
         return self.select(self.rank(query_tags, text), budget)
 
@@ -619,24 +913,39 @@ class KnowledgeStore:
         scored: list[tuple[KnowledgeChunk, float]],
         budget: int,
         per_category: int = _MAX_PER_CATEGORY,
+        overhead: Callable[[KnowledgeChunk], int] | None = None,
+        max_chunks: int = 0,
+        max_untrusted: int = _MAX_UNTRUSTED,
     ) -> list[KnowledgeChunk]:
-        """Pick best-first within *budget* tokens with category / dedupe diversity."""
+        """Pick best-first within *budget* tokens with category / dedupe diversity.
+
+        *overhead* returns the tokens a chunk costs on top of its content
+        (its numbered handle line); *max_chunks* > 0 caps the selection;
+        at most *max_untrusted* chunks written by an LLM or a third party
+        are picked (see :attr:`KnowledgeChunk.trusted`; negative = no cap).
+        """
         selected: list[KnowledgeChunk] = []
         used = 0
+        untrusted = 0
         per_cat: dict[str, int] = {}
         keys: set[str] = set()
         for chunk, score in sorted(scored, key=lambda cs: (-cs[1], cs[0].chunk_id)):
-            if score <= 0:
+            if score <= 0 or (max_chunks > 0 and len(selected) >= max_chunks):
                 break
             if per_cat.get(chunk.category, 0) >= per_category:
                 continue
             if chunk.dedupe_key and chunk.dedupe_key in keys:
                 continue
+            if not chunk.trusted and 0 <= max_untrusted <= untrusted:
+                continue
             cost = chunk.token_estimate or estimate_tokens(chunk.content)
+            if overhead is not None:
+                cost += overhead(chunk)
             if used + cost > budget:
                 continue
             selected.append(chunk)
             used += cost
+            untrusted += not chunk.trusted
             per_cat[chunk.category] = per_cat.get(chunk.category, 0) + 1
             if chunk.dedupe_key:
                 keys.add(chunk.dedupe_key)
@@ -663,7 +972,8 @@ class KnowledgeStore:
 
         Each object needs ``chunk_id`` and ``content``; ``category``,
         ``tags``, ``priority``, ``token_estimate``, ``source``,
-        ``patch_version`` and ``dedupe_key`` are optional.
+        ``patch_version``, ``dedupe_key``, ``title`` and ``index_text`` (the
+        English text of a chunk written in another language) are optional.
         """
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -684,6 +994,8 @@ class KnowledgeStore:
                 source=str(item.get("source") or "json"),
                 patch_version=str(item.get("patch_version") or ""),
                 dedupe_key=str(item.get("dedupe_key") or ""),
+                title=str(item.get("title") or ""),
+                index_text=str(item.get("index_text") or ""),
             ))
             count += 1
         return count
@@ -703,17 +1015,37 @@ class KnowledgeStore:
         }
 
 
-_ENTITY_PREFIXES = ("hero:", "item:", "matchup:")
-
-
 def _entities_match(tags: set[str], query_tags: dict[str, float]) -> bool:
-    """Entity gate: a chunk about specific heroes / items / matchups is only
-    eligible when at least one of those entities is part of the query (a tip
+    """Entity gate: is a chunk about specific heroes / items / matchups relevant?
+
+    Decided by the most specific entity namespace the chunk carries (a tip
     about Invoker is noise in a game without Invoker, however well its
-    generic phase/role tags match). Chunks without entity tags always pass.
+    generic phase / role tags or its item tag match):
+
+    - ``matchup:`` tags: one of those matchups must be in the query;
+    - else ``hero:`` tags (other than ``hero:all``): one of those heroes
+      must be in the game — owning the item a "[hero, item]" statistic
+      talks about is not enough. A farm / item-timing statistic
+      (:data:`ECONOMY_TAG`) needs the hero to be the player's own
+      (``buyer:<hero>`` is only ever queried for him): the median GPM of the
+      hero who killed the player says nothing about the player's decision;
+    - else ``item:`` tags: the player owns one of the items, or is a listed
+      ``buyer:`` of it (an enemy on the buyer list does not count: only the
+      player's own hero is queried as buyer).
+
+    Chunks without entity tags always pass.
     """
-    entities = [t for t in tags if t.startswith(_ENTITY_PREFIXES) and t != "hero:all"]
-    return not entities or any(t in query_tags for t in entities)
+    matchups = [t for t in tags if t.startswith("matchup:")]
+    if matchups:
+        return any(t in query_tags for t in matchups)
+    heroes = [t for t in tags if t.startswith("hero:") and t != "hero:all"]
+    if heroes:
+        if ECONOMY_TAG in tags:
+            return any("buyer:" + t[len("hero:"):] in query_tags for t in heroes)
+        return any(t in query_tags for t in heroes)
+    if any(t.startswith("item:") for t in tags):
+        return any(t in query_tags for t in tags if t.startswith(("item:", "buyer:")))
+    return True
 
 
 def _scope_mismatch(tags: set[str], namespace: str, wanted: set[str]) -> bool:
@@ -733,10 +1065,12 @@ def _merge_chunks(primary: KnowledgeChunk, extra: KnowledgeChunk) -> KnowledgeCh
         content=content,
         category=primary.category,
         tags=set(primary.tags) | set(extra.tags),
-        priority=min(primary.priority, extra.priority),
+        priority=primary.priority,  # a statistic does not make the tip more important
         source=primary.source,
         patch_version=primary.patch_version,
         dedupe_key=primary.dedupe_key,
+        title=primary.title,
+        # index_text is assigned from the finished English store (knowledge_base)
     )
 
 
@@ -751,10 +1085,18 @@ __all__ = [
     "estimate_tokens",
     "normalize_tag",
     "normalize_tags",
+    "scoped_tags",
     "hero_tag",
     "item_tag",
+    "buyer_tag",
     "matchup_tag",
     "build_query",
     "is_learned_source",
+    "is_untrusted_source",
+    "is_entity_scoped",
+    "is_economy_statistic",
+    "source_type_of",
     "LEARNED_SOURCES",
+    "ECONOMY_TAG",
+    "FIGHT_TAG",
 ]

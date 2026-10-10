@@ -18,7 +18,7 @@ prompt too.
 """
 from __future__ import annotations
 
-from .knowledge_store import KnowledgeChunk, hero_tag, item_tag, matchup_tag
+from .knowledge_store import KnowledgeChunk, buyer_tag, hero_tag, item_tag, matchup_tag
 from .knowledge_base import (
     _DEATH_SECTIONS,
     _LANING_PRINCIPLES,
@@ -26,6 +26,7 @@ from .knowledge_base import (
     _PHASE_OBJECTIVES,
     _PHASE_OBJECTIVES_EN,
     _VISION_SECTIONS,
+    render_rules,
 )
 
 
@@ -40,8 +41,8 @@ def _hero_slug(name: str) -> str:
 
 _ROLE_LABELS = {
     "zh": {
-        "carry": "一号位（大哥）", "mid": "二号位（中单）", "offlane": "三号位（劣势路）",
-        "support_4": "四号位（游走辅助）", "support_5": "五号位（硬辅助）", "unknown": "未知",
+        "carry": "1号位（大哥）", "mid": "2号位（中单）", "offlane": "3号位（劣势路）",
+        "support_4": "4号位（游走辅助）", "support_5": "5号位（硬辅助）", "unknown": "未知",
     },
     "en": {
         "carry": "Position 1 (carry)", "mid": "Position 2 (mid)", "offlane": "Position 3 (offlane)",
@@ -67,6 +68,20 @@ def _lbl(table: dict, lang: str) -> dict:
     return table["en"] if lang == "en" else table["zh"]
 
 
+def usual_role_text(role, lang: str, lead: str = "") -> str:
+    """"usually played as Position 3 (offlane)" for a hero's editorial role.
+
+    The editorial ``role`` is the position a hero is most often picked for,
+    not the one a player took in a given match (an Axe can be the mid), so a
+    hero text never states it as a plain fact. "" for an unknown role;
+    *lead* is put in front of a non-empty result.
+    """
+    label = _lbl(_ROLE_LABELS, lang).get(str(role or ""))
+    if not label or role == "unknown":
+        return ""
+    return lead + (f"usually played as {label}" if lang == "en" else f"通常打{label}")
+
+
 # -------------------------------------------------------------------
 # 1. Role chunks (laning principles + phase objectives)
 # -------------------------------------------------------------------
@@ -90,17 +105,20 @@ def _build_role_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
     for phase, roles in phase_src.items():
         for role, text in roles.items():
             if lang == "en":
-                content = (f"Phase objectives ({phase_labels.get(phase, phase)}, "
-                           f"{role_labels.get(role, role)}): {text}")
+                scope = f"{phase_labels.get(phase, phase)}, {role_labels.get(role, role)}"
+                content = f"Phase objectives ({scope}): {text}"
+                title = f"Phase objectives ({scope})"
             else:
-                content = (f"阶段目标（{phase_labels.get(phase, phase)}，"
-                           f"{role_labels.get(role, role)}）：{text}")
+                scope = f"{phase_labels.get(phase, phase)}，{role_labels.get(role, role)}"
+                content = f"阶段目标（{scope}）：{text}"
+                title = f"阶段目标（{scope}）"
             chunks.append(KnowledgeChunk(
                 chunk_id=f"phase_objectives:{phase}:{role}",
                 content=content,
                 category="phase_objectives",
                 tags=[f"role:{role}", f"phase:{phase}"],
                 priority=2,
+                title=title,
             ))
     return chunks
 
@@ -114,7 +132,7 @@ def _section_chunks(sections: list[dict], prefix: str, category: str, lang: str)
     return [
         KnowledgeChunk(
             chunk_id=f"{prefix}:{section['id']}",
-            content=section[key],
+            content=render_rules(section[key]),
             category=category,
             tags=list(section["tags"]),
             priority=section.get("priority", 2),
@@ -137,19 +155,43 @@ def _build_death_analysis_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
 # 4. General coaching chunks (new knowledge not in hardcoded system)
 # -------------------------------------------------------------------
 
+# Tags of the teamfight-positioning principle. No phase tags: the principle
+# holds for a rune brawl and a lane fight as much as for a late teamfight, and
+# with mid/late-game tags the phase factor kept it out of every laning and
+# pregame teamfight death (7 of 7 real cases).
+_TEAMFIGHT_POSITIONING_TAGS = ["mechanic:teamfight", "mechanic:positioning", "situation:fight_engage",
+                               "situation:good_play"]
+
+
 def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
-    """~10-15 general coaching knowledge chunks."""
+    """~10-15 general coaching knowledge chunks.
+
+    Game facts in these texts follow the 7.36-7.41f patch notes; the smoke
+    radius and Roshan's respawn window are ``{rule}`` placeholders filled
+    from the game data and ``game_constants`` (see
+    ``knowledge_base.render_rules``). Two facts could not be confirmed from
+    the notes and are kept as they were:
+
+    - Roshan's third-kill drop. 7.37: "Refresher Shard and Cheese during
+      daytime or Aghanim's Blessing during night"; 7.38: "Roshan no longer
+      drops Aghanim's Blessing", without saying what a night-time kill
+      drops instead. The text states Cheese + Refresher Shard for every
+      third kill.
+    - The buyback cost formula (200 + net worth / 13) and its penalties: no
+      patch note in that range touches the general rule (the 7.36 / 7.37c
+      "buyback costs 15% / 20% more" lines are Doom's Devil's Bargain facet).
+    """
     chunks: list[KnowledgeChunk] = []
 
     if lang == "en":
         # 1. Roshan timing
         chunks.append(KnowledgeChunk(
             chunk_id="coaching:roshan_timing",
-            content=(
+            content=render_rules(
                 "## Roshan Timing Management\n"
-                "- Roshan respawns randomly 7-11 minutes after being killed (average ~8 minutes)\n"
+                "- Roshan respawns randomly {roshan_respawn_min_minutes}-{roshan_respawn_max_minutes} minutes after being killed\n"
                 "- Aegis of the Immortal lasts 5 minutes, then disappears and fully restores HP and mana\n"
-                "- Second Roshan drops Cheese additionally, third drops Refresher Shard or Aghanim's Blessing\n"
+                "- From the second kill Roshan also drops Roshan's Banner; from the third also Cheese and a Refresher Shard. Aghanim's Blessing no longer drops\n"
                 "- Record Roshan kill time and set up vision control before the respawn window\n"
                 "- After taking Aegis, play aggressively and push; don't waste the Aegis time window"
             ),
@@ -187,9 +229,9 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
         # 4. Smoke ganking principles
         chunks.append(KnowledgeChunk(
             chunk_id="coaching:smoke_gank",
-            content=(
+            content=render_rules(
                 "## Smoke Gank Principles\n"
-                "- Smoke makes allied units invisible and undetectable by wards; dispels within 1025 range of enemy heroes or buildings\n"
+                "- Smoke makes allied units invisible and undetectable by wards; dispels within {smoke_break_radius} range of enemy heroes or buildings\n"
                 "- Best smoke timing: after clearing a wave, after placing key wards, when enemy core position is spotted\n"
                 "- Recommended smoke group: 3-4 heroes; too many leaves other lanes exposed and wastes farming time\n"
                 "- Smoke route should avoid likely enemy Sentry Ward positions\n"
@@ -203,9 +245,9 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
             chunk_id="coaching:rune_control",
             content=(
                 "## Rune Control and Timing\n"
-                "- Bounty runes spawn every 3 minutes in four jungle locations (0:00, 3:00, 6:00...), providing gold and XP\n"
-                "- River runes spawn every 2 minutes on both sides of the river (even minutes: 2:00, 4:00, 6:00...)\n"
-                "- River rune types: Double Damage, Haste, Invisibility, Illusion, Arcane, Regeneration\n"
+                "- Bounty runes spawn every 4 minutes (0:00, 4:00, 8:00...) and give every teammate gold (40 at 0:00, +6 per 4 minutes); no XP\n"
+                "- Water runes spawn in the river at 2:00 and 4:00; power runes every 2 minutes from 6:00 (Double Damage, Haste, Invisibility, Illusion, Arcane, Regeneration, Shield)\n"
+                "- Shrines of Wisdom activate every 7 minutes: 200 / 500 / 800... XP to the capturing hero and the lowest-XP teammate\n"
                 "- Mid should push the wave 10 seconds before even minutes then move to secure the rune; Bottle can be refilled\n"
                 "- Haste and Invisibility runes are best for ganking; Double Damage is good for farming or fighting"
             ),
@@ -293,7 +335,7 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Don't cluster together; easy to be wiped by AOE abilities (e.g. Black Hole, Ravage, Echo Slam)\n"
                 "- Before teamfight begins, identify your priority attack target and which teammates to protect"
             ),
-            tags=["mechanic:teamfight", "mechanic:positioning", "phase:mid_game", "phase:late_game"],
+            tags=list(_TEAMFIGHT_POSITIONING_TAGS),
             priority=2,
         ))
         # 12. Farming efficiency
@@ -304,10 +346,10 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- Core heroes should establish a fixed farming route to maximize GPM\n"
                 "- Don't wait at one camp for respawn; move to the next camp immediately after clearing\n"
                 "- Lane creep gold takes priority over jungle gold (lane gold is higher and doesn't waste travel time)\n"
-                "- Heroes with wave-clear abilities should push the lane quickly then move to jungle, not wait on lane\n"
-                "- Mid-game targets: carry 600+ GPM, mid 500+ GPM, offlane 400+ GPM"
+                "- Heroes with wave-clear abilities should push the lane quickly then move to jungle, not wait on lane"
             ),
-            tags=["mechanic:farming", "role:carry", "role:mid", "phase:laning", "phase:mid_game"],
+            tags=["mechanic:farming", "mechanic:cs", "situation:missed_cs", "role:carry", "role:mid",
+                  "phase:laning", "phase:mid_game"],
             priority=3,
         ))
         # 13. Map awareness basics
@@ -324,15 +366,29 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
             tags=["mechanic:map_awareness", "phase:laning", "phase:mid_game", "phase:late_game"],
             priority=2,
         ))
+        # 14. Lane trading (HP / mana trades without a kill)
+        chunks.append(KnowledgeChunk(
+            chunk_id="coaching:lane_trading",
+            content=(
+                "## Lane Trading Principles\n"
+                "- Trade when the enemy goes for a last hit or has just used their key spell: they cannot hit back without giving something up\n"
+                "- Attacking an enemy hero within about 500 range of enemy creeps pulls the creep wave onto you; hit from outside that range or when few enemy creeps are alive\n"
+                "- Compare resources before committing: regeneration items, mana for one more spell, levels (an extra skill point at level 2 or 3 wins trades) and which side has the bigger wave\n"
+                "- A trade is only good if you lose less than the enemy relative to the regeneration each side has; taking damage without hitting back, with no kill threat, is a lost trade\n"
+                "- After a lost trade do not stay in harass range on low HP: use regeneration at once or drop back behind your creeps, low HP in lane invites a dive or a rotation"
+            ),
+            tags=["situation:bad_trade", "mechanic:trading", "mechanic:laning", "phase:laning"],
+            priority=2,
+        ))
     else:
         # 1. Roshan timing
         chunks.append(KnowledgeChunk(
             chunk_id="coaching:roshan_timing",
-            content=(
+            content=render_rules(
                 "## Roshan时间管理\n"
-                "- Roshan被击杀后7-11分钟内随机重生（平均约8分钟）\n"
+                "- Roshan被击杀后{roshan_respawn_min_minutes}-{roshan_respawn_max_minutes}分钟内随机重生\n"
                 "- 不朽盾（Aegis）持续5分钟，过期后自动消失并回满生命和魔法\n"
-                "- 第二次Roshan会额外掉落奶酪（Cheese），第三次掉落刷新碎片或A杖祝福\n"
+                "- 从第二次击杀起Roshan还会掉落 Roshan's Banner（战旗）；从第三次起还会掉落奶酪（Cheese）和刷新碎片。A杖祝福不再掉落\n"
                 "- 记录Roshan击杀时间，提前在重生窗口前做好视野控制\n"
                 "- 拿盾后应积极打架推进，不要浪费盾的时间窗口"
             ),
@@ -370,9 +426,9 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
         # 4. Smoke ganking principles
         chunks.append(KnowledgeChunk(
             chunk_id="coaching:smoke_gank",
-            content=(
+            content=render_rules(
                 "## 烟雾Gank原则\n"
-                "- 烟雾使友方单位隐身且不会被守卫发现，靠近敌方英雄或建筑1025距离时自动消散\n"
+                "- 烟雾使友方单位隐身且不会被守卫发现，靠近敌方英雄或建筑{smoke_break_radius}距离时自动消散\n"
                 "- 最佳开雾时机：打完一波兵线后、刚做好关键眼位后、对方核心位置被发现时\n"
                 "- 开雾人数建议3-4人，太多会让其他路暴露且浪费刷钱时间\n"
                 "- 开雾路线避开敌方可能的岗哨守卫位置\n"
@@ -386,9 +442,9 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
             chunk_id="coaching:rune_control",
             content=(
                 "## 神符控制与时机\n"
-                "- 赏金神符每3分钟刷新在四个野区（0:00, 3:00, 6:00...），提供金钱和经验\n"
-                "- 河道神符每2分钟刷新在河道两侧（偶数分钟：2:00, 4:00, 6:00...）\n"
-                "- 河道神符种类：双倍伤害、极速、隐身、幻象、秘法、再生\n"
+                "- 赏金神符每4分钟刷新一次（0:00, 4:00, 8:00...），给每名队友金钱（0:00为40金，每4分钟+6金），不提供经验\n"
+                "- 圣水神符在2:00和4:00刷新于河道；强化神符从6:00起每2分钟刷新（双倍伤害、极速、隐身、幻象、秘法、再生、护盾）\n"
+                "- 智慧圣坛每7分钟激活一次：占领的英雄和经验最低的队友获得200 / 500 / 800...经验\n"
                 "- 中单应在偶数分钟前10秒推线后去抢符，瓶子可以装满\n"
                 "- 极速和隐身神符最适合gank，双倍伤害适合刷钱或打架"
             ),
@@ -455,12 +511,12 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
         chunks.append(KnowledgeChunk(
             chunk_id="coaching:stack_pull",
             content=(
-                "## 辅助拉野与堆野\n"
+                "## 4号位、5号位的拉野与堆野\n"
                 "- 小拉（拉近野）：x:15或x:45时拉野，将兵线拉回己方塔下\n"
                 "- 大拉（连拉远野）：小拉后立即拉远野，可以完全清掉一波己方小兵\n"
                 "- 堆野：x:53-x:55时攻击中立生物将其引出营地，下一分钟会刷新新的一波\n"
                 "- 多层堆叠可以为核心提供大量经济（远古野堆叠尤其有利可图）\n"
-                "- 辅助应养成定时拉野堆野的习惯，这是对线期经济和兵线控制的核心技能"
+                "- 4号位和5号位应养成定时拉野堆野的习惯，这是对线期经济和兵线控制的核心技能"
             ),
             tags=["mechanic:stack_pull", "mechanic:laning", "role:support_5", "role:support_4", "phase:laning"],
             priority=2,
@@ -472,11 +528,11 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "## 团战站位原则\n"
                 "- 核心输出英雄站后排，等前排吸收技能后再输出\n"
                 "- 先手英雄（如Axe、Tidehunter）需要找到好的切入角度，不要正面硬冲\n"
-                "- 辅助在团战中的首要任务是释放控制技能和保护核心，不是输出\n"
+                "- 4号位和5号位在团战中的首要任务是释放控制技能和保护核心，不是输出\n"
                 "- 不要所有人挤在一起，容易被AOE技能团灭（如黑洞、毁灭、回音击）\n"
                 "- 团战开始前确定你的优先攻击目标和需要保护的队友"
             ),
-            tags=["mechanic:teamfight", "mechanic:positioning", "phase:mid_game", "phase:late_game"],
+            tags=list(_TEAMFIGHT_POSITIONING_TAGS),
             priority=2,
         ))
         # 12. Farming efficiency
@@ -487,10 +543,10 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 核心英雄应建立固定的刷野路线，最大化每分钟金钱收入\n"
                 "- 不要在一个营地等刷新，打完一个营地立刻移动到下一个\n"
                 "- 兵线上的补刀金优先于野怪金（兵线金更高且不会浪费时间走路）\n"
-                "- 带推线技能的英雄应快速清线后进野区，而不是在线上等兵\n"
-                "- 中期目标：大哥600+GPM，中单500+GPM，三号位400+GPM"
+                "- 带推线技能的英雄应快速清线后进野区，而不是在线上等兵"
             ),
-            tags=["mechanic:farming", "role:carry", "role:mid", "phase:laning", "phase:mid_game"],
+            tags=["mechanic:farming", "mechanic:cs", "situation:missed_cs", "role:carry", "role:mid",
+                  "phase:laning", "phase:mid_game"],
             priority=3,
         ))
         # 13. Map awareness basics
@@ -505,6 +561,20 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
                 "- 注意敌方英雄等级，等级领先的敌人在1v1中通常有优势"
             ),
             tags=["mechanic:map_awareness", "phase:laning", "phase:mid_game", "phase:late_game"],
+            priority=2,
+        ))
+        # 14. Lane trading (HP / mana trades without a kill)
+        chunks.append(KnowledgeChunk(
+            chunk_id="coaching:lane_trading",
+            content=(
+                "## 对线换血原则\n"
+                "- 在对手去补刀、或刚交出关键技能时换血：此时他还手就必须付出代价\n"
+                "- 在敌方小兵约500范围内攻击敌方英雄会吸引兵线仇恨；应在范围外出手，或等敌方小兵数量少时再打\n"
+                "- 出手前比较双方资源：回复品、是否还有一个技能的蓝量、等级（2级、3级多一点技能点往往决定换血胜负）以及哪一方兵线更多\n"
+                "- 换血是否赚要看双方损失与各自回复能力的对比；只挨打不还手、又没有击杀威胁，就是亏的换血\n"
+                "- 换血吃亏后不要残血停留在对方消耗范围内：立刻用回复品或退到己方小兵身后，线上残血会招来越塔或游走"
+            ),
+            tags=["situation:bad_trade", "mechanic:trading", "mechanic:laning", "phase:laning"],
             priority=2,
         ))
 
@@ -582,7 +652,7 @@ def _build_early_game_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
             "## 开局阶段原则\n"
             "- 进入暗区前先数清楚可见的敌方英雄人数\n"
             "- 检查敌方出门装备——出了Orb of Venom或鞋子意味着对方想打架\n"
-            "- 辅助应在0:00前到达赏金符点或拉野点\n"
+            "- 4号位和5号位应在0:00前到达赏金符点或拉野点\n"
             "- 核心根据对位匹配决定是否帮忙抢符或直接去线上\n"
             "- 如果己方1级团战能力较弱，不要参与赏金符争夺\n"
             "- 优先考虑开局的视野（第一个眼位放置）而不是赏金符"
@@ -668,8 +738,6 @@ def _hero_chunks(hero_name: str, info: dict, lang: str) -> list[KnowledgeChunk]:
         return []
 
     slug = _hero_slug(hero_name)
-    role = str(info.get("role") or "unknown")
-    role_text = _lbl(_ROLE_LABELS, lang).get(role, role)
     attr_text = _lbl(_ATTR_LABELS, lang).get(info.get("attribute", ""), info.get("attribute", ""))
     level1_text = _lbl(_LEVEL1_LABELS, lang).get(level1, level1)
     ranged = info.get("attack_type") == "ranged"
@@ -679,7 +747,8 @@ def _hero_chunks(hero_name: str, info: dict, lang: str) -> list[KnowledgeChunk]:
     tag = hero_tag(hero_name)
 
     if lang == "en":
-        lines = [f"Hero: {hero_name} — {role_text}, {attr_text} ({'ranged' if ranged else 'melee'})"]
+        lines = [f"Hero: {hero_name} — {attr_text}, {'ranged' if ranged else 'melee'}"
+                 + usual_role_text(info.get("role"), lang, "; ")]
         if power_spikes:
             lines.append(f"Power spikes: {_join(power_spikes, lang)}")
         if weaknesses:
@@ -687,7 +756,8 @@ def _hero_chunks(hero_name: str, info: dict, lang: str) -> list[KnowledgeChunk]:
         if level1 or level1_note:
             lines.append(f"Level-1 fights: {level1_text}" + (f" — {level1_note}" if level1_note else ""))
     else:
-        lines = [f"英雄：{hero_name}（{role_text}，{attr_text}，{'远程' if ranged else '近战'}）"]
+        lines = [f"英雄：{hero_name}（{attr_text}，{'远程' if ranged else '近战'}"
+                 + usual_role_text(info.get("role"), lang, "；") + "）"]
         if power_spikes:
             lines.append(f"强势期：{_join(power_spikes, lang)}")
         if weaknesses:
@@ -703,6 +773,7 @@ def _hero_chunks(hero_name: str, info: dict, lang: str) -> list[KnowledgeChunk]:
         priority=2,
         source="editorial",
         dedupe_key=f"hero_overview:{slug}",
+        title=f"{hero_name} — hero overview" if lang == "en" else f"{hero_name} — 英雄概览",
     )]
     if laning_tips:
         label = "Laning tips" if lang == "en" else "对线要点"
@@ -715,6 +786,7 @@ def _hero_chunks(hero_name: str, info: dict, lang: str) -> list[KnowledgeChunk]:
             priority=2,
             source="editorial",
             dedupe_key=f"hero_laning:{slug}",
+            title=f"{hero_name} — {label.lower() if lang == 'en' else label}",
         ))
     return chunks
 
@@ -759,10 +831,18 @@ def _ability_chunk(hero_name: str, hero_abilities: dict[str, dict], lang: str) -
         priority=2,
         source="editorial",
         dedupe_key=f"hero_abilities:{slug}",
+        title=f"{hero_name} — abilities" if lang == "en" else f"{hero_name} — 技能要点",
     )
 
 
 def _matchup_chunks(matchup_tips: dict[str, dict[str, str]], lang: str) -> list[KnowledgeChunk]:
+    """One chunk per editorial matchup tip.
+
+    A tip is written for the player of *hero_a* ("you"). Queries also fetch
+    it for the *hero_b* player (the opponent's side is often the only tip
+    for the pair), so the text itself says whom it addresses — otherwise a
+    model coaching *hero_b* reads the opponent's advice as its own.
+    """
     chunks: list[KnowledgeChunk] = []
     for hero_a in sorted(matchup_tips):
         for hero_b, tip in sorted(matchup_tips[hero_a].items()):
@@ -770,8 +850,12 @@ def _matchup_chunks(matchup_tips: dict[str, dict[str, str]], lang: str) -> list[
                 continue
             slug_a, slug_b = _hero_slug(hero_a), _hero_slug(hero_b)
             tag = matchup_tag(hero_a, hero_b)
-            content = (f"{hero_a} vs {hero_b}: {tip}" if lang == "en"
-                       else f"{hero_a} 对阵 {hero_b}：{tip}")
+            if lang == "en":
+                content = (f"Matchup tip written for the {hero_a} player (\"you\" = {hero_a}) "
+                           f"against {hero_b}: {tip}")
+            else:
+                content = (f"写给 {hero_a} 玩家的对位要点（文中的 you 指 {hero_a}），"
+                           f"对手 {hero_b}：{tip}")
             chunks.append(KnowledgeChunk(
                 chunk_id=f"matchup:{slug_a}_vs_{slug_b}",
                 content=content,
@@ -782,6 +866,8 @@ def _matchup_chunks(matchup_tips: dict[str, dict[str, str]], lang: str) -> list[
                 priority=2,
                 source="editorial",
                 dedupe_key=tag,
+                title=(f"{hero_a} vs {hero_b} — matchup note" if lang == "en"
+                       else f"{hero_a} 对 {hero_b} — 对位要点"),
             ))
     return chunks
 
@@ -813,15 +899,19 @@ def _item_chunks(items: dict[str, dict], lang: str) -> list[KnowledgeChunk]:
                     "主动" if active else "被动",
                 ) if x)
                 content = f"物品：{item_name}（{meta}）" + (f" — {desc}" if desc else "") + f"\n要点：{tip}"
-            hero_tags = [t for t in _heroes_to_tags(data.get("heroes")) if t != "hero:all"]
+            # Typical buyers go under "buyer:", not "hero:": the tip is about
+            # the item, and an enemy on the list must not make it eligible.
+            buyer_tags = [buyer_tag(t.split(":", 1)[1])
+                          for t in _heroes_to_tags(data.get("heroes")) if t != "hero:all"]
             chunks.append(KnowledgeChunk(
                 chunk_id=f"item:{slug}",
                 content=content,
                 category="item_coaching",
-                tags=[tag, "mechanic:item_usage", *hero_tags],
+                tags=[tag, "mechanic:item_usage", *buyer_tags],
                 priority=2,
                 source="editorial",
                 dedupe_key=f"item:{slug}",
+                title=f"{item_name} — item tip" if lang == "en" else f"{item_name} — 物品要点",
             ))
         counters = data.get("counter_tips")
         if isinstance(counters, dict):
@@ -839,6 +929,7 @@ def _item_chunks(items: dict[str, dict], lang: str) -> list[KnowledgeChunk]:
                     priority=2,
                     source="editorial",
                     dedupe_key=f"item_counter:{slug}:{hslug}",
+                    title=f"{item_name} vs {hero}" if lang == "en" else f"{item_name} 对抗 {hero}",
                 ))
     return chunks
 

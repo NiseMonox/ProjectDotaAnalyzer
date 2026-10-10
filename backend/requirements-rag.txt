@@ -1,0 +1,18 @@
+# Optional: building embedding vectors for the knowledge retrieval (RAG).
+#   pip install -r backend/requirements-rag.txt
+#   python -m backend.scripts.rag download-model    # 35 MB, checksum-pinned; HF_ENDPOINT may name a mirror
+#   python -m backend.scripts.rag build
+#
+# The server does NOT need these to run or to use dense ranking: the vectors
+# of the static corpus are committed (backend/data/rag/) and are read with
+# numpy, which is in requirements.txt. Install them when learned or
+# operator-provided chunks should get vectors too, or when the AI coach's
+# agent should run free-text searches with an in-process model (+150 MB RSS
+# while it is loaded).
+#
+# Runs the local embedding model (ONNX, CPU). Python 3.10 resolves to 1.23.x.
+# 1.19 is the first release built for numpy 2.x (its release notes: "Numpy
+# support for 2.x has been added"); requirements.txt allows numpy up to 2.x.
+onnxruntime>=1.19,<2
+# Tokenizer of that model (Rust wheel, no PyTorch / transformers).
+tokenizers>=0.15,<1
