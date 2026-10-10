@@ -34,9 +34,9 @@
       "Desolator timing"
     ],
     "weaknesses": [
-      "Countered hard by MKB (pierces Blur)",
+      "Countered hard by MKB (true strike ignores her evasion)",
       "Vulnerable to magic burst damage",
-      "Needs Blur evasion to survive — useless vs true strike"
+      "Needs her Immaterial evasion to survive — useless vs true strike"
     ],
     "laning_tips": "Use Stifling Dagger for ranged last hits and harass. Phantom Strike onto enemies then immediately Dagger for the slow. After level 6, crits give kill potential. Watch for enemy disables before committing.",
     "level1_strength": "weak",
@@ -197,7 +197,7 @@
     ],
     "role": "carry",
     "attribute": "agi",
-    "attack_type": "melee",
+    "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Battle Trance)",
       "BKB timing",
@@ -471,7 +471,7 @@
       "Arc Warden"
     ],
     "role": "carry",
-    "attribute": "agi",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Tempest Double)",
@@ -546,9 +546,9 @@
       "Requires committing to fights with mobility skills",
       "Squishy without ultimate active"
     ],
-    "laning_tips": "Use Shodo Strike to gap close and slow enemies. Gust of Wind provides mobility and dodges. Talon Toss repositions enemies. Raptor Dance at 6 provides evasion and attack speed making you a strong duelist. Play aggressively when ultimate is available.",
+    "laning_tips": "Kez carries two weapons and switches between them (Switch Discipline). With the katana, Grappling Claw is the gap closer and slow, Echo Slash the damage and Kazurai Katana a bleed with an impale; with the sai, Talon Toss silences, Falcon Rush chases and Shodo Sai parries attacks. Raptor Dance at 6 deals max-health damage around him and heals him. Play aggressively when the ultimate is available.",
     "level1_strength": "average",
-    "level1_note": "Shodo Strike provides a gap closer with slow — average level 1 contribution."
+    "level1_note": "Grappling Claw provides a gap closer with slow — average level 1 contribution."
   },
   "Naga Siren": {
     "heroes": [
@@ -749,16 +749,16 @@
     "attribute": "int",
     "attack_type": "ranged",
     "power_spikes": [
-      "Boots of Travel timing",
-      "Level 6 (Rearm resets all items/abilities)",
+      "Keen Conveyance (teleport to friendly structures)",
+      "Level 6 (Rearm resets his ability cooldowns)",
       "Blink Dagger timing"
     ],
     "weaknesses": [
-      "Extremely dependent on Boots of Travel timing",
       "Weak to gap-closing heroes",
-      "Rearm channeling is interruptible"
+      "Rearm and Keen Conveyance are channeled and can be interrupted",
+      "Laser's blind does nothing against spell damage"
     ],
-    "laning_tips": "Laser blinds enemy and deals pure damage — win mid trades with it. Heat-Seeking Missiles harass from any range. March of the Machines farms waves and jungle. Rush Boots of Travel — Rearm lets you TP to any lane, push, and TP back to fountain for full mana.",
+    "laning_tips": "Laser blinds enemy and deals pure damage — win mid trades with it. March of the Machines farms waves and jungle. Keen Conveyance teleports Tinker to friendly structures (at higher levels to units and heroes), so he can push a lane and go back to the fountain for mana; Rearm resets his ability cooldowns.",
     "level1_strength": "average",
     "level1_note": "Laser provides blind and pure damage — decent level 1 trading in mid."
   },
@@ -767,7 +767,7 @@
       "Death Prophet"
     ],
     "role": "mid",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Exorcism — tower push)",
@@ -788,7 +788,7 @@
       "Invoker"
     ],
     "role": "mid",
-    "attribute": "uni",
+    "attribute": "int",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 4 (two-spell combos)",
@@ -898,7 +898,7 @@
     "attribute": "agi",
     "attack_type": "melee",
     "power_spikes": [
-      "Level 6 (Insatiable Hunger)",
+      "Level 6 (Spawn Spiderlings)",
       "Soul Ring timing",
       "Early tower push with spiderlings"
     ],
@@ -907,13 +907,13 @@
       "Dependent on winning her lane",
       "Limited teamfight contribution"
     ],
-    "laning_tips": "Spawn Spiderlings create an army from last hits on debuffed units. Spin Web provides movement speed, free pathing, and HP regen in the web area. Silken Bola roots a target. Insatiable Hunger at 6 gives massive lifesteal. Dominate your lane and push towers with spiders.",
+    "laning_tips": "Insatiable Hunger gives attack damage and lifesteal for trades. Spin Web provides movement speed and free pathing in the web area. Spawn Spiderlings at 6 hatches spiders from a unit that dies under its effect — build the army on creeps, then dominate your lane and push towers with spiders.",
     "level1_strength": "average",
-    "level1_note": "Spawn Spiderlings provides a nuke but spiderlings are weak at level 1."
+    "level1_note": "Insatiable Hunger gives bonus attack damage and lifesteal, but she has no nuke or disable at level 1."
   },
-  "Outworld Devourer": {
+  "Outworld Destroyer": {
     "heroes": [
-      "Outworld Devourer"
+      "Outworld Destroyer"
     ],
     "role": "mid",
     "attribute": "int",
@@ -1118,7 +1118,7 @@
       "Needs Blink for reliable initiation",
       "Press the Attack can be purged"
     ],
-    "laning_tips": "Overwhelming Odds damages based on number of units in the area — strong against summons and creep waves. Press the Attack dispels debuffs and gives attack speed + HP regen. Moment of Courage gives lifesteal procs. Duel at 6 forces a 1v1 — winning gives permanent damage bonus.",
+    "laning_tips": "Overwhelming Odds damages based on number of units in the area — strong against summons and creep waves. Press the Attack dispels debuffs and gives movement speed + HP regen. Moment of Courage gives lifesteal procs. Duel at 6 forces a 1v1 — winning gives permanent damage bonus.",
     "level1_strength": "strong",
     "level1_note": "Overwhelming Odds deals damage based on units in the area — strong in level 1 group fights."
   },
@@ -1130,7 +1130,7 @@
     "attribute": "str",
     "attack_type": "melee",
     "power_spikes": [
-      "Level 6 (Doom — silences all abilities and items)",
+      "Level 6 (Doom — the target cannot cast spells or be healed)",
       "Blink Dagger timing",
       "Aghanim's Scepter"
     ],
@@ -1169,7 +1169,7 @@
       "Beastmaster"
     ],
     "role": "offlane",
-    "attribute": "str",
+    "attribute": "uni",
     "attack_type": "melee",
     "power_spikes": [
       "Level 6 (Primal Roar — BKB-piercing stun)",
@@ -1177,11 +1177,11 @@
       "Aghanim's Scepter"
     ],
     "weaknesses": [
-      "Boar and Hawk are easily killed",
+      "Boar and Hawks are easily killed",
       "Wild Axes are slow and dodgeable",
       "Falls off without aura items"
     ],
-    "laning_tips": "Wild Axes deal damage on the way out and back — hit enemies with both passes. Call of the Wild summons a boar (slow) and hawk (scouting). Inner Beast aura gives attack speed to allies. Primal Roar at 6 is the best single-target stun in the game — goes through BKB.",
+    "laning_tips": "Wild Axes deal damage on the way out and back — hit enemies with both passes. Summon Razorback calls a boar whose attacks slow; Summon Raptors calls two hawks that dive at enemies, damaging and rooting them. Inner Beast aura gives attack speed to allies. Primal Roar at 6 is the best single-target stun in the game — goes through BKB.",
     "level1_strength": "average",
     "level1_note": "Wild Axes provide decent AoE damage but are slow-moving projectiles."
   },
@@ -1190,7 +1190,7 @@
       "Sand King"
     ],
     "role": "offlane",
-    "attribute": "str",
+    "attribute": "uni",
     "attack_type": "melee",
     "power_spikes": [
       "Level 6 (Epicenter)",
@@ -1198,11 +1198,11 @@
       "Aghanim's Scepter"
     ],
     "weaknesses": [
-      "Epicenter requires channeling — interruptible",
+      "Epicenter has a long cast point — interruptible",
       "Burrowstrike has limited range early",
       "Squishy for a Strength hero"
     ],
-    "laning_tips": "Burrowstrike stuns in a line and repositions you. Sand Storm makes you invisible and deals AoE damage — use it to farm and survive. Caustic Finale causes enemies killed to explode. Epicenter at 6 pulses AoE damage — channel it from fog, then Blink + Burrowstrike in.",
+    "laning_tips": "Burrowstrike stuns in a line and repositions you. Sand Storm makes you invisible and deals AoE damage — use it to farm and survive. Caustic Finale causes enemies killed to explode. Epicenter at 6 pulses AoE damage — cast it from fog, then Blink + Burrowstrike in.",
     "level1_strength": "average",
     "level1_note": "Burrowstrike provides a short-range stun — decent for level 1 fights."
   },
@@ -1274,7 +1274,7 @@
       "Enigma"
     ],
     "role": "offlane",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Black Hole)",
@@ -1286,7 +1286,7 @@
       "Eidolons are easily cleared by AoE",
       "Missing Black Hole is devastating"
     ],
-    "laning_tips": "Demonic Conversion creates Eidolons from a creep — use to push lane and jungle simultaneously. Malefice repeats stuns on a target. Midnight Pulse deals %HP damage in an area. Black Hole at 6 is the ultimate teamfight spell — combo with Midnight Pulse for massive damage.",
+    "laning_tips": "Demonic Summoning creates Eidolons at the cost of health — use to push lane and jungle simultaneously. Malefice repeats stuns on a target. Midnight Pulse deals %HP damage in an area. Black Hole at 6 is the ultimate teamfight spell — combo with Midnight Pulse for massive damage.",
     "level1_strength": "weak",
     "level1_note": "Eidolons can be summoned but are easily killed by AoE — limited level 1 fight contribution."
   },
@@ -1316,7 +1316,7 @@
       "Pangolier"
     ],
     "role": "offlane",
-    "attribute": "agi",
+    "attribute": "uni",
     "attack_type": "melee",
     "power_spikes": [
       "Level 6 (Rolling Thunder)",
@@ -1328,7 +1328,7 @@
       "Swashbuckle direction is fixed once cast",
       "Needs items to deal damage"
     ],
-    "laning_tips": "Swashbuckle dashes forward with four quick attacks — procs item effects. Shield Crash gives damage reduction per hero hit. Lucky Shot procs disarm and slow on attacks. Rolling Thunder at 6 turns you into a ball that stuns and knocks back on contact — bounces off walls.",
+    "laning_tips": "Swashbuckle dashes forward with four quick attacks — procs item effects. Shield Crash gives damage reduction per hero hit. Lucky Shot procs an attack speed slow and armor reduction. Rolling Thunder at 6 turns you into a ball that stuns and knocks back on contact — bounces off walls.",
     "level1_strength": "average",
     "level1_note": "Swashbuckle provides some burst damage but limited at level 1 without items."
   },
@@ -1379,7 +1379,7 @@
       "Batrider"
     ],
     "role": "offlane",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Flaming Lasso)",
@@ -1400,7 +1400,7 @@
       "Magnus"
     ],
     "role": "offlane",
-    "attribute": "str",
+    "attribute": "uni",
     "attack_type": "melee",
     "power_spikes": [
       "Level 6 (Reverse Polarity)",
@@ -1442,7 +1442,7 @@
       "Brewmaster"
     ],
     "role": "offlane",
-    "attribute": "str",
+    "attribute": "uni",
     "attack_type": "melee",
     "power_spikes": [
       "Level 6 (Primal Split)",
@@ -1454,7 +1454,7 @@
       "Requires micro skills for split pandas",
       "Thunder Clap has short range"
     ],
-    "laning_tips": "Thunder Clap slows attack and move speed in AoE. Cinder Brew causes enemies to take bonus damage and ignite if hit by fire. Drunken Brawler gives evasion, crit, and passive bonuses. Primal Split at 6 splits you into three elemental pandas — control them to disable and damage.",
+    "laning_tips": "Thunder Clap slows attack and move speed in AoE. Cinder Brew causes enemies to take bonus damage and ignite if hit by fire. Drunken Brawler switches between stances: Earth (armor, magic resistance), Storm (evasion, movement speed) and Fire (attack speed, crit). Primal Split at 6 splits you into three elemental pandas — control them to disable and damage.",
     "level1_strength": "average",
     "level1_note": "Thunder Clap provides AoE slow and damage — decent level 1 fighting."
   },
@@ -1463,7 +1463,7 @@
       "Nature's Prophet"
     ],
     "role": "offlane",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Wrath of Nature global damage)",
@@ -1644,7 +1644,7 @@
       "Abilities cost HP to cast",
       "Difficult HP management early"
     ],
-    "laning_tips": "Fire Spirits reduce enemy attack speed massively — throw them in trades. Icarus Dive damages and slows in an arc and returns you. Sun Ray channels a beam dealing %HP damage and healing allies. Supernova at 6 turns you into an egg that stuns on hatching — enemy must hit egg to stop it.",
+    "laning_tips": "Fire Spirits reduce enemy attack speed massively — throw them in trades. Icarus Dive damages and slows in an arc and returns you. Sun Ray fires a beam that costs Phoenix health, dealing %HP damage and healing allies. Supernova at 6 turns you into an egg that stuns on hatching — enemy must hit egg to stop it.",
     "level1_strength": "average",
     "level1_note": "Fire Spirits provide AoE attack speed slow — decent harassment but cost HP."
   },
@@ -1758,7 +1758,7 @@
       "Nyx Assassin"
     ],
     "role": "support_4",
-    "attribute": "agi",
+    "attribute": "uni",
     "attack_type": "melee",
     "power_spikes": [
       "Level 6 (Vendetta)",
@@ -1810,11 +1810,11 @@
     "weaknesses": [
       "Dispose needs an ally or enemy to vault off of",
       "Melee with limited range",
-      "Sidekick ally buff requires close positioning"
+      "Bodyguard only refills its barrier while she attacks heroes"
     ],
-    "laning_tips": "Dispose throws an enemy behind you and stuns — use it to reposition enemies into your tower or allies. Rebound dashes to a unit and stuns nearby enemies on landing. Sidekick gives lifesteal and damage to you and an ally. Unleash at 6 gives rapid combo attacks with burst pulses.",
+    "laning_tips": "Dispose throws an enemy behind you and slows — use it to reposition enemies into your tower or allies. Rebound dashes to a unit and stuns nearby enemies on landing. Bodyguard gives Marci lifesteal and damage and shares them, with a damage barrier, with an ally. Unleash at 6 gives rapid combo attacks with burst pulses.",
     "level1_strength": "strong",
-    "level1_note": "Dispose provides a throw + stun — very strong repositioning tool in level 1 fights."
+    "level1_note": "Dispose provides a throw + slow — very strong repositioning tool in level 1 fights."
   },
   "Spirit Breaker": {
     "heroes": [
@@ -1833,7 +1833,7 @@
       "Easily kited without charge",
       "Low damage output in extended fights"
     ],
-    "laning_tips": "Charge of Darkness runs through the map to bash a target — alert enemies see the icon. Bulldoze grants status resistance and magic immunity. Greater Bash procs deal damage based on move speed. Nether Strike at 6 is a short-range teleport strike with bash. Roam constantly and find picks.",
+    "laning_tips": "Charge of Darkness runs through the map to bash a target — alert enemies see the icon. Bulldoze grants movement speed and status resistance. Greater Bash procs deal damage based on move speed. Nether Strike at 6 is a short-range teleport strike with bash. Roam constantly and find picks.",
     "level1_strength": "strong",
     "level1_note": "Charge of Darkness provides global initiation with a bash stun — strong level 1 ganking."
   },
@@ -1842,7 +1842,7 @@
       "Snapfire"
     ],
     "role": "support_4",
-    "attribute": "str",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Mortimer Kisses)",
@@ -1867,7 +1867,7 @@
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Soulbind — doubles single-target spells)",
-      "Level 3 (Stroke of Fate + Phantom Embrace)",
+      "Level 3 (Stroke of Fate + Phantom's Embrace)",
       "Aghanim's Scepter"
     ],
     "weaknesses": [
@@ -1921,9 +1921,9 @@
     "level1_strength": "strong",
     "level1_note": "Avalanche provides AoE stun and damage — strong in level 1 group fights."
   },
-  "Ring Master": {
+  "Ringmaster": {
     "heroes": [
-      "Ring Master"
+      "Ringmaster"
     ],
     "role": "support_4",
     "attribute": "int",
@@ -1968,7 +1968,7 @@
       "Windranger"
     ],
     "role": "support_4",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Focus Fire)",
@@ -2065,7 +2065,7 @@
       "Low HP pool",
       "Death Ward is easily interrupted"
     ],
-    "laning_tips": "Paralyzing Cask bounces between enemies — devastating in dual lanes with more bounce targets. Voodoo Restoration heals in AoE. Maledict amplifies damage taken over time — combo with burst damage. Death Ward at 6 deals massive physical damage but needs protection while channeling.",
+    "laning_tips": "Paralyzing Cask bounces between enemies — devastating in dual lanes with more bounce targets. Voodoo Restoration heals in AoE. Maledict amplifies damage taken over time — combo with burst damage. Death Ward at 6 deals massive pure damage but needs protection while channeling.",
     "level1_strength": "strong",
     "level1_note": "Paralyzing Cask provides multi-target bouncing stun — extremely strong in level 1 fights."
   },
@@ -2074,10 +2074,10 @@
       "Dazzle"
     ],
     "role": "support_5",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
-      "Level 6 (Bad Juju — cooldown reduction)",
+      "Level 6 (Nothl Projection — empowered spells as an invulnerable spirit)",
       "Solar Crest timing",
       "Level 3 (Shadow Wave + Poison Touch combo)"
     ],
@@ -2086,7 +2086,7 @@
       "Low mobility",
       "No hard stun"
     ],
-    "laning_tips": "Poison Touch slows and stuns on repeated attacks — harass with it constantly. Shadow Wave heals allies and damages enemies near them. Shallow Grave prevents an ally from dying for a short duration. Bad Juju at 6 reduces all cooldowns and applies armor reduction on spell cast.",
+    "laning_tips": "Poison Touch slows and deals damage over time — attack the poisoned target to refresh it and deepen the slow. Shadow Wave heals allies and damages enemies near them. Shallow Grave prevents an ally from dying for a short duration. Every spell applies Weave, which adds armor to allies and takes it from enemies. Nothl Projection at 6 lets Dazzle cast as an invulnerable spirit while his body stays behind.",
     "level1_strength": "strong",
     "level1_note": "Poison Touch provides strong harass with slow and damage over time — strong level 1 trading."
   },
@@ -2200,7 +2200,7 @@
       "Bane"
     ],
     "role": "support_5",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Fiend's Grip — BKB-piercing disable)",
@@ -2230,10 +2230,10 @@
     ],
     "weaknesses": [
       "Slow movement speed",
-      "Living Armor is global but has limited charges",
+      "Living Armor's damage block shrinks with every hit it absorbs",
       "Melee support with no gap closer"
     ],
-    "laning_tips": "Highest base damage in the game — right-click harass is devastating at level 1. Nature's Grasp creates vines that root and damage through trees. Living Armor heals and blocks damage globally on allies or towers. Leech Seed slows and heals. Overgrowth at 6 roots all nearby enemies.",
+    "laning_tips": "Highest base damage in the game — right-click harass is devastating at level 1. Nature's Grasp creates vines that slow and damage. Living Armor heals and blocks damage globally on allies or towers. Leech Seed slows and heals. Overgrowth at 6 roots all nearby enemies.",
     "level1_strength": "strong",
     "level1_note": "Highest base damage in the game (over 80). Leech Seed provides slow and heal. Dominant in level 1 melee trades."
   },
@@ -2275,7 +2275,7 @@
       "Squishy and slow",
       "Chakra Magic on enemies can help them too"
     ],
-    "laning_tips": "Illuminate channels a blast of light that deals massive AoE damage — clear waves and harass. Blinding Light knocks back and blinds enemies. Chakra Magic restores mana to allies. Solar Bind slows and provides true sight. Will-O-Wisp at 6 hypnotizes enemies in an area — powerful teamfight control.",
+    "laning_tips": "Illuminate channels a blast of light that deals massive AoE damage — clear waves and harass. Blinding Light knocks back and blinds enemies. Chakra Magic restores mana to allies. Solar Bind slows and lowers magic resistance. Will-O-Wisp at 6 hypnotizes enemies in an area — powerful teamfight control.",
     "level1_strength": "average",
     "level1_note": "Illuminate requires charging but deals good AoE damage. Decent zoning at level 1."
   },
@@ -2284,7 +2284,7 @@
       "Io"
     ],
     "role": "support_5",
-    "attribute": "str",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Relocate global teleport)",
@@ -2317,7 +2317,7 @@
       "False Promise delays damage — ally can still die after",
       "Complex spell interactions require practice"
     ],
-    "laning_tips": "Fortune's End dispels and roots. Fate's Edict disarms a target and grants 100% magic resistance. Purifying Flames nukes then heals — use Fate's Edict to block the heal on enemies. False Promise at 6 delays all damage and doubles healing on an ally — the ultimate save spell.",
+    "laning_tips": "Fortune's End dispels and roots. Fate's Edict disarms a target and grants 100% magic resistance. Purifying Flames nukes then heals — use Fate's Edict on an ally first to block the damage, or Fortune's End to purge the heal from enemies. False Promise at 6 delays all damage and doubles healing on an ally — the ultimate save spell.",
     "level1_strength": "average",
     "level1_note": "Fortune's End provides a root and dispel — decent level 1 lockdown."
   },
@@ -2368,7 +2368,7 @@
       "Abaddon"
     ],
     "role": "support_5",
-    "attribute": "str",
+    "attribute": "uni",
     "attack_type": "melee",
     "power_spikes": [
       "Level 6 (Borrowed Time auto-activates below threshold)",
@@ -2393,7 +2393,7 @@
     "attack_type": "melee",
     "power_spikes": [
       "Level 6 (Guardian Angel — team physical immunity)",
-      "Level 3 (Purification + Heavenly Grace combo)",
+      "Level 3 (Purification + Repel)",
       "Solar Crest timing"
     ],
     "weaknesses": [
@@ -2401,7 +2401,7 @@
       "Guardian Angel countered by diffusal or dispels",
       "Low mana pool"
     ],
-    "laning_tips": "Purification heals an ally and damages nearby enemies — use offensively by healing an ally standing next to enemies. Heavenly Grace provides strength and status resistance. Hammer of Purity gives bonus pure damage on attacks. Guardian Angel at 6 grants physical damage immunity to allies.",
+    "laning_tips": "Purification heals an ally and damages nearby enemies — use offensively by healing an ally standing next to enemies. Repel grants an ally debuff immunity and HP regen. Hammer of Purity gives bonus pure damage on attacks. Guardian Angel at 6 grants physical damage immunity to allies.",
     "level1_strength": "average",
     "level1_note": "Purification provides heal + AoE damage — decent level 1 trading near creeps."
   },
@@ -2422,7 +2422,7 @@
       "Low HP and armor",
       "Permanent INT steal requires kills/assists"
     ],
-    "laning_tips": "Arcane Curse damages enemies who cast spells — punishes spell-heavy laners. Last Word silences then disarms after a delay. Glaives of Wisdom deal bonus pure damage based on Intelligence. Global Silence at 6 silences all enemies on the map. Steal INT permanently with kills/assists.",
+    "laning_tips": "Arcane Curse damages enemies who cast spells — punishes spell-heavy laners. Last Word damages and silences the target when it casts a spell or when its timer runs out. Glaives of Wisdom deal bonus magical damage based on Intelligence. Global Silence at 6 silences all enemies on the map. Steal INT permanently with kills/assists.",
     "level1_strength": "average",
     "level1_note": "Arcane Curse provides damage and discourages spell usage — decent level 1 harass."
   },
@@ -2452,7 +2452,7 @@
       "Visage"
     ],
     "role": "support_5",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Summon Familiars)",
@@ -2494,7 +2494,7 @@
       "Venomancer"
     ],
     "role": "support_5",
-    "attribute": "agi",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Poison Nova — massive AoE DoT)",
@@ -2590,7 +2590,7 @@
       "Pulse Nova drains mana rapidly",
       "Needs to be in close range for maximum damage"
     ],
-    "laning_tips": "Split Earth stuns in AoE after a delay — needs setup or prediction. Diabolic Edict deals physical damage to nearby units and buildings — melts towers. Lightning Storm chains between enemies. Pulse Nova at 6 deals AoE damage per second. Can flex as mid or support — strong tower pusher.",
+    "laning_tips": "Split Earth stuns in AoE after a delay — needs setup or prediction. Diabolic Edict deals pure damage to nearby units and buildings — melts towers. Lightning Storm chains between enemies. Pulse Nova at 6 deals AoE damage per second. Can flex as mid or support — strong tower pusher.",
     "level1_strength": "average",
     "level1_note": "Split Earth provides AoE stun but the delay makes it unreliable at level 1."
   },
@@ -2599,7 +2599,7 @@
       "Techies"
     ],
     "role": "support_5",
-    "attribute": "int",
+    "attribute": "uni",
     "attack_type": "ranged",
     "power_spikes": [
       "Level 6 (Proximity Mines clusters)",
@@ -2608,10 +2608,10 @@
     ],
     "weaknesses": [
       "Mines are countered by detection and summons",
-      "Blast Off costs 50% of max HP",
+      "Blast Off costs 20% of current HP",
       "Forces a passive playstyle that lacks teamfight presence"
     ],
-    "laning_tips": "Sticky Bomb attaches to enemies and explodes after a delay with a slow. Reactive Tazer disarms attackers. Blast Off leaps and silences in AoE but costs half your HP. Proximity Mines deal massive damage — place them in common pathways. Control areas of the map with mine placements.",
+    "laning_tips": "Sticky Bomb attaches to enemies and explodes after a delay with a slow. Reactive Tazer disarms attackers. Blast Off leaps and stuns in AoE but costs a fifth of your current HP. Proximity Mines deal massive damage — place them in common pathways. Control areas of the map with mine placements.",
     "level1_strength": "weak",
     "level1_note": "Proximity Mine requires setup time and enemies walking into it. Low level 1 fight contribution."
   },
@@ -2674,7 +2674,7 @@
       "Damage falls off late game",
       "Needs good positioning in teamfights"
     ],
-    "laning_tips": "Poison Attack is one of the strongest lane harass abilities — apply it constantly. Nethertoxin breaks passives and deals damage in an area. Corrosive Skin makes melee heroes reluctant to trade. Viper Strike at 6 massively slows a target. Dominate lane then convert to push and objectives.",
+    "laning_tips": "Poison Attack is one of the strongest lane harass abilities — apply it constantly. Nethertoxin deals damage and slows attack speed in an area. Corrosive Skin makes melee heroes reluctant to trade. Viper Strike at 6 massively slows a target. Dominate lane then convert to push and objectives.",
     "level1_strength": "strong",
     "level1_note": "Poison Attack provides slow and DoT with no mana cost — dominant level 1 lane harass."
   }

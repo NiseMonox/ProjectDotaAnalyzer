@@ -2,294 +2,252 @@
   "phase_boots": {
     "heroes": ["all"],
     "item_name": "Phase Boots",
-    "description": "+18 damage, +4 armor. Active: +22% move speed for 3s (CD 8s).",
     "coaching_tip": "Use Phase active both offensively for chasing and defensively for escaping. Short cooldown means you should spam it whenever moving across the map.",
     "is_active": true
   },
   "power_treads": {
     "heroes": ["all"],
     "item_name": "Power Treads",
-    "description": "+25 selected attribute, +45 attack speed. Toggle between Str/Agi/Int.",
     "coaching_tip": "Switch to Int before casting spells to save mana, then switch to Str when taking damage for survivability. Tread-switching is a core efficiency skill.",
     "is_active": true
   },
   "arcane_boots": {
     "heroes": ["all"],
     "item_name": "Arcane Boots",
-    "description": "Active: Restore 175 mana to nearby allies (CD 55s).",
     "coaching_tip": "Pop Arcane Boots before teamfights to top off your team's mana. Coordinate with teammates so multiple Arcane Boots aren't used at the same time.",
     "is_active": true
   },
   "tranquil_boots": {
     "heroes": ["all"],
     "item_name": "Tranquil Boots",
-    "description": "+65 move speed. Passive: 16 HP regen when not broken. Breaks for 13s on attack or taking hero damage.",
-    "coaching_tip": "Attacking or taking player damage breaks the regen for 13 seconds. Best on roaming supports who need sustain between ganks without returning to base.",
+    "coaching_tip": "Attacking a hero or being attacked breaks the regen for 13 seconds. Best on roaming supports who need sustain between ganks without returning to base.",
     "is_active": false
   },
   "travel_boots": {
     "heroes": ["all"],
     "item_name": "Boots of Travel",
-    "description": "Active: Teleport to any friendly building or creep. +32 move speed.",
     "coaching_tip": "Core item for split-pushing and global map pressure. Use it to join fights across the map and then TP back to push a side lane while the enemy regroups.",
-    "is_active": true
+    "is_active": false
   },
   "guardian_greaves": {
     "heroes": ["all"],
     "item_name": "Guardian Greaves",
-    "description": "Active: Restore HP and mana to nearby allies, self-dispel on cast. Bonus aura below 20% HP.",
-    "coaching_tip": "The self-dispel on activation is extremely valuable. The bonus healing/armor aura kicks in when allies are below 20% HP, making it a critical teamfight item. Use it before your team gets too low.",
+    "coaching_tip": "The self-dispel on activation is extremely valuable, and Mend restores 325 health and 200 mana to nearby allies -- use it before your team gets too low. The stronger regeneration below 25% health only applies to the wearer, not to the team.",
     "is_active": true
   },
   "black_king_bar": {
     "heroes": ["all"],
     "item_name": "Black King Bar",
-    "description": "Spell Immunity. +10 Str, +24 damage. Duration decreases from 9s to 6s with each use.",
-    "coaching_tip": "Duration shrinks each use, so save BKB for the most critical teamfight moments. Do not waste it on small skirmishes. Activate it when committing to a fight, not preemptively.",
+    "coaching_tip": "Duration shrinks with the first uses (9s, 8s, then 7s), so save BKB for the most critical teamfight moments. Do not waste it on small skirmishes. Activate it when committing to a fight, not preemptively.",
     "is_active": true
   },
   "glimmer_cape": {
     "heroes": ["all"],
     "item_name": "Glimmer Cape",
-    "description": "Active: Invisibility and +50% magic resistance on target ally or self for 5s.",
-    "coaching_tip": "Can be cast on allies -- use it to save teammates being focused. The magic resistance bonus applies even if the enemy has detection, so it still has value in those situations.",
+    "coaching_tip": "Can be cast on allies -- use it to save teammates being focused. The barrier absorbs magic damage even if the enemy has detection, so it still has value in those situations.",
     "is_active": true
   },
   "ghost": {
     "heroes": ["all"],
     "item_name": "Ghost Scepter",
-    "description": "Active: Enter ethereal form for 4s. Immune to physical attacks but take 40% extra magic damage.",
-    "coaching_tip": "Excellent against physical burst heroes like PA, Ursa, or Troll. However, beware of magic nukers -- the 40% amplified magic damage can get you killed faster. Don't use it against heavy magic lineups.",
+    "coaching_tip": "Excellent against physical burst heroes like PA, Ursa, or Troll. However, beware of magic nukers -- you take 30% more magic damage in ghost form, which can get you killed faster. Don't use it against heavy magic lineups.",
     "is_active": true
   },
   "force_staff": {
     "heroes": ["all"],
     "item_name": "Force Staff",
-    "description": "Active: Push target unit 600 distance in the direction they are facing.",
     "coaching_tip": "Use it to save allies, escape over cliffs/terrain, or push enemies into unfavorable positions. Can be used on enemies to push them away from their team or into yours.",
     "is_active": true
   },
   "cyclone": {
     "heroes": ["all"],
     "item_name": "Eul's Scepter of Divinity",
-    "description": "Active: Cyclone target enemy or self for 2.5s. Self-cast provides basic dispel. +20 move speed, +2.5 mana regen.",
     "coaching_tip": "Self-cast dispels silences, slows, and many debuffs. On enemies, use it to set up skillshots (e.g., Lina stun, Leshrac split) or to disable someone while you reposition.",
     "is_active": true
   },
   "sphere": {
     "heroes": ["all"],
     "item_name": "Linken's Sphere",
-    "description": "Passive: Blocks one targeted spell every 12s. Can be transferred to an ally.",
     "coaching_tip": "Best against heroes with single-target initiation like Beastmaster Roar, Legion Commander Duel, or Doom. Transfer it to your carry if they are the primary target.",
     "is_active": true
   },
   "lotus_orb": {
     "heroes": ["all"],
     "item_name": "Lotus Orb",
-    "description": "Active: Dispel target ally and apply Echo Shell for 6s, reflecting targeted spells back at casters.",
     "coaching_tip": "Apply to your core hero before a fight for the dispel plus spell reflect combo. The dispel alone removes debuffs like silences and slows, and the reflect deters enemies from casting on the target.",
     "is_active": true
   },
   "aeon_disk": {
     "heroes": ["all"],
     "item_name": "Aeon Disk",
-    "description": "Passive: When HP drops below 70%, applies strong dispel and 2.5s of damage immunity (CD 105s).",
     "coaching_tip": "Essential for squishy heroes who get burst down instantly. The long cooldown means you only get one chance per fight, so be aware of the timer. Best on supports or initiators who need to survive initial burst.",
     "is_active": false
   },
   "pipe": {
     "heroes": ["all"],
     "item_name": "Pipe of Insight",
-    "description": "Active: Grants a 400 magic damage absorbing shield to nearby allies for 12s. Passive: +2 HP regen aura, +4 magic resistance aura.",
     "coaching_tip": "Activate before teamfights when facing heavy magical AoE damage (e.g., Zeus, Tinker, Leshrac). The shield absorbs a flat amount, so using it early before the damage comes is ideal.",
     "is_active": true
   },
   "mekansm": {
     "heroes": ["all"],
     "item_name": "Mekansm",
-    "description": "Active: Restore 275 HP to nearby allies (CD 50s). +4 all attributes, +2 armor aura.",
     "coaching_tip": "Use it mid-fight when your team starts taking damage, not when they are already critically low. The burst heal can swing a teamfight. Build into Guardian Greaves when possible.",
     "is_active": true
   },
   "crimson_guard": {
     "heroes": ["all"],
     "item_name": "Crimson Guard",
-    "description": "Active: Grant nearby allies a damage block shield for 12s. Passive: 60% chance to block 75 damage.",
     "coaching_tip": "Extremely effective against lineups with lots of physical right-click damage or summon/illusion heroes. Activate it at the start of a teamfight for maximum team-wide benefit.",
     "is_active": true
   },
   "heavens_halberd": {
     "heroes": ["all"],
     "item_name": "Heaven's Halberd",
-    "description": "Active: Disarm target for 3s (melee) or 5s (ranged). +25% evasion, +20 Str, +16% status resistance.",
-    "coaching_tip": "Use the disarm on the enemy carry to shut down their physical damage in fights. It pierces BKB on melee heroes (3s duration) and is one of the best items to counter right-clickers.",
+    "coaching_tip": "Use the disarm on the enemy carry right as they commit to a fight: 3.5 seconds without attacks shuts down their physical damage. One of the best items against right-clickers; the armor and evasion also help you stand in front of them.",
     "is_active": true
   },
   "spirit_vessel": {
     "heroes": ["all"],
     "item_name": "Spirit Vessel",
-    "description": "Active on enemy: 4% max HP damage/sec and -45% healing reduction for 8s. Active on ally: 2% max HP heal/sec for 8s. Gains charges on hero kills.",
     "coaching_tip": "Must-buy against high-sustain heroes like Alchemist, Huskar, Morphling, and Wraith King. The healing reduction is critical. Also useful on allies for sustained healing.",
     "is_active": true
   },
   "desolator": {
     "heroes": ["all"],
     "item_name": "Desolator",
-    "description": "+50 damage. Attacks reduce target armor by 6 for 7s.",
     "coaching_tip": "Great for pushing towers since the armor reduction applies to buildings. Core physical damage item for mid-game timing pushes. Works well with other physical damage dealers on your team.",
     "is_active": false
   },
   "greater_crit": {
     "heroes": ["all"],
     "item_name": "Daedalus",
-    "description": "+88 damage. 30% chance for 225% critical strike.",
     "coaching_tip": "Pure damage amplifier -- best when you already have sufficient attack speed and base damage. Get attack speed items first, then add Daedalus to multiply your DPS in the late game.",
     "is_active": false
   },
   "monkey_king_bar": {
     "heroes": ["all"],
     "item_name": "Monkey King Bar",
-    "description": "+40 damage, +45 attack speed. 75% chance to deal 70 bonus magical damage. Grants True Strike (attacks cannot miss).",
     "coaching_tip": "Essential against evasion heroes like Phantom Assassin, Windranger, or anyone who buys Butterfly or Halberd. Without it, you can miss a huge portion of your attacks.",
     "is_active": false
   },
   "butterfly": {
     "heroes": ["Phantom Assassin", "Terrorblade", "Morphling", "Luna", "Drow Ranger", "Anti-Mage", "Juggernaut", "Faceless Void"],
     "item_name": "Butterfly",
-    "description": "+35 agility, +35% evasion, +30 attack speed. Active: +20% move speed but lose evasion for 6s.",
-    "coaching_tip": "Powerful late-game item for agi carries, but hard-countered by MKB. Buy it when enemies don't have MKB yet and consider selling it late if they all have True Strike. Use the active to chase or reposition, not mid-fight.",
-    "is_active": true
+    "coaching_tip": "Powerful late-game item for agi carries, but hard-countered by MKB. Buy it when enemies don't have MKB yet and consider selling it late if they all have True Strike.",
+    "is_active": false
   },
   "assault": {
     "heroes": ["all"],
     "item_name": "Assault Cuirass",
-    "description": "+30 attack speed, +10 armor. Aura: +30 attack speed and +5 armor to allies, -5 armor to enemies.",
     "coaching_tip": "A team-wide physical damage amplifier. The aura benefits your entire team's right-click damage. Best when your team has multiple physical damage dealers.",
     "is_active": false
   },
   "skadi": {
     "heroes": ["all"],
     "item_name": "Eye of Skadi",
-    "description": "+22 all attributes. Attacks apply -20% move speed slow, -35% attack speed slow, and -40% healing/regen reduction for 3s.",
     "coaching_tip": "Exceptional late-game item for its stats and the healing reduction on attacks. The slow and heal-cut stack with Spirit Vessel for maximum anti-heal. Great on any right-click hero in the late game.",
     "is_active": false
   },
   "heart": {
     "heroes": ["Centaur Warrunner", "Bristleback", "Pudge", "Dragon Knight", "Spectre", "Wraith King"],
     "item_name": "Heart of Tarrasque",
-    "description": "+250 HP, +45 Str. Passive: Regenerate 1.6% of max HP per second when out of combat for 5s.",
-    "coaching_tip": "The out-of-combat regen lets you rejoin fights at full HP repeatedly. Disengage when low, wait a few seconds, then re-engage. Best on tanky strength heroes who can absorb sustained damage.",
+    "coaching_tip": "Health regeneration of 1% of your max health plus 1.5% of the health you are missing: it heals fastest when you are low, and it does not need you to leave the fight. Best on tanky strength heroes who can absorb sustained damage.",
     "is_active": false
   },
   "satanic": {
     "heroes": ["Phantom Assassin", "Troll Warlord", "Terrorblade", "Morphling", "Faceless Void", "Lifestealer", "Wraith King", "Ursa"],
     "item_name": "Satanic",
-    "description": "+25 Str, +25% lifesteal. Active: 200% lifesteal for 6s (CD 30s).",
     "coaching_tip": "Activate Satanic when you're at low HP for a massive heal-through-damage swing. Combine with BKB so you can attack freely during the 6s window without being disabled.",
     "is_active": true
   },
   "nullifier": {
     "heroes": ["all"],
     "item_name": "Nullifier",
-    "description": "+65 damage. Active: Continuously dispels the target for 5s and applies a strong slow.",
     "coaching_tip": "Counters save items like Ghost Scepter, Glimmer Cape, Force Staff, and Aeon Disk by continuously removing their buffs. Essential for carries against enemies who rely on defensive items.",
     "is_active": true
   },
   "bloodthorn": {
     "heroes": ["all"],
     "item_name": "Bloodthorn",
-    "description": "Active: Silence target for 5s. All attacks on silenced target have True Strike and crit for 130%. +30 damage, +75 attack speed.",
-    "coaching_tip": "Best against mobile heroes like Storm Spirit, Anti-Mage, Puck, or Ember Spirit. The guaranteed crits make it a team damage multiplier. Upgrade from Orchid when you need more burst.",
+    "coaching_tip": "Best against mobile heroes like Storm Spirit, Anti-Mage, Puck, or Ember Spirit. Every hero attack on the silenced target deals 50 bonus damage and 60% of the damage it takes during the silence is dealt again at the end, so call the target for your whole team; only your own attacks get True Strike. Upgrade from Orchid when you need more burst.",
     "is_active": true
   },
   "rapier": {
     "heroes": ["Medusa", "Gyrocopter", "Ember Spirit", "Kunkka", "Pangolier"],
     "item_name": "Divine Rapier",
-    "description": "+350 damage. Drops on death and can be picked up by any hero.",
     "coaching_tip": "Only buy when you're losing and need a comeback or when you're far ahead and can end the game. If you die with it, the enemy gets it. Best on heroes with built-in survivability or AoE to utilize the damage.",
     "is_active": false
   },
   "mjollnir": {
     "heroes": ["all"],
     "item_name": "Mjollnir",
-    "description": "+24 damage, +70 attack speed. Passive: 30% chance of chain lightning. Active: Place lightning shield on ally.",
     "coaching_tip": "Excellent against illusion and summon-heavy lineups since the chain lightning proc hits multiple units. Place the Static Charge shield on your frontline hero who will be attacked the most.",
     "is_active": true
   },
   "radiance": {
     "heroes": ["Spectre", "Naga Siren", "Lone Druid", "Wraith King", "Alchemist"],
     "item_name": "Radiance",
-    "description": "+60 damage. Passive: 60 magical DPS burn aura + 17% miss chance to nearby enemies.",
     "coaching_tip": "Rush this item as fast as possible -- its value decreases the longer the game goes. Best on illusion heroes whose illusions carry the burn aura, maximizing map-wide damage.",
     "is_active": true
   },
   "diffusal_blade": {
     "heroes": ["Phantom Lancer", "Riki", "Naga Siren", "Juggernaut", "Spectre", "Terrorblade"],
     "item_name": "Diffusal Blade",
-    "description": "+15 agility, +10 Int. Passive: Attacks burn 40 mana. Active: Slow target by 100% for 4s.",
-    "coaching_tip": "Devastating against low-mana-pool heroes like Wraith King, Medusa, and CK. The active slow is excellent for chasing down kills. Illusion heroes benefit greatly since illusions also burn mana.",
+    "coaching_tip": "Devastating against low-mana-pool heroes like Wraith King, Medusa, and CK. The active slow is excellent for chasing down kills. Illusions do not burn mana, so the burn only comes from your hero's own attacks.",
     "is_active": true
   },
   "silver_edge": {
     "heroes": ["all"],
     "item_name": "Silver Edge",
-    "description": "Active: 14s invisibility. Attacking from invis deals +175 bonus damage and applies Break (disables passives) for 4s.",
     "coaching_tip": "The Break effect is crucial against passive-dependent heroes like Bristleback, PA, Spectre, Huskar, and Viper. Plan your initiation around the Break timing.",
     "is_active": true
   },
   "blink": {
     "heroes": ["all"],
     "item_name": "Blink Dagger",
-    "description": "Active: Teleport up to 1200 units instantly. Disabled for 3s upon taking player damage.",
     "coaching_tip": "Core initiation item for nearly every hero. It is disabled by player damage, so it is not a reliable escape tool in combat. Initiate with Blink before the enemy can damage you.",
     "is_active": true
   },
   "invis_sword": {
     "heroes": ["all"],
     "item_name": "Shadow Blade",
-    "description": "Active: 14s invisibility with +20% move speed. Breaking invisibility with an attack deals +175 bonus damage.",
     "coaching_tip": "Good for initiation and escape, but countered by Sentry Wards, Dust, and Gem. Do not rely on it as your only escape. Upgrade to Silver Edge later for the Break effect.",
     "is_active": true
   },
   "ultimate_scepter": {
     "heroes": ["all"],
     "item_name": "Aghanim's Scepter",
-    "description": "+10 all attributes, +175 HP, +175 mana. Upgrades hero's ultimate or grants a new ability.",
     "coaching_tip": "Check your hero's Aghanim's upgrade before buying -- some are game-changing, others are marginal. Prioritize it when the upgrade fundamentally changes how your hero plays.",
     "is_active": false
   },
   "aghanims_shard": {
     "heroes": ["all"],
     "item_name": "Aghanim's Shard",
-    "description": "Unlocks or upgrades an ability (varies by hero). Available after 15 minutes.",
     "coaching_tip": "Extremely cost-efficient mid-game power spike at 1400 gold. Almost every hero benefits from their Shard upgrade. Buy it at 15 minutes if you have the gold -- it is one of the best value items in the game.",
     "is_active": false
   },
   "refresher": {
     "heroes": ["all"],
     "item_name": "Refresher Orb",
-    "description": "Active: Reset cooldowns of all abilities and items (CD 160s). +12 HP regen, +12 mana regen.",
     "coaching_tip": "Best on heroes with high-impact, long-cooldown ultimates like Enigma, Tidehunter, Warlock, Magnus, and Invoker. Double BKB is also extremely valuable in late game.",
     "is_active": true
   },
   "sheepstick": {
     "heroes": ["all"],
     "item_name": "Scythe of Vyse",
-    "description": "Active: Hex target enemy for 3.5s (turns them into a critter, silenced/muted/disarmed). +35 Int, +10 Str, +10 Agi.",
     "coaching_tip": "The strongest single-target disable item in the game. Use it before the enemy pops BKB. Chain it with other disables for a guaranteed kill. Late-game must-have for intelligence heroes.",
     "is_active": true
   },
   "rod_of_atos": {
     "heroes": ["all"],
     "item_name": "Rod of Atos",
-    "description": "Active: Root target for 2s at 1100 range (CD 18s). +24 Int, +12 Str, +12 Agi.",
     "coaching_tip": "Long-range initiation tool to lock enemies in place for follow-up spells. Root prevents movement, blink, and TP, but does not prevent attacking or casting. Great on heroes with skillshot stuns.",
     "is_active": true
   },
   "orchid": {
     "heroes": ["all"],
     "item_name": "Orchid Malevolence",
-    "description": "Active: Silence target for 5s, taking 30% of total damage dealt at the end as bonus magic damage. +40 damage, +30 attack speed.",
     "coaching_tip": "Rush it against spell-dependent heroes like Storm Spirit, Puck, Anti-Mage, or Ember Spirit. The 30% damage amp at the end is significant burst. Upgrade to Bloodthorn for even more damage.",
     "is_active": true,
     "counter_tips": {
@@ -301,295 +259,271 @@
   "shivas_guard": {
     "heroes": ["all"],
     "item_name": "Shiva's Guard",
-    "description": "Active: Release freezing wave dealing 200 damage and slowing 40% for 4s. Passive: -45 attack speed aura to enemies. +30 Int, +15 armor.",
     "coaching_tip": "Excellent against physical attack-speed-based lineups. The attack speed reduction aura is constant and passive. Use the active blast at the start of teamfights for the AoE slow.",
     "is_active": true
   },
   "manta": {
     "heroes": ["Anti-Mage", "Terrorblade", "Juggernaut", "Luna", "Phantom Lancer", "Naga Siren", "Morphling", "Faceless Void"],
     "item_name": "Manta Style",
-    "description": "Active: Create 2 illusions and apply basic dispel on self. +26 Agi, +10 Str, +10 Int.",
     "coaching_tip": "The basic dispel on activation removes silences, slows, and many debuffs. Use it reactively to dispel, not just to push lanes. Agi carry core item for the dispel, illusions, and stats.",
     "is_active": true
   },
   "ethereal_blade": {
     "heroes": ["Morphling", "Tinker", "Nature's Prophet", "Pugna", "Lina"],
     "item_name": "Ethereal Blade",
-    "description": "Active: Target becomes ethereal for 4s (immune to physical, +40% magic damage taken). +40 primary attribute damage.",
-    "coaching_tip": "Combo tool for magic burst heroes -- cast it then follow up with nukes for 40% amplified magic damage. Can also self-cast defensively against physical attackers. Morphling uses it offensively with Adaptive Strike.",
+    "coaching_tip": "Combo tool for magic burst heroes -- cast it, then follow up with nukes while the target takes 30% more magic damage. Can also self-cast defensively against physical attackers. Morphling uses it offensively with Adaptive Strike.",
     "is_active": true
   },
   "aether_lens": {
     "heroes": ["all"],
     "item_name": "Aether Lens",
-    "description": "+225 cast range, +300 mana, +2.5 mana regen.",
-    "coaching_tip": "Increases your initiation range, making it easier to land spells from a safe distance. Core on supports who need to stay at the back of fights. Builds into Octarine Core later.",
+    "coaching_tip": "Increases your initiation range, making it easier to land spells from a safe distance. Core on supports who need to stay at the back of fights.",
     "is_active": false
   },
   "wind_waker": {
     "heroes": ["all"],
     "item_name": "Wind Waker",
-    "description": "Active: Cyclone self, ally, or enemy for 2.5s. Self/ally cyclone provides basic dispel and allows repositioning while airborne. +50 move speed.",
     "coaching_tip": "Upgraded Eul's that can save allies. Use it on teammates to buy time or dispel debuffs. The ability to cyclone allies makes it one of the best late-game support items.",
     "is_active": true
   },
   "gungir": {
     "heroes": ["all"],
     "item_name": "Gleipnir",
-    "description": "Active: Root all enemies in an area for 2s (CD 18s). Passive: 30% chance for chain lightning on attack.",
-    "coaching_tip": "AoE root combined with chain lightning makes this an excellent teamfight initiation tool. The root goes through BKB and prevents movement, blink, and TP. Great on heroes who need AoE control.",
+    "coaching_tip": "An AoE root for initiation and catch: rooted heroes cannot walk or blink out. Wait until enemies are clumped, the radius is only 400. Since 7.38 it has no chain lightning any more, so buy it for the root and the area-of-effect bonus, not to farm.",
     "is_active": true
   },
   "ancient_janggo": {
     "heroes": ["all"],
     "item_name": "Drum of Endurance",
-    "description": "Active: +45 attack speed and +13% move speed to nearby allies for 6s (CD 30s). +7 all attributes.",
     "coaching_tip": "Cost-effective mid-game aura item for push-oriented lineups. Use the active during pushes and teamfights. Great early team item, but sell it later when inventory space is needed.",
     "is_active": true
   },
   "holy_locket": {
     "heroes": ["all"],
     "item_name": "Holy Locket",
-    "description": "Active: Release stored charges to heal a target. Passive: +35% heal and regen amplification. +3 all attributes, +250 HP, +250 mana.",
-    "coaching_tip": "Core for healing-oriented supports like Dazzle, Chen, Warlock, Omniknight, and Oracle. The 35% heal amp affects all heals and regeneration you provide to allies.",
+    "coaching_tip": "Core for healing-oriented supports like Dazzle, Chen, Warlock, Omniknight, and Oracle. The passive amplifies every heal you provide by 10%, and the active adds 15% incoming heal amplification on one ally for 4s on top of the charge heal: use it on the hero your team is trying to keep alive.",
     "is_active": true
   },
   "veil_of_discord": {
     "heroes": ["all"],
     "item_name": "Veil of Discord",
-    "description": "Active: Weaken enemies in an area, reducing their magic resistance by 18% for 16s. +5 all attributes, +5 armor.",
     "coaching_tip": "Use it on grouped enemies before your team unleashes magic damage. Great in magic-heavy lineups. Apply it at the start of fights to amplify all your team's magical burst.",
     "is_active": true
   },
   "abyssal_blade": {
     "heroes": ["Anti-Mage", "Faceless Void", "Troll Warlord", "Ursa", "Monkey King", "Phantom Assassin", "Juggernaut", "Slark"],
     "item_name": "Abyssal Blade",
-    "description": "Active: Stun target for 2s through spell immunity (CD 35s). Passive: 25% bash chance for 1.5s stun. +250 HP, +10 damage.",
     "coaching_tip": "The active stun pierces BKB, making it the go-to lockdown for carries against BKB carriers. Use the active stun on priority targets who have already used BKB. Blink + Abyssal is a reliable kill combo.",
     "is_active": true
   },
   "bfury": {
     "heroes": ["Anti-Mage", "Juggernaut", "Phantom Assassin", "Ember Spirit", "Troll Warlord", "Monkey King"],
     "item_name": "Battle Fury",
-    "description": "+60 damage, +7.5 HP regen, +2.75 mana regen. Passive: 70% melee cleave in 650 AoE. +Quelling Bonus.",
     "coaching_tip": "A farming accelerator -- buy it early to speed up your farm. The cleave lets you clear jungle camps and creep waves rapidly. Best on heroes who can fight with it later (PA crits cleave, Ember Sleight).",
     "is_active": false
   },
   "armlet": {
     "heroes": ["Huskar", "Chaos Knight", "Wraith King", "Lifestealer", "Sven"],
     "item_name": "Armlet of Mordiggian",
-    "description": "Toggle: +25 Str, +35 damage, +4 armor while draining 54 HP/sec. +5 armor, +25 attack speed when inactive.",
-    "coaching_tip": "Master the Armlet toggle technique -- quickly toggling off and on gives you a burst of 500 HP. Toggle it on before fights and off between fights. Huskar's passive synergizes perfectly with the HP drain.",
+    "coaching_tip": "Master the Armlet toggle technique -- at low health, quickly toggling it off and on gives you back the health of its +25 Strength, and the toggle itself cannot kill you. Toggle it on before fights and off between fights. Huskar's passive synergizes perfectly with the HP drain.",
     "is_active": true
   },
   "echo_sabre": {
     "heroes": ["Slark", "Monkey King", "Sven", "Tiny", "Spirit Breaker", "Wraith King"],
     "item_name": "Echo Sabre",
-    "description": "+15 damage, +13 Str, +10 Int, +1.75 mana regen. Passive: Double attack on first hit (CD 6s), second hit slows 100% for 0.7s.",
-    "coaching_tip": "The double attack is excellent for burst damage and applying on-hit effects twice. Great on Slark for double Essence Shift stacks. Disassembles into BKB and Orchid/Harpoon components later.",
+    "coaching_tip": "The double attack is excellent for burst damage and applying on-hit effects twice. Great on Slark for double Essence Shift stacks. Builds into Harpoon later.",
     "is_active": false
   },
   "hand_of_midas": {
     "heroes": ["all"],
     "item_name": "Hand of Midas",
-    "description": "Active: Kill a non-hero unit for 160 gold and 2.1x XP (CD 90s). +40 attack speed.",
-    "coaching_tip": "Buy before 15 minutes or not at all -- it needs time to pay off. Use it on the highest-level creep available (large jungle creeps) for maximum XP. Do not skip it just because you had a good lane; it ensures late-game scaling.",
+    "coaching_tip": "Buy it early or not at all -- it needs time to pay off. Transmute pays 160 gold whatever the target and no longer gives bonus experience; a neutral creep also drops a madstone bundle, so use it in the jungle whenever it is ready (it cannot target Ancients). Do not skip it just because you had a good lane; it ensures late-game scaling.",
     "is_active": true
   },
   "blade_mail": {
     "heroes": ["all"],
     "item_name": "Blade Mail",
-    "description": "Active: Return 80% of damage taken for 5.5s. +7 armor, +28 damage.",
     "coaching_tip": "Force enemies to choose: attack you and take damage back, or switch targets. Best on initiators who jump into the enemy team (Axe, Legion Commander, Centaur). Activate it right as you engage.",
     "is_active": true
   },
   "dagon": {
     "heroes": ["Nyx Assassin", "Tinker", "Pugna", "Nature's Prophet", "Lion"],
     "item_name": "Dagon",
-    "description": "Active: Deal 400/500/600/700/800 magic damage (level 1-5). +14/16/18/20/22 Int. CD 35/30/25/20/15s.",
     "coaching_tip": "Burst magic damage for pickoffs and snowballing. Most effective in the early-mid game when enemy HP pools are small. Falls off hard in late game. Combine with Ethereal Blade for maximum burst damage.",
     "is_active": true
   },
   "maelstrom": {
     "heroes": ["all"],
     "item_name": "Maelstrom",
-    "description": "+24 damage. Passive: 30% chance on attack to release chain lightning hitting 4 targets for 140 damage.",
-    "coaching_tip": "A mid-game farming item and teamfight damage multiplier. Works on ranged and melee heroes alike. Builds into Mjollnir or Gleipnir. Great for heroes who need AoE damage to farm faster.",
+    "coaching_tip": "A mid-game farming item and teamfight damage multiplier. Works on ranged and melee heroes alike. Builds into Mjollnir. Great for heroes who need AoE damage to farm faster.",
     "is_active": false
   },
   "angels_demise": {
-    "heroes": ["Pangolier", "Ember Spirit", "Monkey King", "Phantom Assassin", "Kunkka"],
+    "heroes": ["all"],
     "item_name": "Khanda",
-    "description": "+50 damage. Passive: After casting a spell, next attack within 6s crits for 160%. Also grants spell damage crit (140% on ability damage, CD 12s).",
-    "coaching_tip": "Best on heroes who weave spells between attacks. The spell crit procs on ability damage, making it excellent for heroes like Pangolier (Swashbuckle) or Ember (Sleight of Fist).",
+    "coaching_tip": "A Phylactery upgrade: your next unit-target spell on an enemy deals 250 extra damage, disables the target's passives (Break) and slows it by 30% for 4 seconds. Its value is the Break: buy it on a hero with a cheap unit-target spell when the enemy relies on passives, like Bristleback or Phantom Assassin.",
     "is_active": false
   },
   "disperser": {
     "heroes": ["Phantom Lancer", "Riki", "Slark", "Faceless Void", "Juggernaut", "Anti-Mage"],
     "item_name": "Disperser",
-    "description": "Active on self/ally: Basic dispel + 100% move speed for 4s. Active on enemy: Slow 100% for 4s. +40 damage, +40 attack speed.",
     "coaching_tip": "Upgraded Diffusal Blade with a powerful dispel. Self-cast to dispel debuffs and gain max move speed for chasing or escaping. Cast on enemies for a crippling slow. Extremely versatile.",
     "is_active": true
   },
   "harpoon": {
     "heroes": ["Slark", "Spirit Breaker", "Sven", "Chaos Knight", "Ursa", "Troll Warlord"],
     "item_name": "Harpoon",
-    "description": "Active: Pull yourself to the target enemy hero (CD 18s). +24 damage, +15 Str, +10 Int.",
-    "coaching_tip": "Gap-closer for melee carries who struggle to get on top of targets. Use it to catch fleeing heroes or close the distance to start fighting. Builds from Echo Sabre components.",
+    "coaching_tip": "Gap-closer for melee carries who struggle to get on top of targets. Use it to catch fleeing heroes or close the distance to start fighting. Builds from Echo Sabre.",
     "is_active": true
   },
   "devastator": {
     "heroes": ["Lina", "Queen of Pain", "Zeus", "Skywrath Mage", "Tinker", "Storm Spirit"],
     "item_name": "Parasma",
-    "description": "+24 damage, +200 mana. Passive: Attacks deal bonus magic damage equal to 80% of your Int. Spells apply magic damage amplification debuff.",
     "coaching_tip": "Powerful on Int heroes who auto-attack frequently. The spell debuff amplifies follow-up magic damage, making it excellent for heroes who chain spells and right-clicks together.",
     "is_active": false
   },
   "basher": {
     "heroes": ["Faceless Void", "Troll Warlord", "Monkey King", "Ursa", "Spirit Breaker", "Slark"],
     "item_name": "Skull Basher",
-    "description": "+25 damage. Passive: 25% bash chance for melee (10% ranged) dealing 100 bonus damage and 1.5s stun. CD 2.3s.",
     "coaching_tip": "Locks down targets with repeated stuns. Best on fast-attacking melee heroes who proc the bash often. Upgrade to Abyssal Blade for the guaranteed BKB-piercing active stun.",
     "is_active": false
-  },
-  "eternal_shroud": {
-    "heroes": ["Huskar", "Pudge", "Bristleback", "Centaur Warrunner", "Viper", "Necrophos"],
-    "item_name": "Eternal Shroud",
-    "description": "+8.5 HP regen, +20% magic resistance. Passive: 25% spell lifesteal. Active: Gain a barrier that absorbs 400 magic damage for 12s.",
-    "coaching_tip": "Combine magic resistance with spell lifesteal for incredible sustainability. The active barrier stacks with Pipe for massive magic damage absorption. Best on frontline heroes who deal AoE spell damage.",
-    "is_active": true
   },
   "mage_slayer": {
     "heroes": ["Anti-Mage", "Nyx Assassin", "Phantom Lancer", "Riki", "Slark"],
     "item_name": "Mage Slayer",
-    "description": "+20 damage, +20% magic resistance. Passive: Attacks place a debuff reducing the target's spell damage by 35% for 6s.",
-    "coaching_tip": "Hard counter to spell-dependent cores. Attack the enemy caster to reduce their spell damage output by 35%. Particularly effective on illusion heroes since illusions also apply the debuff.",
+    "coaching_tip": "Hard counter to spell-dependent cores. Attack the enemy caster to reduce their spell damage output by 40%. Particularly effective on illusion heroes since illusions also apply the debuff.",
     "is_active": false
   },
   "bloodstone": {
     "heroes": ["Storm Spirit", "Leshrac", "Timbersaw", "Zeus", "Lina"],
     "item_name": "Bloodstone",
-    "description": "+450 HP, +425 mana, +3 mana regen. Passive: 30% spell lifesteal. Active: Sacrifice 50% current HP to restore that amount as mana.",
-    "coaching_tip": "Core on mana-hungry spell casters who deal sustained damage. The spell lifesteal keeps you alive during extended fights. Storm Spirit's Ball Lightning and Leshrac's Pulse Nova both benefit enormously.",
-    "is_active": true
-  },
-  "wraith_pact": {
-    "heroes": ["all"],
-    "item_name": "Wraith Pact",
-    "description": "Active: Summon a totem that reduces all enemy damage dealt by 30% and deals DPS in a 900 AoE. +2 all attributes, +2 armor aura.",
-    "coaching_tip": "The 30% damage reduction to enemies is massive in teamfights. Place the totem in a position where enemies cannot easily destroy it but it still covers the fight zone. One of the most impactful aura items.",
+    "coaching_tip": "Core on spell casters who deal sustained damage. Press Bloodpact right as your damage starts: for 5 seconds 60% of the spell damage you deal comes back as health, which is what keeps Storm Spirit or Leshrac alive inside a fight. The aura does not stack with Veil of Discord.",
     "is_active": true
   },
   "hurricane_pike": {
     "heroes": ["all"],
     "item_name": "Hurricane Pike",
-    "description": "Active: Push self and target 450 units apart, gaining 4 attacks on the target with unlimited range. +15 Agi, +13 Str, +150 HP.",
-    "coaching_tip": "Upgraded Force Staff for ranged carries and supports. The active pushes you away from the enemy while granting 4 unlimited-range attacks -- perfect for kiting melee heroes. Also works as an escape tool.",
+    "coaching_tip": "Upgraded Force Staff for ranged carries and supports. The active pushes you and the enemy apart and lets you make 5 attacks on that target without range limit within 5 seconds -- perfect for kiting melee heroes. Also works as an escape tool.",
     "is_active": true
   },
   "solar_crest": {
     "heroes": ["all"],
     "item_name": "Solar Crest",
-    "description": "Active on ally: +6 armor, +60 attack speed, +10% move speed. Active on enemy: -6 armor, -60 attack speed, -10% move speed. Duration 12s.",
-    "coaching_tip": "Incredibly versatile: buff your carry before a fight or debuff the enemy carry. Also works on Roshan to speed up the kill. One of the most cost-effective items for supports.",
+    "coaching_tip": "A buff for one ally, not for yourself: Shine gives the target 5 armor, 60 attack speed, 15% movement speed and a 350 physical damage barrier for 7 seconds. Cast it on your carry as the fight starts; it cannot be cast on enemies. One of the most cost-effective items for supports.",
     "is_active": true
   },
   "meteor_hammer": {
     "heroes": ["Treant Protector", "Nyx Assassin", "Dark Seer", "Outworld Destroyer", "Invoker"],
     "item_name": "Meteor Hammer",
-    "description": "Active: Channel 0.5s, then stun and deal damage in AoE for 6s. Damages buildings. +12 Str, +12 Int, +6 HP regen, +6 mana regen.",
     "coaching_tip": "The channeling time requires a setup stun or from fog of war. Can hit buildings, making it useful for split-pushing. Chain it off reliable disables for guaranteed damage and stun.",
     "is_active": true
   },
   "octarine_core": {
     "heroes": ["Tinker", "Zeus", "Invoker", "Nature's Prophet", "Arc Warden", "Dark Seer"],
     "item_name": "Octarine Core",
-    "description": "+625 mana, +3.5 mana regen. Passive: -25% cooldown reduction on abilities and items.",
     "coaching_tip": "The 25% cooldown reduction affects everything -- abilities, items, and even BKB. Best on heroes who spam abilities frequently. The CDR on items like Blink Dagger and BKB is especially valuable.",
     "is_active": false
   },
   "moon_shard": {
     "heroes": ["all"],
     "item_name": "Moon Shard",
-    "description": "+140 attack speed. Can be consumed for a permanent +60 attack speed buff.",
     "coaching_tip": "Consume it when you are six-slotted for a permanent 60 attack speed bonus that does not take an inventory slot. Buy it for the 140 attack speed boost when you need raw DPS in the late game.",
     "is_active": false
   },
   "vladmir": {
     "heroes": ["all"],
     "item_name": "Vladmir's Offering",
-    "description": "Passive aura: +18% lifesteal, +18% bonus damage, +3 armor, +1.75 mana regen to nearby allies.",
     "coaching_tip": "An efficient team aura item that benefits all allies. The percentage-based damage and lifesteal scale well into the late game. Great on melee offlaners or supports who stay near the team.",
     "is_active": false
   },
   "helm_of_the_overlord": {
     "heroes": ["Beastmaster", "Lycan", "Chen", "Lone Druid"],
     "item_name": "Helm of the Overlord",
-    "description": "Active: Dominate a creep (up to Ancient-level) permanently. Aura: +8 armor, +200 HP to dominated units. +7 all attributes, +7 HP regen, +7 armor.",
     "coaching_tip": "Dominate an Ancient creep for powerful auras or abilities (e.g., Thunderhide for attack speed aura, Granite Golem for HP aura). The dominated creep can push lanes and scout. Micro-intensive but extremely rewarding.",
     "is_active": true
   },
   "boots_of_bearing": {
     "heroes": ["all"],
     "item_name": "Boots of Bearing",
-    "description": "Active: Grant nearby allies +50 attack speed and +15% move speed for 6s, with a 1.5s undispellable effect. +200 HP, +200 mana.",
     "coaching_tip": "Upgraded Drum of Endurance with a more powerful active. The undispellable initial burst of speed allows your team to engage or disengage even against slows. Great for push-oriented and teamfight-centric strategies.",
     "is_active": true
   },
   "witch_blade": {
     "heroes": ["Puck", "Silencer", "Outworld Destroyer", "Necrophos", "Lina", "Nature's Prophet"],
     "item_name": "Witch Blade",
-    "description": "+35 Int, +6 armor. Passive: Attacks deal bonus magic damage based on Int and apply a 25% slow for 4s (CD 9s).",
     "coaching_tip": "Cost-effective damage item for Int heroes who right-click often. The slow and bonus damage proc helps with laning and pickoffs. Falls off late game, so consider upgrading or selling.",
     "is_active": false
   },
   "phylactery": {
     "heroes": ["Zeus", "Skywrath Mage", "Ogre Magi", "Lion", "Shadow Shaman", "Tinker"],
     "item_name": "Phylactery",
-    "description": "+7 all attributes, +200 HP, +200 mana, +4 mana regen. Passive: After casting, next damaging spell deals 150 bonus magic damage (CD 6s).",
     "coaching_tip": "Budget burst damage amplifier for spell-focused heroes. The 150 bonus damage procs reliably with low-cooldown spells. Excellent mid-game pickup for supports who need more damage output.",
     "is_active": false
   },
   "kaya_and_sange": {
     "heroes": ["Storm Spirit", "Leshrac", "Necrophos", "Death Prophet", "Zeus", "Invoker"],
     "item_name": "Kaya and Sange",
-    "description": "+16 Str, +16 Int, +16% spell amp, +16% status resistance, +16% HP regen amp, +16% mana regen amp.",
-    "coaching_tip": "Best on spell-casting cores who also need survivability. The status resistance helps you escape disables faster, while the spell amplification boosts your damage. Ideal for front-line casters.",
+    "coaching_tip": "Best on spell-casting cores who also need survivability. The slow resistance keeps you moving through slows and the health restoration bonus strengthens your healing and lifesteal, while the spell amplification boosts your damage. Ideal for front-line casters.",
     "is_active": false
   },
   "sange_and_yasha": {
     "heroes": ["Juggernaut", "Lifestealer", "Troll Warlord", "Monkey King", "Wraith King", "Ursa"],
     "item_name": "Sange and Yasha",
-    "description": "+16 Str, +16 Agi, +16% status resistance, +16% move speed, +16% HP regen amp, +16% lifesteal amp.",
     "coaching_tip": "A well-rounded fighting item for melee carries. The status resistance means stuns and slows last shorter on you, which is crucial for heroes who need to stay on targets. Good mid-game timing item.",
     "is_active": false
   },
   "yasha_and_kaya": {
     "heroes": ["Storm Spirit", "Ember Spirit", "Void Spirit", "Queen of Pain", "Puck", "Lina"],
     "item_name": "Yasha and Kaya",
-    "description": "+16 Agi, +16 Int, +16% spell amp, +16% move speed, +16% mana regen amp, +16% spell lifesteal amp.",
     "coaching_tip": "Ideal for mobile, spell-heavy cores who also benefit from attack speed. The move speed and spell amp combination suits heroes who weave in and out of fights, like Storm Spirit or Ember Spirit.",
     "is_active": false
   },
   "arcane_blink": {
     "heroes": ["Enigma", "Magnus", "Tidehunter", "Sand King", "Earthshaker", "Invoker"],
     "item_name": "Arcane Blink",
-    "description": "Active: Blink up to 1200 units. After blinking, -50% cast point and +25% debuff duration for 6s. +25 Int.",
-    "coaching_tip": "The cast point reduction after blinking lets you land big ultimates faster. Enigma's Black Hole, Magnus's Reverse Polarity, and Tidehunter's Ravage all become nearly instant. Best Blink upgrade for initiators.",
+    "coaching_tip": "The longest Blink (1400 range) and the only one that restores resources: 250 health and 100 mana on arrival. Take it on casters who initiate from far away and need the mana for the combo that follows.",
     "is_active": true
   },
   "overwhelming_blink": {
     "heroes": ["Axe", "Centaur Warrunner", "Tidehunter", "Slardar", "Mars", "Sand King"],
     "item_name": "Overwhelming Blink",
-    "description": "Active: Blink up to 1200 units. On landing, deal 100 + 150% Str as damage, slow enemies by 50% for 1.25s in AoE. +25 Str.",
     "coaching_tip": "Adds AoE damage and slow on your Blink initiation. Best on strength initiators who jump into the enemy team. The slow gives your team time to follow up on your initiation.",
     "is_active": true
   },
   "swift_blink": {
     "heroes": ["Phantom Assassin", "Templar Assassin", "Anti-Mage", "Morphling", "Drow Ranger", "Clinkz"],
     "item_name": "Swift Blink",
-    "description": "Active: Blink up to 1200 units. After blinking, +30% phased move speed, +40 damage, and +40 attack speed for 6s. +25 Agi.",
-    "coaching_tip": "The agility hero's Blink upgrade. The post-blink bonus damage and attack speed are ideal for carries who blink in to burst a target. Excellent on heroes who already use Blink offensively.",
+    "coaching_tip": "The agility hero's Blink upgrade. After blinking you gain 40% phased movement speed and +35 Agility for 6 seconds, which is ideal for carries who blink in to burst a target. Excellent on heroes who already use Blink offensively.",
     "is_active": true
+  },
+  "consecrated_wraps": {
+    "heroes": ["all"],
+    "item_name": "Consecrated Wraps",
+    "coaching_tip": "A shield that recharges by itself: with 3 charges the first hit of a fight lands on a 360 barrier. A new charge only comes every 4s and all of them are spent at once, so it is strongest against poke and the opening burst and adds little in a long brawl. There is nothing to press.",
+    "is_active": false
+  },
+  "crellas_crozier": {
+    "heroes": ["all"],
+    "item_name": "Crella's Crozier",
+    "coaching_tip": "A Ghost Scepter upgrade with an anti-heal aura. Use the active when physical damage is on you, but like Ghost Scepter it makes magic damage hurt more, and it does nothing while you are debuff immune. It shares its cooldown with Ghost Scepter. Standing in the fight is enough for the aura to cut the enemy's healing.",
+    "is_active": true
+  },
+  "essence_distiller": {
+    "heroes": ["all"],
+    "item_name": "Essence Distiller",
+    "coaching_tip": "An Urn of Shadows upgrade. Besides the heal and the damage, the enemy cast gives True Sight and the target's vision for 8 seconds: use it on heroes who go invisible or run into fog. Ground-cast it on a choke point to tag whoever walks in.",
+    "is_active": true
+  },
+  "specialists_array": {
+    "heroes": ["all"],
+    "item_name": "Specialist's Array",
+    "coaching_tip": "Only ranged heroes get the Splitshot. It speeds up farming and wave clear for ranged carries and builds into Hydra's Breath; the extra projectiles carry no on-hit effects, so it adds little against a single target.",
+    "is_active": false
+  },
+  "hydras_breath": {
+    "heroes": ["all"],
+    "item_name": "Hydra's Breath",
+    "coaching_tip": "A late-game item for ranged right-clickers: the max-HP poison is damage against high-health heroes and the multi-shot spreads it across a fight. Its attack range does not stack with Dragon Lance, Hurricane Pike or Monkey King Bar.",
+    "is_active": false
   }
 }

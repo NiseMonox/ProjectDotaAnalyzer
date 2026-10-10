@@ -24,7 +24,6 @@ from typing import Any
 from . import data_manager
 
 logger = logging.getLogger(__name__)
-_logger = logger  # backward-compatible alias
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
@@ -71,8 +70,7 @@ def _get_lookups() -> dict[str, Any]:
         ability_keys: dict[str, tuple[str, str]] = {}
         for hero, abilities in get_ability_table().items():
             for name, data in abilities.items():
-                key = data.get("key")
-                if key:
+                for key in data_manager.ability_keys(data):
                     ability_keys.setdefault(key, (hero, name))
         item_keys: dict[str, str] = {}
         for name, data in get_item_table().items():
@@ -80,6 +78,9 @@ def _get_lookups() -> dict[str, Any]:
             if key:
                 item_keys.setdefault(str(key), name)
             item_keys.setdefault(_squash(name), name)
+        for name, data in get_item_table().items():
+            for upgrade in data.get("upgrade_keys") or []:  # "dagon_5" -> the Dagon entry
+                item_keys.setdefault(str(upgrade), name)
         _lookups = {"generation": generation, "ability_keys": ability_keys, "item_keys": item_keys}
         return _lookups
 
@@ -112,7 +113,7 @@ def get_ability_data(hero_name: str, ability_name: str) -> dict | None:
         return abilities[ability_name]
     squashed = _squash(ability_name)
     for name, data in abilities.items():
-        if data.get("key") == ability_name or _squash(name) == squashed:
+        if ability_name in data_manager.ability_keys(data) or _squash(name) == squashed:
             return data
     return None
 
@@ -124,7 +125,7 @@ def _ability_display_name(hero_name: str, ability_name: str) -> str:
         return ability_name
     squashed = _squash(ability_name)
     for name, data in abilities.items():
-        if data.get("key") == ability_name or _squash(name) == squashed:
+        if ability_name in data_manager.ability_keys(data) or _squash(name) == squashed:
             return name
     return ability_name
 
@@ -160,17 +161,44 @@ def get_hero_ultimate(hero_name: str) -> tuple[str, dict] | None:
     return None
 
 
+def _is_hidden(data: dict) -> bool:
+    """Hidden-behaviour ability: placeholder slot, sub-ability or shard / scepter grant."""
+    behavior = data.get("behavior")
+    text = " ".join(str(b) for b in behavior) if isinstance(behavior, list) else str(behavior or "")
+    return "Hidden" in text
+
+
+# Invoker's two "Invoked Spell" slots: neither Hidden nor innate, never skilled.
+_PLACEHOLDER_KEYS = frozenset({"invoker_empty1", "invoker_empty2"})
+
+
+def is_learnable(data: dict) -> bool:
+    """Whether the player puts skill points into this ability.
+
+    False for innate abilities, Hidden sub-abilities, placeholder slots and
+    whatever fetched data flags as not ``skillable`` (shard / scepter
+    abilities, sub-abilities in a visible slot) — a hero "not having
+    learned" one of those says nothing.
+    """
+    if data.get("is_innate") or _is_hidden(data) or data.get("key") in _PLACEHOLDER_KEYS:
+        return False
+    return data.get("skillable") is not False
+
+
 def get_signature_ability(hero_name: str) -> tuple[str, dict] | None:
-    """The hero's most threatening basic ability (disable > damage > active)."""
+    """The hero's most threatening basic ability (disable > damage > active).
+
+    Only abilities the hero skills are candidates (see :func:`is_learnable`).
+    """
     best: tuple[int, int, str, dict] | None = None
     for order, (name, data) in enumerate(get_hero_abilities(hero_name).items()):
-        if data.get("is_ultimate"):
+        if data.get("is_ultimate") or not is_learnable(data):
             continue
         if data.get("type") == "passive":
             rank = 0
         elif data.get("stun_duration"):
             rank = 3
-        elif data.get("damage"):
+        elif data.get("damage") or data.get("damage_per_second"):
             rank = 2
         else:
             rank = 1
@@ -187,10 +215,10 @@ def get_signature_ability(hero_name: str) -> tuple[str, dict] | None:
 _FORMAT_LABELS = {
     "zh": {"cd": "CD {}秒", "mana": "魔耗{}", "stun": "眩晕{}秒", "duration": "持续{}秒",
            "damage_types": {"magical": "魔法", "physical": "物理", "pure": "纯粹"},
-           "damage_fmt": "{}伤害{}", "all_levels": "各级"},
+           "damage_fmt": "{}伤害{}", "dps_fmt": "每秒{}伤害{}", "all_levels": "各级"},
     "en": {"cd": "CD {}s", "mana": "Mana {}", "stun": "{}s stun", "duration": "Duration {}s",
            "damage_types": {"magical": "Magical", "physical": "Physical", "pure": "Pure"},
-           "damage_fmt": "{} {} damage", "all_levels": "all levels"},
+           "damage_fmt": "{} {} damage", "dps_fmt": "{} {} damage/s", "all_levels": "all levels"},
 }
 
 
@@ -218,6 +246,18 @@ def _level_value(values: Any, level: int | None) -> str | None:
     return _num(values[idx])
 
 
+def _all_zero(values: Any) -> bool:
+    """0, "0", [0, 0] ... (None / empty is not "zero": it is simply unknown)."""
+    if isinstance(values, bool) or values in (None, "", []):
+        return False
+    if isinstance(values, list):
+        return all(_all_zero(v) for v in values)
+    try:
+        return float(values) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 def format_ability_at_level(
     hero_name: str, ability_name: str, level: int | None = None, lang: str = "zh"
 ) -> str:
@@ -240,10 +280,14 @@ def format_ability_at_level(
     mana = _level_value(data.get("mana_cost"), level)
     if mana and mana not in ("0",):
         parts.append(lbl["mana"].format(mana))
-    dmg = _level_value(data.get("damage"), level)
-    if dmg:
-        dtype = lbl["damage_types"].get(data.get("damage_type", ""), "")
-        parts.append(lbl["damage_fmt"].format(dtype, dmg).strip())
+    dtype = lbl["damage_types"].get(data.get("damage_type", ""), "")
+    # What one cast deals, then damage over time ("100 damage/s" is not "100 damage").
+    for field, fmt in (("damage", "damage_fmt"), ("damage_per_second", "dps_fmt")):
+        values = data.get(field)
+        # An all-zero list is a placeholder ("0 damage" would be a false fact).
+        dmg = _level_value(values, level) if not _all_zero(values) else None
+        if dmg:
+            parts.append(lbl[fmt].format(dtype, dmg).strip())
     stun = _level_value(data.get("stun_duration"), level)
     if stun:
         parts.append(lbl["stun"].format(stun))
@@ -266,7 +310,10 @@ def format_hero_abilities(
 ) -> str:
     """Format a hero's abilities at their current levels (keys: names or ability keys).
 
-    ``with_tips=False`` omits the per-ability coaching tips.
+    ``with_tips=False`` omits the per-ability coaching tips. Abilities the
+    player never puts points into (innate, sub-abilities, shard / scepter
+    abilities, placeholder slots) are only shown when they do carry a
+    level; they are never listed as "not learned" / "selectable".
     """
     abilities = get_hero_abilities(hero_name)
     if not abilities:
@@ -281,6 +328,8 @@ def format_hero_abilities(
             lines = [f"### {hero_name} 可选技能（尚未加点）",
                      "注意：英雄在任何时刻可以选择技能加点，以下是1级各技能效果。"]
         for ability_name, data in abilities.items():
+            if not is_learnable(data):
+                continue
             if data.get("is_ultimate"):
                 tag = "(requires level 6)" if lang == "en" else "(需要6级)"
                 lines.append(f"- {ability_name}: {tag}")
@@ -315,7 +364,7 @@ def format_hero_abilities(
             tip = _tip_line(data, lang) if with_tips else None
             if tip:
                 lines.append(tip)
-        else:
+        elif is_learnable(data):
             not_learned.append(ability_name)
     if not_learned:
         sep = ", " if lang == "en" else "、"
@@ -328,8 +377,19 @@ def _short(text: Any, limit: int = 160) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
+def _has_cooldown(cd: Any) -> bool:
+    """A real cooldown: not missing, not ``False`` and not 0 (0 == False)."""
+    return cd not in (None, "", False, []) and not _all_zero(cd)
+
+
 def format_player_items(items: list[str], lang: str = "zh") -> str:
-    """Format a player's items with coaching-relevant info (active items first)."""
+    """Format a player's items with coaching-relevant info (active items first).
+
+    The cooldown is only printed when one is known (several actives have
+    none in the data, e.g. Power Treads or Bottle). What an item does is
+    printed where a coaching tip goes with it; the other actives are listed
+    by name and cooldown, which keeps the block short.
+    """
     if not items:
         return ""
     unique: list[str] = []
@@ -347,13 +407,14 @@ def format_player_items(items: list[str], lang: str = "zh") -> str:
             passive_names.append(item_name)
     for name, data in active_items[:4]:
         cd = data.get("cooldown")
-        cd_text = _level_value(cd, None) if cd not in (None, "", False) else "?"
-        desc = _short(data.get("description", ""))
-        if lang == "en":
-            lines.append(f"- {name} (Active, CD {cd_text}s): {desc}")
-        else:
-            lines.append(f"- {name}（主动, CD {cd_text}秒）: {desc}")
+        cd_text = _level_value(cd, None) if _has_cooldown(cd) else None
         tip = _tip_line(data, lang)
+        desc = _short(data.get("description", "")) if tip else ""
+        if lang == "en":
+            head = f"{name} (Active, CD {cd_text}s)" if cd_text else f"{name} (Active)"
+        else:
+            head = f"{name}（主动, CD {cd_text}秒）" if cd_text else f"{name}（主动）"
+        lines.append(f"- {head}: {desc}" if desc else f"- {head}")
         if tip:
             lines.append(tip)
     passive_names.extend(name for name, _ in active_items[4:])
@@ -391,6 +452,7 @@ __all__ = [
     "get_item_data",
     "get_hero_ultimate",
     "get_signature_ability",
+    "is_learnable",
     "format_ability_at_level",
     "format_hero_abilities",
     "format_player_items",

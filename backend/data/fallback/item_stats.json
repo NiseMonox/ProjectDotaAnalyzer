@@ -1,62 +1,66 @@
 {
-  "_comment": "Minimal item fallback (cost/cooldown/category) used when backend/data/gamedata/ is missing; 'category' is also merged into fetched data. Coaching text lives in backend/data/editorial/.",
+  "_comment": "Fallback generated from dotaconstants by backend/scripts/gen_static_catalogs.py (game version 7.41f); used only for what backend/data/gamedata/ has not fetched yet. 'category' is editorial and also merged into fetched data. Coaching text lives in backend/data/editorial/.",
   "items": {
     "phase_boots": {
       "item_name": "Phase Boots",
-      "cost": 1500,
+      "cost": 1450,
       "is_active": true,
       "cooldown": 8,
-      "duration": 3,
+      "description": "Active: Gives 20% increased movement speed on melee heroes, and 10% on ranged heroes, and lets you move through units and turn more quickly for 3 seconds.",
       "category": "boots"
     },
     "power_treads": {
       "item_name": "Power Treads",
       "cost": 1400,
       "is_active": true,
-      "cooldown": 0,
+      "description": "Active: Switches between +10 Strength, +10 Agility, or +10 Intelligence.",
       "category": "boots"
     },
     "arcane_boots": {
       "item_name": "Arcane Boots",
-      "cost": 1300,
+      "cost": 1500,
       "is_active": true,
       "cooldown": 55,
+      "description": "Active: Restores 150 mana to all nearby allies. Radius: 1200 Passive: Grants 1 mana regeneration to allies. Radius: 1200",
       "category": "boots"
     },
     "tranquil_boots": {
       "item_name": "Tranquil Boots",
-      "cost": 925,
+      "cost": 900,
       "is_active": false,
+      "cooldown": 13,
+      "description": "Passive: Whenever you attack a hero or are attacked by any unit, the bonus 14 HP regen is lost and the movement speed bonus is reduced to 40 for 13 seconds.",
       "category": "boots"
     },
     "travel_boots": {
       "item_name": "Boots of Travel",
       "cost": 2500,
-      "is_active": true,
-      "cooldown": 80,
+      "is_active": false,
+      "description": "Upgrade: Upgrades your Town Portal Scroll, allowing it to target units, reduces cooldown and does not consume a charge on usage.",
       "category": "boots"
     },
     "guardian_greaves": {
       "item_name": "Guardian Greaves",
-      "cost": 5375,
+      "cost": 4450,
       "is_active": true,
-      "cooldown": 40,
+      "cooldown": 45,
+      "description": "Active: Restores 325 health and 200 mana to nearby allies, and removes most negative effects from the caster.",
       "category": "boots"
     },
     "black_king_bar": {
       "item_name": "Black King Bar",
       "cost": 4050,
       "is_active": true,
-      "cooldown": 75,
-      "duration": "10/9/8/7/6/6",
+      "cooldown": 95,
+      "description": "Active: Applies a basic dispel. Grants 60% magic resistance and immunity to reflected and pure damage.",
       "category": "defense"
     },
     "glimmer_cape": {
       "item_name": "Glimmer Cape",
-      "cost": 1950,
+      "cost": 2150,
       "is_active": true,
-      "cooldown": 14,
-      "duration": 5,
+      "cooldown": 15,
+      "description": "Active: After a 0.5 second delay, grants invisibility, 20 movement speed and a magic damage barrier that absorbs up to 375 damage to you or a target allied uni…",
       "category": "defense"
     },
     "ghost": {
@@ -64,7 +68,7 @@
       "cost": 1500,
       "is_active": true,
       "cooldown": 22,
-      "duration": 4,
+      "description": "Active: You enter ghost form for 4 seconds, becoming immune to physical damage, but are unable to attack and -30% more vulnerable to magic damage.",
       "category": "defense"
     },
     "force_staff": {
@@ -72,21 +76,23 @@
       "cost": 2200,
       "is_active": true,
       "cooldown": 19,
+      "description": "Active: Pushes any target unit 600 units in the direction it is facing.",
       "category": "defense"
     },
     "cyclone": {
-      "item_name": "Eul's Scepter",
-      "cost": 2725,
+      "item_name": "Eul's Scepter of Divinity",
+      "cost": 2600,
       "is_active": true,
       "cooldown": 23,
-      "duration": 2.5,
+      "description": "Active: Sweeps a target unit up into a cyclone, making them invulnerable for 2.5 seconds. Cyclone can only be cast on enemy units or yourself.",
       "category": "defense"
     },
     "sphere": {
       "item_name": "Linken's Sphere",
-      "cost": 4600,
+      "cost": 4800,
       "is_active": true,
-      "cooldown": 12,
+      "cooldown": 14,
+      "description": "Passive: Blocks most targeted spells once every 14 seconds.",
       "category": "defense"
     },
     "lotus_orb": {
@@ -94,7 +100,7 @@
       "cost": 3850,
       "is_active": true,
       "cooldown": 15,
-      "duration": 6,
+      "description": "Active: Applies a shield to the target unit for 5 seconds which re-casts most targeted spells back to their caster.",
       "category": "defense"
     },
     "aeon_disk": {
@@ -102,131 +108,143 @@
       "cost": 3000,
       "is_active": false,
       "cooldown": 105,
+      "description": "Passive: When you take damage and your health falls below 70%, a strong dispel is applied and you gain a 2.5 second buff that provides +75% Status Resistance a…",
       "category": "defense"
     },
     "pipe": {
       "item_name": "Pipe of Insight",
-      "cost": 3475,
+      "cost": 3725,
       "is_active": true,
       "cooldown": 60,
-      "duration": 12,
+      "description": "Active: Gives a magic damage barrier that absorbs 425 damage to all nearby allies. Lasts 8 seconds.",
       "category": "defense"
     },
     "mekansm": {
       "item_name": "Mekansm",
-      "cost": 1875,
+      "cost": 1775,
       "is_active": true,
       "cooldown": 50,
+      "description": "Active: Restores 250 health to allied units in a 1200 radius. Passive: Grants 2.5 health regeneration to allied units in a 1200 radius.",
       "category": "defense"
     },
     "crimson_guard": {
       "item_name": "Crimson Guard",
-      "cost": 3600,
+      "cost": 3725,
       "is_active": true,
-      "cooldown": 35,
-      "duration": 12,
+      "cooldown": 40,
+      "description": "Active: For 7 seconds, grant nearby allied heroes and buildings a 100% chance to block damage equal to 70 plus 2% of the caster's max health value from each in…",
       "category": "defense"
     },
     "heavens_halberd": {
       "item_name": "Heaven's Halberd",
-      "cost": 3550,
+      "cost": 3300,
       "is_active": true,
-      "cooldown": 18,
-      "duration": "3 (melee) / 5 (ranged)",
+      "cooldown": 15,
+      "description": "Active: Prevents a target from attacking for 3.5 seconds.",
       "category": "defense"
     },
     "spirit_vessel": {
       "item_name": "Spirit Vessel",
-      "cost": 2980,
+      "cost": 2725,
       "is_active": true,
-      "cooldown": 7,
+      "cooldown": 10,
+      "description": "Active: When used against enemies, it reduces health by 4% of current health per second, and reduces Health Restoration by 70%. Deals 25 damage per second.",
       "category": "utility"
     },
     "desolator": {
       "item_name": "Desolator",
       "cost": 3500,
       "is_active": false,
+      "description": "Passive: Your attacks reduce the target's armor by -6 for 7 seconds.",
       "category": "offense"
     },
     "greater_crit": {
       "item_name": "Daedalus",
-      "cost": 5150,
+      "cost": 5200,
       "is_active": false,
+      "description": "Passive: Grants each attack a 30% chance to deal 225% damage.",
       "category": "offense"
     },
     "monkey_king_bar": {
       "item_name": "Monkey King Bar",
-      "cost": 4975,
+      "cost": 5000,
       "is_active": false,
+      "description": "Passive: Grants each attack a 80% chance to pierce through evasion and deal 70 bonus magical damage.",
       "category": "offense"
     },
     "butterfly": {
       "item_name": "Butterfly",
-      "cost": 4975,
-      "is_active": true,
-      "cooldown": 25,
+      "cost": 5450,
+      "description": "+30 Agility, +35% Evasion, +20% Base Attack Speed Percentage, +30 Damage.",
+      "is_active": false,
       "category": "offense"
     },
     "assault": {
       "item_name": "Assault Cuirass",
       "cost": 5125,
       "is_active": false,
+      "description": "Passive: Grants 30 attack speed and 5 armor to nearby allied units and structures, and decreases nearby enemy unit and structure armor by -5. Radius: 1200",
       "category": "offense"
     },
     "skadi": {
       "item_name": "Eye of Skadi",
-      "cost": 5300,
+      "cost": 5900,
       "is_active": false,
+      "description": "Passive: Attacks lower enemy movement by -25% if they are melee and -50% if they are ranged.",
       "category": "offense"
     },
     "heart": {
       "item_name": "Heart of Tarrasque",
-      "cost": 5200,
+      "cost": 5300,
       "is_active": false,
+      "description": "Passive: Your health regeneration is increased by 1.5% of your missing health.",
       "category": "offense"
     },
     "satanic": {
       "item_name": "Satanic",
       "cost": 5050,
       "is_active": true,
-      "cooldown": 30,
-      "duration": 6,
+      "cooldown": 40,
+      "description": "Active: Increases Lifesteal percentage to 175% for 6 seconds. Dispel Type: Basic Dispel Passive: Heals the attacker for a percentage of physical damage dealt.",
       "category": "offense"
     },
     "nullifier": {
       "item_name": "Nullifier",
-      "cost": 4725,
+      "cost": 4350,
       "is_active": true,
-      "cooldown": 11,
-      "duration": 6,
+      "cooldown": 10,
+      "description": "Active: Dispels the target and applies a debuff for 4 seconds. Continuously dispels and slows the target. Dispel Type: Basic Dispel",
       "category": "offense"
     },
     "bloodthorn": {
       "item_name": "Bloodthorn",
-      "cost": 6800,
+      "cost": 6400,
       "is_active": true,
       "cooldown": 15,
-      "duration": 5,
+      "description": "Active: Silences a target for 5 seconds. At the end of the silence, an additional 60% of all damage taken during the silence will be dealt to the target as mag…",
       "category": "offense"
     },
     "rapier": {
       "item_name": "Divine Rapier",
-      "cost": 5950,
-      "is_active": false,
+      "cost": 5600,
+      "is_active": true,
+      "cooldown": 6,
+      "description": "Toggle: Toggle to gain either 25% bonus spell amplification or 250 bonus attack damage. Passive: Dropped on death, and cannot be destroyed.",
       "category": "offense"
     },
     "mjollnir": {
       "item_name": "Mjollnir",
-      "cost": 5600,
+      "cost": 5500,
       "is_active": true,
       "cooldown": 35,
+      "description": "Active: Places a charged shield on a target unit for 12 seconds which has a 20% chance to release a 225 magical damage shocking bolt at a nearby attacker and 4…",
       "category": "offense"
     },
     "radiance": {
       "item_name": "Radiance",
-      "cost": 5150,
+      "cost": 4700,
       "is_active": true,
-      "cooldown": 45,
+      "description": "Toggle: When active, scorches enemies for 60 magical damage per second. Illusions deal 35 magical damage per second. Radius: 650",
       "category": "offense"
     },
     "diffusal_blade": {
@@ -234,15 +252,15 @@
       "cost": 2500,
       "is_active": true,
       "cooldown": 15,
-      "duration": 4,
+      "description": "Active: Targets an enemy, slowing it for 4 seconds. Passive: Each attack burns 40 mana from the target, and deals 1 physical damage per burned mana.",
       "category": "offense"
     },
     "silver_edge": {
       "item_name": "Silver Edge",
-      "cost": 5450,
+      "cost": 5700,
       "is_active": true,
-      "cooldown": 22,
-      "duration": 14,
+      "cooldown": 23,
+      "description": "Active: Makes you invisible for 17 seconds, or until you attack or cast a spell. While invisible, you move 20% faster and can move through units.",
       "category": "offense"
     },
     "blink": {
@@ -250,247 +268,277 @@
       "cost": 2250,
       "is_active": true,
       "cooldown": 15,
-      "disabled_on_damage": 3,
+      "description": "Active: Teleport to a target point up to 1200 units away. Blink Dagger cannot be used for 3 seconds after taking damage from an enemy hero or Roshan.",
       "category": "utility"
     },
     "invis_sword": {
       "item_name": "Shadow Blade",
-      "cost": 3000,
+      "cost": 3250,
       "is_active": true,
       "cooldown": 25,
-      "duration": 14,
+      "description": "Active: Makes you invisible for 17 seconds, or until you attack or cast a spell. While Shadow Walk is active, you move 20% faster and can move through units.",
       "category": "utility"
     },
     "ultimate_scepter": {
       "item_name": "Aghanim's Scepter",
       "cost": 4200,
       "is_active": false,
+      "description": "Passive: Upgrades the ultimate, and some abilities, of all heroes.",
       "category": "utility"
     },
     "aghanims_shard": {
       "item_name": "Aghanim's Shard",
       "cost": 1400,
       "is_active": false,
+      "description": "Passive: Upgrades an existing ability or adds a new ability to your hero.",
       "category": "utility"
     },
     "refresher": {
       "item_name": "Refresher Orb",
       "cost": 5000,
       "is_active": true,
-      "cooldown": 160,
+      "cooldown": 180,
+      "description": "Active: Resets the cooldowns of all your abilities. Shares a cooldown with Refresher Shard. This item's cooldown only progresses in your hero's main inventory.",
       "category": "utility"
     },
     "sheepstick": {
       "item_name": "Scythe of Vyse",
-      "cost": 5675,
+      "cost": 5200,
       "is_active": true,
-      "cooldown": 22,
-      "duration": 3.5,
+      "cooldown": 20,
+      "description": "Active: Turns a target unit into a harmless critter for 2.8 seconds. The target has a base movement speed of 140 and will be silenced, muted, and disarmed.",
       "category": "utility"
     },
     "rod_of_atos": {
       "item_name": "Rod of Atos",
-      "cost": 2750,
+      "cost": 2250,
       "is_active": true,
       "cooldown": 18,
-      "duration": 2,
+      "description": "Active: Roots the target for 2 seconds.",
       "category": "utility"
     },
     "orchid": {
       "item_name": "Orchid Malevolence",
-      "cost": 3475,
+      "cost": 3275,
       "is_active": true,
       "cooldown": 18,
-      "duration": 5,
+      "description": "Active: Silences the target unit for 5 seconds. At the end of the silence, 30% of the damage received while silenced is inflicted as bonus magical damage.",
       "category": "utility"
     },
     "shivas_guard": {
       "item_name": "Shiva's Guard",
-      "cost": 4850,
+      "cost": 4500,
       "is_active": true,
       "cooldown": 27,
+      "description": "Active: Emits a freezing wave that deals 225 magical damage to enemies and slows their movement by -40% for 4 seconds.",
       "category": "defense"
     },
     "manta": {
       "item_name": "Manta Style",
-      "cost": 4600,
+      "cost": 4650,
       "is_active": true,
-      "cooldown": 30,
+      "cooldown": 34,
+      "description": "Active: Creates 2 images of your hero that last 18 seconds. Melee images deal 33% damage, while Ranged images deal 25%. Illusions take 300% damage.",
       "category": "utility"
     },
     "ethereal_blade": {
       "item_name": "Ethereal Blade",
-      "cost": 4650,
+      "cost": 5200,
       "is_active": true,
-      "cooldown": 20,
+      "cooldown": 22,
+      "description": "Active: Converts the target unit to ethereal form, rendering them immune to physical damage, but unable to attack and -30% more vulnerable to magic damage.",
       "category": "utility"
     },
     "aether_lens": {
       "item_name": "Aether Lens",
       "cost": 2275,
+      "description": "+300 Mana, +2.5 Mana Regeneration, +225 Cast Range.",
       "is_active": false,
       "category": "utility"
     },
     "wind_waker": {
       "item_name": "Wind Waker",
-      "cost": 6825,
+      "cost": 6800,
       "is_active": true,
-      "cooldown": 23,
+      "cooldown": 19,
+      "description": "Active: Sweeps a target unit up into a cyclone, making them invulnerable for 2.5 seconds. Cyclone can be cast on yourself, enemy units or allied units.",
       "category": "utility"
     },
     "gungir": {
       "item_name": "Gleipnir",
-      "cost": 6150,
+      "cost": 4650,
       "is_active": true,
       "cooldown": 18,
-      "duration": 2,
+      "description": "Active: Roots all enemies in a 400 radius for 2 seconds.",
       "category": "utility"
     },
     "ancient_janggo": {
       "item_name": "Drum of Endurance",
-      "cost": 1700,
+      "cost": 1625,
       "is_active": true,
-      "cooldown": 26,
+      "cooldown": 45,
+      "description": "Active: Gives +35 attack speed and +13% movement speed to nearby allies for 6 seconds.",
       "category": "utility"
     },
     "holy_locket": {
       "item_name": "Holy Locket",
-      "cost": 2400,
+      "cost": 2250,
       "is_active": true,
-      "cooldown": 13,
+      "description": "Active: Target an allied unit to increase their incoming Heal Amplification by 15% for 4s and instantly restore 17 health and 15 mana per charge stored.",
       "category": "support"
     },
     "veil_of_discord": {
       "item_name": "Veil of Discord",
-      "cost": 1525,
+      "cost": 1700,
       "is_active": true,
-      "cooldown": 22,
-      "duration": 16,
+      "cooldown": 16,
+      "description": "Active: Cast a 900 radius blast that causes enemy heroes to take 10% increased damage from spells. Can be cast while channeling. Duration: 16 seconds.",
       "category": "utility"
     },
     "abyssal_blade": {
       "item_name": "Abyssal Blade",
       "cost": 6250,
       "is_active": true,
+      "cooldown": 35,
+      "description": "Active: Stuns a target enemy unit for 1.6 seconds. Pierces Debuff Immunity.",
       "category": "offense"
     },
     "bfury": {
       "item_name": "Battle Fury",
       "cost": 3900,
-      "is_active": false,
+      "is_active": true,
+      "cooldown": 3,
+      "description": "Active: Destroy a target tree. Passive: Increases attack damage against non-hero units by 10 for melee heroes, and 5 for ranged.",
       "category": "offense"
     },
     "armlet": {
       "item_name": "Armlet of Mordiggian",
       "cost": 2500,
       "is_active": true,
+      "description": "Toggle: When active, Unholy Strength grants +35 damage, +25 strength and +4 armor, but drains 45 health per second.",
       "category": "offense"
     },
     "echo_sabre": {
       "item_name": "Echo Sabre",
       "cost": 2700,
       "is_active": false,
+      "cooldown": 5,
+      "description": "Passive: Causes melee attacks to attack twice in quick succession. The double attacks apply a 100% movement slow for 0.8 seconds on the first strike.",
       "category": "offense"
     },
     "hand_of_midas": {
       "item_name": "Hand of Midas",
       "cost": 2200,
       "is_active": true,
+      "description": "Active: Kills a non-hero target for 160 gold. Killing a neutral creep additionally grants a madstone bundle. Cannot be used on Ancient creeps.",
       "category": "utility"
     },
     "blade_mail": {
       "item_name": "Blade Mail",
-      "cost": 2300,
+      "cost": 2400,
       "is_active": true,
+      "cooldown": 25,
+      "description": "Active: For 5.5 seconds, return all incoming damage, increasing the percentage by 85%.",
       "category": "defense"
     },
     "dagon": {
       "item_name": "Dagon",
-      "cost": 2800,
+      "cost": 3000,
       "is_active": true,
+      "cooldown": 27,
+      "description": "Active: Emits a powerful burst of magical damage upon a targeted enemy unit. Upgradable. Damage: 400 Mana Cost: 120",
       "category": "offense"
     },
     "maelstrom": {
       "item_name": "Maelstrom",
       "cost": 2950,
       "is_active": false,
+      "description": "Passive: Grants a 25% chance on attack to release a bolt of electricity that leaps between 4 targets within a 650 radius, dealing 110 magical damage to each.",
       "category": "offense"
     },
     "angels_demise": {
       "item_name": "Khanda",
       "cost": 5600,
       "is_active": false,
+      "cooldown": 9,
+      "description": "Passive: The next Unit Target spell you cast on an enemy deals a separate 250 additional damage, disables their passives, and slows their movement speed by 30%…",
       "category": "offense"
     },
     "disperser": {
       "item_name": "Disperser",
       "cost": 6100,
       "is_active": true,
+      "cooldown": 15,
+      "description": "Active: Dispels both the wearer and the target. Enemy targets are slowed for 4 seconds.",
       "category": "utility"
     },
     "harpoon": {
       "item_name": "Harpoon",
       "cost": 4700,
       "is_active": true,
+      "cooldown": 19,
+      "description": "Active: When targeting an enemy, fire a harpoon at them, that pulls you and the target closer together, up to 35% of the distance between you and your target.",
       "category": "utility"
     },
     "devastator": {
       "item_name": "Parasma",
       "cost": 5975,
       "is_active": false,
+      "cooldown": 7,
+      "description": "Passive: Causes your next attack to have true strike, apply a poison for 4 seconds, slowing by 25% and dealing 0.75x your intelligence as damage every second.",
       "category": "offense"
     },
     "basher": {
       "item_name": "Skull Basher",
       "cost": 2875,
       "is_active": false,
+      "cooldown": 2,
+      "description": "Passive: Grants melee heroes a 25% chance on hit to stun the target for 1.2 seconds and deal 100 bonus physical damage. Bash chance for ranged heroes is 10%.",
       "category": "offense"
-    },
-    "eternal_shroud": {
-      "item_name": "Eternal Shroud",
-      "cost": 3700,
-      "is_active": true,
-      "category": "defense"
     },
     "mage_slayer": {
       "item_name": "Mage Slayer",
-      "cost": 2800,
+      "cost": 3100,
       "is_active": false,
+      "description": "Passive: Places a debuff when you attack enemies, dealing 35 physical damage per second and causing them to do 40% less spell damage for 3 seconds.",
       "category": "defense"
     },
     "bloodstone": {
       "item_name": "Bloodstone",
-      "cost": 4350,
+      "cost": 4700,
       "is_active": true,
+      "cooldown": 35,
+      "description": "Active: Increases Bloodstone's Spell Lifesteal to 60%. Lasts 5 seconds. Passive: Enemy units take 10% increased damage from spells. Radius: 1200",
       "category": "utility"
-    },
-    "wraith_pact": {
-      "item_name": "Wraith Pact",
-      "cost": 3800,
-      "is_active": true,
-      "category": "support"
     },
     "hurricane_pike": {
       "item_name": "Hurricane Pike",
-      "cost": 4450,
+      "cost": 4550,
       "is_active": true,
+      "cooldown": 19,
+      "description": "Active: Pushes you and target enemy 425 units away from each other, and for 5 seconds, allows you to make 5 attacks against the target without range restrictio…",
       "category": "defense"
     },
     "solar_crest": {
       "item_name": "Solar Crest",
       "cost": 2575,
       "is_active": true,
+      "cooldown": 16,
+      "description": "Active: When cast on an ally, grants them 5 armor, 60 attack speed, 15% movement speed and a 350 physical damage barrier.",
       "category": "support"
     },
     "meteor_hammer": {
       "item_name": "Meteor Hammer",
       "cost": 2850,
       "is_active": true,
+      "cooldown": 24,
+      "description": "Active: CHANNELED - After a successful channel, summons a meteor that strikes a 400 AoE, stunning enemies for 0.75 seconds and dealing impact damage.",
       "category": "utility"
     },
     "octarine_core": {
       "item_name": "Octarine Core",
-      "cost": 4900,
+      "cost": 5100,
+      "description": "+25% Cooldown Reduction, +450 Health, +450 Mana, +6 Mana Regeneration.",
       "is_active": false,
       "category": "utility"
     },
@@ -498,53 +546,66 @@
       "item_name": "Moon Shard",
       "cost": 4000,
       "is_active": false,
+      "description": "Use: Consume the Moon Shard to permanently gain 60 attack speed and 200 bonus night vision. Max 1 use. Passive: Grants bonus night vision.",
       "category": "offense"
     },
     "vladmir": {
       "item_name": "Vladmir's Offering",
       "cost": 2200,
       "is_active": false,
+      "description": "Passive: Grants 20% lifesteal, 18% bonus damage, 1 mana regeneration, and 2 armor to nearby allies. Radius: 1200",
       "category": "support"
     },
     "helm_of_the_overlord": {
       "item_name": "Helm of the Overlord",
       "cost": 5650,
       "is_active": true,
+      "cooldown": 40,
+      "description": "Active: Takes control of one neutral target unit and sets its movement speed to 380 and max health to a minimum of 1900.",
       "category": "utility"
     },
     "boots_of_bearing": {
       "item_name": "Boots of Bearing",
       "cost": 4225,
       "is_active": true,
+      "cooldown": 30,
+      "description": "Active: Gives +50 attack speed and +15% movement speed to nearby allies for 6 seconds. For the first 1.5 seconds allies are immune to slows.",
       "category": "boots"
     },
     "witch_blade": {
       "item_name": "Witch Blade",
       "cost": 2775,
       "is_active": false,
+      "cooldown": 9,
+      "description": "Passive: Causes your next attack to apply a poison for 4 seconds, slowing by 25% and dealing 0.75x your intelligence as damage every second.",
       "category": "offense"
     },
     "phylactery": {
       "item_name": "Phylactery",
       "cost": 2600,
       "is_active": false,
+      "cooldown": 9,
+      "description": "Passive: The next Unit Target spell you cast on an enemy deals a separate 150 bonus damage to the target and slows them by 30% for 3s.",
       "category": "utility"
     },
     "kaya_and_sange": {
       "item_name": "Kaya and Sange",
       "cost": 4200,
+      "description": "+16 Strength, +16 Intelligence, +25% Slow Resistance, +30% Mana Regen Amplification, +12% Spell Amplification, +16% Health Restoration…",
       "is_active": false,
       "category": "offense"
     },
     "sange_and_yasha": {
       "item_name": "Sange and Yasha",
       "cost": 4200,
+      "description": "+16 Strength, +16 Agility, +16% Status Resistance, +20 Attack Speed, +12% Movement Speed, +16% Health Restoration, +30% Slow Resistance.",
       "is_active": false,
       "category": "offense"
     },
     "yasha_and_kaya": {
       "item_name": "Yasha and Kaya",
       "cost": 4200,
+      "description": "+16 Agility, +16 Intelligence, +20 Attack Speed, +30% Mana Regen Amplification, +12% Movement Speed, +12% Spell Amplification, +25% Cast Speed Bonus.",
       "is_active": false,
       "category": "offense"
     },
@@ -552,19 +613,62 @@
       "item_name": "Arcane Blink",
       "cost": 6800,
       "is_active": true,
+      "cooldown": 9,
+      "description": "Active: Teleport to a target point up to 1400 units away. After teleportation, you restore 250 health and 100 mana.",
       "category": "utility"
     },
     "overwhelming_blink": {
       "item_name": "Overwhelming Blink",
       "cost": 6800,
       "is_active": true,
+      "cooldown": 15,
+      "description": "Active: Teleport to a target point up to 1200 units away.",
       "category": "utility"
     },
     "swift_blink": {
       "item_name": "Swift Blink",
       "cost": 6800,
       "is_active": true,
+      "cooldown": 15,
+      "description": "Active: Teleport to a target point up to 1200 units away. After teleportation, you gain 40% phased movement speed and +35 Agility for 6 seconds.",
       "category": "utility"
+    },
+    "consecrated_wraps": {
+      "item_name": "Consecrated Wraps",
+      "cost": 2600,
+      "is_active": false,
+      "description": "Passive: Gain a charge every 4s, up to a maximum of 3 charges. Upon gaining a charge, your movement speed is increased by 15% for 5s.",
+      "category": "defense"
+    },
+    "crellas_crozier": {
+      "item_name": "Crella's Crozier",
+      "cost": 4800,
+      "is_active": true,
+      "cooldown": 20,
+      "description": "Active: You enter ghost form for 4 seconds, becoming immune to physical damage, but are unable to attack and -30% more vulnerable to magic damage.",
+      "category": "defense"
+    },
+    "essence_distiller": {
+      "item_name": "Essence Distiller",
+      "cost": 1775,
+      "is_active": true,
+      "cooldown": 10,
+      "description": "Active: Provides 40 health regeneration when cast on allies.",
+      "category": "utility"
+    },
+    "specialists_array": {
+      "item_name": "Specialist's Array",
+      "cost": 2550,
+      "is_active": false,
+      "description": "Passive: Ranged attacks have a 30% chance to fire additional projectiles at up to 2 nearby enemies with 150 extra range and within a 120 degree angle in front…",
+      "category": "offense"
+    },
+    "hydras_breath": {
+      "item_name": "Hydra's Breath",
+      "cost": 5900,
+      "is_active": false,
+      "description": "Passive: Attacks poison enemies, dealing 2.5% of the target's Max HP as Magical Damage per second for 3 seconds.",
+      "category": "offense"
     }
   }
 }

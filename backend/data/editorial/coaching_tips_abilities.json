@@ -23,8 +23,8 @@
     ],
     "hero": "Abaddon",
     "ability_name": "Curse of Avernus",
-    "description": "Attacks slow the target and after multiple hits apply a silence and grant allied movement speed.",
-    "coaching_tip": "Focus one target to proc the silence quickly; the ally speed boost helps your team chase down fleeing enemies."
+    "description": "Attacks slow the target and curse it: the curse deals damage over time and every attack against the cursed target gains bonus attack speed.",
+    "coaching_tip": "Focus one target so your whole team attacks it with the attack speed bonus; the slow helps your team chase down fleeing enemies."
   },
   "abaddon_borrowed_time": {
     "heroes": [
@@ -51,7 +51,7 @@
     "hero": "Alchemist",
     "ability_name": "Unstable Concoction",
     "description": "Brews an explosive that stuns and damages based on brew time. Explodes on Alchemist if not thrown.",
-    "coaching_tip": "Start brewing from fog so enemies cannot see the timer; throw at 3-4 seconds for optimal stun without risking self-stun."
+    "coaching_tip": "Start brewing from fog so enemies cannot see the timer. Stun and damage peak after 5 seconds of brewing and it blows up on Alchemist at 5.5, so throw just before the peak instead of risking the self-stun."
   },
   "alchemist_goblins_greed": {
     "heroes": [
@@ -60,7 +60,8 @@
     "hero": "Alchemist",
     "ability_name": "Greevil's Greed",
     "description": "Grants bonus gold per last hit, stacking and increasing with rapid successive kills.",
-    "coaching_tip": "Maximize stacks by clearing jungle camps and waves in quick succession; rush farming items early to exploit the gold snowball."
+    "coaching_tip": "Maximize stacks by clearing jungle camps and waves in quick succession; rush farming items early to exploit the gold snowball.",
+    "is_innate": true
   },
   "alchemist_chemical_rage": {
     "heroes": [
@@ -95,7 +96,7 @@
     ],
     "hero": "Ancient Apparition",
     "ability_name": "Chilling Touch",
-    "description": "Empowers attacks with bonus magic damage and range at the cost of attack speed.",
+    "description": "Empowers an attack with extra range, a burst of magic damage and a brief slow.",
     "coaching_tip": "Use to harass safely in lane with the extra range; lets you trade favorably against most supports."
   },
   "ancient_apparition_ice_blast": {
@@ -149,7 +150,7 @@
     ],
     "hero": "Arc Warden",
     "ability_name": "Flux",
-    "description": "Infuses a target with a damaging slowing field, dispelled if another allied hero is nearby.",
+    "description": "Infuses a lone enemy with a slowing field that deals damage over time; the damage is not applied while another enemy unit is near the target.",
     "coaching_tip": "Most effective on isolated targets; use when enemies are separated from teammates for full duration."
   },
   "arc_warden_magnetic_field": {
@@ -194,8 +195,8 @@
     ],
     "hero": "Axe",
     "ability_name": "Battle Hunger",
-    "description": "Debuffs a target with DoT and slow, removed when they kill a unit. Axe gains move speed per affected enemy.",
-    "coaching_tip": "Cast when enemies have no nearby creeps to last-hit for removal; stacking on multiple enemies gives significant move speed."
+    "description": "Debuffs a target with damage over time until it kills a unit or the duration ends; it is slowed while it faces away from Axe.",
+    "coaching_tip": "Cast when enemies have no nearby creeps to last-hit for removal; the slow only applies while they face away from Axe, so it punishes running."
   },
   "axe_counter_helix": {
     "heroes": [
@@ -212,8 +213,8 @@
     ],
     "hero": "Axe",
     "ability_name": "Culling Blade",
-    "description": "Instantly kills an enemy below a health threshold. Successful kills grant team movement and attack speed.",
-    "coaching_tip": "Watch kill thresholds (250/350/450 HP); successful kills give your team a speed boost for chasing."
+    "description": "Strikes an enemy for heavy pure damage. Killing a hero with it resets the cooldown, gives nearby allies movement speed and armor, and permanently adds armor to Axe.",
+    "coaching_tip": "Culling Blade deals 275/375/475 pure damage: cast it on a hero below that much health. A kill resets its cooldown and gives nearby allies movement speed and armor for chasing."
   },
   "bane_enfeeble": {
     "heroes": [
@@ -221,8 +222,8 @@
     ],
     "hero": "Bane",
     "ability_name": "Enfeeble",
-    "description": "Weakens an enemy, reducing their status resistance and healing received.",
-    "coaching_tip": "Cast on enemy cores before disables to extend stun durations; heal reduction is strong against sustain heroes."
+    "description": "Weakens an enemy, dealing damage every second and lowering their attack damage and cast range.",
+    "coaching_tip": "Cast on enemy cores to cut their attack damage, or on casters to shorten their cast range."
   },
   "bane_brain_sap": {
     "heroes": [
@@ -296,12 +297,12 @@
     "description": "Throws two axes in an arc that return, dealing damage and stacking a damage amp debuff.",
     "coaching_tip": "Aim so both passes hit the same targets for double damage; use to clear jungle camps and waves efficiently."
   },
-  "beastmaster_call_of_the_wild_boar": {
+  "beastmaster_summon_razorback": {
     "heroes": [
       "Beastmaster"
     ],
     "hero": "Beastmaster",
-    "ability_name": "Call of the Wild Boar",
+    "ability_name": "Summon Razorback",
     "description": "Summons a boar companion that slows enemies with each attack.",
     "coaching_tip": "Send the boar to harass laners or scout; the slow helps set up kills and the boar tanks jungle creeps."
   },
@@ -312,7 +313,8 @@
     "hero": "Beastmaster",
     "ability_name": "Inner Beast",
     "description": "Passively grants bonus attack speed to all nearby allied units including summons.",
-    "coaching_tip": "Stay near your carry during fights for the aura; it also speeds up Roshan attempts and tower pushes."
+    "coaching_tip": "Stay near your carry during fights for the aura; it also speeds up Roshan attempts and tower pushes.",
+    "is_innate": true
   },
   "beastmaster_primal_roar": {
     "heroes": [
@@ -329,8 +331,8 @@
     ],
     "hero": "Bloodseeker",
     "ability_name": "Bloodrage",
-    "description": "Enrages a unit granting bonus attack speed and spell amp, but also amplifying damage taken.",
-    "coaching_tip": "Cast on yourself before fights for the spell amp bonus; be careful when enemies have burst since you take amplified damage."
+    "description": "Drives Bloodseeker into a rage: he attacks faster and deals more spell damage, at the cost of a percentage of his health per second.",
+    "coaching_tip": "Turn it on before fights and while farming; it drains your health while it lasts, so mind your HP when the enemy has burst."
   },
   "bloodseeker_blood_bath": {
     "heroes": [
@@ -347,8 +349,8 @@
     ],
     "hero": "Bloodseeker",
     "ability_name": "Thirst",
-    "description": "Passively grants move speed and attack damage based on enemy heroes' missing health globally.",
-    "coaching_tip": "When allies trade damage across the map, you gain speed and damage; use this to dominate your lane or gank."
+    "description": "Passively grants movement speed as enemy heroes lose health; an enemy hero at low health is revealed to Bloodseeker with True Sight.",
+    "coaching_tip": "When allies trade damage across the map, you gain speed; use this to dominate your lane or gank."
   },
   "bloodseeker_rupture": {
     "heroes": [
@@ -365,8 +367,8 @@
     ],
     "hero": "Bounty Hunter",
     "ability_name": "Shuriken Toss",
-    "description": "Hurls a shuriken dealing damage and ministunning. Bounces to all Tracked units nearby.",
-    "coaching_tip": "Track multiple enemies before throwing for maximum bounces; the ministun cancels TPs and channels."
+    "description": "Hurls a shuriken dealing damage and briefly slowing the target. Bounces to all Tracked units nearby.",
+    "coaching_tip": "Track multiple enemies before throwing for maximum bounces."
   },
   "bounty_hunter_jinada": {
     "heroes": [
@@ -383,7 +385,7 @@
     ],
     "hero": "Bounty Hunter",
     "ability_name": "Shadow Walk",
-    "description": "Becomes invisible with bonus move speed. Breaking invis with an attack deals bonus damage.",
+    "description": "Becomes invisible with bonus move speed. Breaking invisibility with an attack stuns the target briefly.",
     "coaching_tip": "Use to roam between lanes for ganks; scout wards and courier movements while invisible."
   },
   "bounty_hunter_track": {
@@ -392,8 +394,8 @@
     ],
     "hero": "Bounty Hunter",
     "ability_name": "Track",
-    "description": "Tracks an enemy providing true sight and allied move speed. Killing tracked targets grants bonus gold.",
-    "coaching_tip": "Track every enemy before fights for the gold bounty and speed; true sight counters invis-reliant heroes."
+    "description": "Tracks an enemy hero: true sight of the target, more damage taken by it, and bonus gold for Bounty Hunter and nearby allies if it dies.",
+    "coaching_tip": "Track every enemy before fights for the gold bounty and the extra damage they take; true sight counters invis-reliant heroes."
   },
   "brewmaster_thunder_clap": {
     "heroes": [
@@ -410,7 +412,7 @@
     ],
     "hero": "Brewmaster",
     "ability_name": "Cinder Brew",
-    "description": "Drenches enemies in alcohol, slowing them. Magic or fire damage ignites them for bonus DoT.",
+    "description": "Rolls a barrel of ale that drenches and slows enemies. Magic or pure damage ignites them, prolonging the effect and dealing damage over time.",
     "coaching_tip": "Cast before Thunder Clap to guarantee the ignite proc for maximum damage; combos with any ally fire damage."
   },
   "brewmaster_drunken_brawler": {
@@ -419,8 +421,8 @@
     ],
     "hero": "Brewmaster",
     "ability_name": "Drunken Brawler",
-    "description": "Passively grants dodge chance and crit chance. Can toggle between stances.",
-    "coaching_tip": "Toggle evasion stance when tanking and crit stance when dealing damage; the dodge makes Brew durable in lane."
+    "description": "Switches between elemental stances: Earth gives armor and magic resistance, Storm gives evasion and movement speed, Fire gives attack speed and a chance to critically strike. Casting an ability makes Brewmaster Brewed Up, which strengthens the stance bonus for a few seconds.",
+    "coaching_tip": "Use the Earth stance when tanking, Storm to dodge attacks or chase, and Fire when dealing damage; cast an ability first so the stance bonus is Brewed Up for the fight."
   },
   "brewmaster_primal_split": {
     "heroes": [
@@ -482,7 +484,7 @@
     ],
     "hero": "Broodmother",
     "ability_name": "Spin Web",
-    "description": "Spins a web that grants Broodmother bonus movement speed, health regen, and free pathing within.",
+    "description": "Spins a web that grants Broodmother bonus movement speed, a faster turn rate and free pathing within.",
     "coaching_tip": "Spread webs across the enemy jungle to dominate their side of the map; free pathing lets you escape through trees and cliffs."
   },
   "broodmother_incapacitating_bite": {
@@ -572,8 +574,8 @@
     ],
     "hero": "Chaos Knight",
     "ability_name": "Phantasm",
-    "description": "Creates several strong illusions of Chaos Knight and dispels all debuffs.",
-    "coaching_tip": "Phantasm also dispels, so use it to remove silences or stuns; Reality Rift into a stunned target with illusions deals enormous burst."
+    "description": "Creates several strong illusions of Chaos Knight and applies a basic dispel to him.",
+    "coaching_tip": "Phantasm also applies a basic dispel, so use it to remove silences; Reality Rift into a stunned target with illusions deals enormous burst."
   },
   "chen_penitence": {
     "heroes": [
@@ -581,8 +583,8 @@
     ],
     "hero": "Chen",
     "ability_name": "Penitence",
-    "description": "Slows an enemy and causes them to take bonus damage from attacks.",
-    "coaching_tip": "Cast on the target your team is focusing to amplify right-click damage; the slow helps your creeps and allies chase."
+    "description": "Damages and slows an enemy and lets allies attack it faster.",
+    "coaching_tip": "Cast on the target your team is focusing: allies attack it faster, and the slow helps your creeps and allies chase."
   },
   "chen_holy_persuasion": {
     "heroes": [
@@ -635,8 +637,8 @@
     ],
     "hero": "Clinkz",
     "ability_name": "Death Pact",
-    "description": "Consumes a target creep, gaining bonus health and damage based on the creep's max health.",
-    "coaching_tip": "Consume a large creep before fighting or ganking for a significant HP and damage boost; always have Death Pact active."
+    "description": "Consumes an enemy creep or one of his Skeleton Archers, healing Clinkz and raising his max health for a while.",
+    "coaching_tip": "Consume a creep before fighting or ganking for the extra health; it does not break Skeleton Walk, so keep it active."
   },
   "clinkz_wind_walk": {
     "heroes": [
@@ -806,8 +808,8 @@
     ],
     "hero": "Dawnbreaker",
     "ability_name": "Celestial Hammer",
-    "description": "Hurls her hammer which deals damage and creates a fire trail, then returns. Can converge to teleport to it.",
-    "coaching_tip": "Throw the hammer, then Converge to teleport to its location for gap closing; the fire trail zones enemies in fights."
+    "description": "Hurls her hammer, damaging enemies in its path; it flies back leaving a fire trail that slows. Converge recalls it early, pulling Dawnbreaker and the hammer together so they meet in the middle.",
+    "coaching_tip": "Throw the hammer, then Converge to be pulled toward it for gap closing; the fire trail zones enemies in fights."
   },
   "dawnbreaker_luminosity": {
     "heroes": [
@@ -842,7 +844,7 @@
     ],
     "hero": "Dazzle",
     "ability_name": "Shallow Grave",
-    "description": "Prevents an allied hero from dying for a short duration by keeping them at 1 HP minimum.",
+    "description": "Prevents an allied hero from dying for a short duration, no matter how much damage they take.",
     "coaching_tip": "Cast Shallow Grave reactively on dying allies for clutch saves; prioritize your carry and have fast reflexes since it's instant cast."
   },
   "dazzle_shadow_wave": {
@@ -859,9 +861,9 @@
       "Dazzle"
     ],
     "hero": "Dazzle",
-    "ability_name": "Bad Juju",
-    "description": "Passively reduces item cooldowns. Can be activated to reduce enemy armor in an area.",
-    "coaching_tip": "Bad Juju's item CDR lets you use utility items more frequently; the armor reduction stacks with repeated casts."
+    "ability_name": "Nothl Projection",
+    "description": "Dazzle leaves his body as an invulnerable spirit that can still cast, attack and use items; while it lasts Poison Touch hexes, Shallow Grave heals when it ends and Shadow Wave has a shorter cooldown.",
+    "coaching_tip": "Start the projection from a safe spot behind your team: the body stays where you left it. Use the window for an empowered Poison Touch on the enemy initiator and a Shallow Grave on your core, and end it early when you need to be back at your body."
   },
   "death_prophet_carrion_swarm": {
     "heroes": [
@@ -951,7 +953,7 @@
     "hero": "Doom",
     "ability_name": "Scorched Earth",
     "description": "Burns the ground around Doom, dealing damage to enemies and healing Doom with bonus movement speed.",
-    "coaching_tip": "Toggle on during fights for sustained damage and healing; the movement speed boost helps chase enemies."
+    "coaching_tip": "Activate during fights for sustained damage and healing; the movement speed boost helps chase enemies."
   },
   "doom_bringer_infernal_blade": {
     "heroes": [
@@ -994,9 +996,10 @@
       "Dragon Knight"
     ],
     "hero": "Dragon Knight",
-    "ability_name": "Wyrm's Wrath",
+    "ability_name": "Dragon Blood",
     "description": "Passively grants bonus HP regen and armor making Dragon Knight highly durable.",
-    "coaching_tip": "The sustain allows DK to stay in lane indefinitely without returning to base; pair with Soul Ring for frequent spell usage."
+    "coaching_tip": "The sustain allows DK to stay in lane indefinitely without returning to base; pair with Soul Ring for frequent spell usage.",
+    "is_innate": true
   },
   "dragon_knight_elder_dragon_form": {
     "heroes": [
@@ -1013,7 +1016,7 @@
     ],
     "hero": "Drow Ranger",
     "ability_name": "Frost Arrows",
-    "description": "Autocast that adds frost to attacks, dealing bonus magic damage and slowing enemies.",
+    "description": "Autocast that adds frost to attacks, dealing bonus damage and slowing enemies.",
     "coaching_tip": "Manually cast in lane to harass without drawing creep aggro; toggle autocast on during chases for permanent slow."
   },
   "drow_ranger_wave_of_silence": {
@@ -1040,7 +1043,7 @@
     ],
     "hero": "Drow Ranger",
     "ability_name": "Marksmanship",
-    "description": "Passively grants bonus agility. Attacks have a chance to ignore armor and instantly kill creeps. Disabled when enemies are close.",
+    "description": "Attacks have a chance to pierce the target's base armor and deal bonus damage. Disabled while an enemy hero is close.",
     "coaching_tip": "Maintain distance from enemies to keep Marksmanship active; position at maximum range and use Gust to push away divers."
   },
   "earth_spirit_boulder_smash": {
@@ -1085,7 +1088,7 @@
     ],
     "hero": "Earthshaker",
     "ability_name": "Fissure",
-    "description": "Creates a line of impassable terrain that stuns enemies and blocks movement for 6 seconds.",
+    "description": "Creates a line of impassable terrain that stuns enemies and blocks movement for 6.5 to 8 seconds depending on its level.",
     "coaching_tip": "Use Fissure to split the enemy team or block escape routes; be careful not to trap your own allies behind the terrain."
   },
   "earthshaker_enchant_totem": {
@@ -1247,7 +1250,7 @@
     ],
     "hero": "Enigma",
     "ability_name": "Midnight Pulse",
-    "description": "Creates an area dealing percentage-based pure damage over time to enemies within.",
+    "description": "Creates an area that deals damage over time based on a percentage of each enemy's current health.",
     "coaching_tip": "Place Midnight Pulse before Black Hole so enemies take both simultaneously; the percentage damage shreds tanky heroes."
   },
   "enigma_black_hole": {
@@ -1274,7 +1277,7 @@
     ],
     "hero": "Faceless Void",
     "ability_name": "Time Dilation",
-    "description": "Freezes the cooldowns of all enemy abilities currently on cooldown and slows based on number of frozen abilities.",
+    "description": "Slows the cooldown progression of nearby enemies' abilities; every ability on cooldown adds a stack that damages and slows them.",
     "coaching_tip": "Cast after enemies have used their key spells to extend their cooldowns; very strong against ability-dependent heroes."
   },
   "faceless_void_time_lock": {
@@ -1391,8 +1394,8 @@
     ],
     "hero": "Hoodwink",
     "ability_name": "Scurry",
-    "description": "Passively grants evasion near trees. Actively grants tree-walking and bonus movement speed.",
-    "coaching_tip": "Activate to escape through trees when ganked; the passive evasion makes trading in lane near trees favorable."
+    "description": "Grants bonus movement speed, phased movement and tree-walking for a short time, and doubles the chance of her innate to redirect attacks into nearby trees.",
+    "coaching_tip": "Activate to escape through trees when ganked; fighting near trees also lets her innate redirect attacks away from her."
   },
   "hoodwink_sharpshooter": {
     "heroes": [
@@ -1400,7 +1403,7 @@
     ],
     "hero": "Hoodwink",
     "ability_name": "Sharpshooter",
-    "description": "Charges up and fires a long-range piercing shot dealing heavy magic damage and reducing healing.",
+    "description": "Charges up and fires a long-range piercing shot dealing heavy damage and applying break and a slow.",
     "coaching_tip": "Charge from fog since the windup reveals your position; combine with ally crowd control for a guaranteed hit."
   },
   "huskar_inner_fire": {
@@ -1473,7 +1476,8 @@
     "hero": "Invoker",
     "ability_name": "Invoke",
     "description": "Combines the three active orbs to invoke a spell. Can hold two invoked spells at once.",
-    "coaching_tip": "Pre-invoke two spells before fights for instant combos; fast spell switching during fights is the key to mastering Invoker."
+    "coaching_tip": "Pre-invoke two spells before fights for instant combos; fast spell switching during fights is the key to mastering Invoker.",
+    "is_innate": true
   },
   "wisp_tether": {
     "heroes": [
@@ -1481,7 +1485,7 @@
     ],
     "hero": "Io",
     "ability_name": "Tether",
-    "description": "Tethers to an allied hero, sharing regen and granting movement speed. Stuns enemies Io passes through.",
+    "description": "Tethers to an allied hero, sharing regen and granting movement speed. Slows enemies that touch the tether.",
     "coaching_tip": "Tether to your carry before fights to share healing and regen; the movement speed bonus helps both of you reposition."
   },
   "wisp_spirits": {
@@ -1563,7 +1567,7 @@
     "hero": "Juggernaut",
     "ability_name": "Healing Ward",
     "description": "Summons a ward that heals nearby allies based on their max HP percentage.",
-    "coaching_tip": "Extremely valuable for pushing and post-fight recovery; protect the ward since it has only 1 HP."
+    "coaching_tip": "Extremely valuable for pushing and post-fight recovery; protect the ward since a single hit destroys it."
   },
   "juggernaut_blade_dance": {
     "heroes": [
@@ -1616,8 +1620,19 @@
     ],
     "hero": "Keeper of the Light",
     "ability_name": "Will-O-Wisp",
-    "description": "Summons a light that repeatedly stuns nearby enemies in pulses. Destroyed if the wisp is killed.",
-    "coaching_tip": "Place in the center of teamfights for repeated AoE stuns; protect the wisp from being destroyed by enemy attacks."
+    "description": "Summons a light that flickers on and off; while it is on, it draws nearby enemies toward it. Destroyed by a number of attacks.",
+    "coaching_tip": "Place in the center of teamfights to pull enemies in again and again; protect the wisp from being destroyed by enemy attacks.",
+    "behavior": "Hidden"
+  },
+  "keeper_of_the_light_spirit_form": {
+    "heroes": [
+      "Keeper of the Light"
+    ],
+    "hero": "Keeper of the Light",
+    "ability_name": "Spirit Form",
+    "description": "Temporarily grants cast range and a stronger Bright Speed bonus, and lets Illuminate be channeled by a separate spirit that also heals allies.",
+    "coaching_tip": "Turn it on before a fight or a siege: the spirit channels Illuminate while you keep moving and casting, and the healing wave sustains your team during pushes.",
+    "is_ultimate": true
   },
   "kez_echo_slash": {
     "heroes": [
@@ -1625,8 +1640,8 @@
     ],
     "hero": "Kez",
     "ability_name": "Echo Slash",
-    "description": "Dashes forward slashing enemies in a line, dealing damage and applying a debuff.",
-    "coaching_tip": "Use for gap closing and burst damage; the dash can also be used to reposition during fights."
+    "description": "Slashes twice along a line in front of Kez with the katana: each slash strikes the enemies in it with his attack and briefly slows them, and heroes take bonus damage.",
+    "coaching_tip": "The second slash comes after a short delay: keep the target in the line with Grappling Claw's slow or an ally's disable so that both slashes land."
   },
   "kez_grappling_claw": {
     "heroes": [
@@ -1634,8 +1649,8 @@
     ],
     "hero": "Kez",
     "ability_name": "Grappling Claw",
-    "description": "Fires a claw that grabs and pulls Kez to the target, dealing damage.",
-    "coaching_tip": "Use to initiate or chase fleeing enemies; can also target terrain for mobility and escape."
+    "description": "Kez swings on a grappling hook to a target unit or tree; an enemy target is slowed and struck with an attack on arrival.",
+    "coaching_tip": "Use to initiate or chase fleeing enemies; can also target trees for mobility and escape."
   },
   "kez_kazurai_katana": {
     "heroes": [
@@ -1643,8 +1658,8 @@
     ],
     "hero": "Kez",
     "ability_name": "Kazurai Katana",
-    "description": "Enhances attacks with bonus damage in the current weapon stance.",
-    "coaching_tip": "Synergizes with stance switching; time your empowered attacks for maximum burst between ability rotations."
+    "description": "Katana attacks and abilities leave a stacking bleed based on the attack's damage. Activated, the next attack impales the target, which cannot move or turn for a moment, and part of the bleed deals its damage at once.",
+    "coaching_tip": "Build bleed stacks with attacks and Echo Slash first, then impale: the more stacks are on the target, the bigger the burst."
   },
   "kez_raptor_dance": {
     "heroes": [
@@ -1652,8 +1667,8 @@
     ],
     "hero": "Kez",
     "ability_name": "Raptor Dance",
-    "description": "Powerful ultimate that unleashes a flurry of attacks on nearby enemies.",
-    "coaching_tip": "Engage with Echo Slash and Grappling Claw first to get in position before activating Raptor Dance."
+    "description": "After a short wind-up with a basic dispel and a moment of invulnerability, Kez slashes around himself several times, dealing damage based on the targets' max health and healing himself for the damage dealt.",
+    "coaching_tip": "The slashes only come if the cast completes, so use it once the enemy's disables are spent; in the middle of several heroes both the max-health damage and the heal are at their best."
   },
   "kunkka_torrent": {
     "heroes": [
@@ -1670,7 +1685,7 @@
     ],
     "hero": "Kunkka",
     "ability_name": "Tidebringer",
-    "description": "Passively cleaves attacks in a large area in front of Kunkka with bonus damage.",
+    "description": "An attack modifier on a cooldown: the attack deals bonus damage and cleaves a large area in front of Kunkka.",
     "coaching_tip": "Position to cleave through creeps into enemy heroes for massive harass; one-shots entire waves with enough damage."
   },
   "kunkka_x_marks_the_spot": {
@@ -1697,8 +1712,8 @@
     ],
     "hero": "Largo",
     "ability_name": "Catchy Lick",
-    "description": "Lashes out with a musical tongue strike that damages and slows enemies.",
-    "coaching_tip": "Use for poke damage and to slow targets for follow-up; low cooldown allows frequent harassment in lane."
+    "description": "Largo's tongue pulls the target unit a short distance and applies a basic dispel; an enemy also takes damage. Killing the target or dispelling something from it gives Largo health regeneration for a while.",
+    "coaching_tip": "It works on allies too: pull a teammate out of trouble and dispel a slow or silence from them, or pull an enemy out of position and strip a buff from it."
   },
   "largo_frogstomp": {
     "heroes": [
@@ -1706,8 +1721,8 @@
     ],
     "hero": "Largo",
     "ability_name": "Frogstomp",
-    "description": "Leaps into the air and slams down dealing AoE damage and stunning nearby enemies.",
-    "coaching_tip": "Use as initiation or to interrupt channels; the AoE stun is strong for teamfight setup."
+    "description": "Tosses froglings into an area, where they stomp every second for several seconds: each stomp damages and mini-stuns, and enemies in the area are slowed.",
+    "coaching_tip": "The repeated mini-stuns interrupt channels and teleports; put it where the enemy has to stand or walk through, such as a choke point or on top of a disabled hero."
   },
   "largo_croak_of_genius": {
     "heroes": [
@@ -1715,8 +1730,8 @@
     ],
     "hero": "Largo",
     "ability_name": "Croak of Genius",
-    "description": "Provides a passive buff that enhances Largo's abilities and grants benefits to nearby allies.",
-    "coaching_tip": "Stay near allies to share the passive benefits; the enhancement improves your other abilities' effectiveness."
+    "description": "Strums a tune for an allied hero: their items and abilities cost less mana and part of the damage they deal echoes again over the following seconds. Spending mana shortens the buff, except on Largo himself.",
+    "coaching_tip": "Cast it on the ally who is about to deal the most damage, right before they start their combo; a hero who spends mana on every spell burns through the buff quickly."
   },
   "largo_amphibian_rhapsody": {
     "heroes": [
@@ -1724,8 +1739,8 @@
     ],
     "hero": "Largo",
     "ability_name": "Amphibian Rhapsody",
-    "description": "Performs a powerful musical ultimate that affects a large area with damage and crowd control.",
-    "coaching_tip": "Position centrally for maximum hero coverage; combo with Frogstomp to chain crowd control on the enemy team."
+    "description": "Largo starts to play: he is disarmed and his abilities are replaced by three songs that only work when strummed on the beat. Every strum on the beat adds a stack of Groovin' (armor, cheaper songs); a missed beat loses one.",
+    "coaching_tip": "The ultimate is a rhythm game: keep strumming on the beat to hold your stacks and pick the song for the moment. You cannot attack while playing, so stand behind your frontline."
   },
   "legion_commander_overwhelming_odds": {
     "heroes": [
@@ -1733,7 +1748,7 @@
     ],
     "hero": "Legion Commander",
     "ability_name": "Overwhelming Odds",
-    "description": "Damages enemies in an area dealing bonus damage per unit caught. Grants LC movement speed.",
+    "description": "Damages and briefly slows enemies in an area, dealing more damage per unit caught. Grants LC attack speed.",
     "coaching_tip": "Deals more damage the more enemies and creeps are in the area; use on large creep waves for massive nukes."
   },
   "legion_commander_press_the_attack": {
@@ -1742,8 +1757,8 @@
     ],
     "hero": "Legion Commander",
     "ability_name": "Press The Attack",
-    "description": "Removes debuffs and grants attack speed and health regen to a target ally.",
-    "coaching_tip": "Dispels stuns and silences from yourself or allies; cast on your Duel target for attack speed to win the Duel."
+    "description": "Removes debuffs and disables from a target ally (strong dispel) and grants movement speed and health regen.",
+    "coaching_tip": "Dispels stuns and silences from yourself or allies."
   },
   "legion_commander_moment_of_courage": {
     "heroes": [
@@ -1751,8 +1766,8 @@
     ],
     "hero": "Legion Commander",
     "ability_name": "Moment of Courage",
-    "description": "Passively grants a chance to counterattack with bonus lifesteal when attacked.",
-    "coaching_tip": "The lifesteal sustains LC in fights and Duels; higher proc chance at max level makes her very durable."
+    "description": "Counterattacks with bonus lifesteal after being attacked a number of times.",
+    "coaching_tip": "The lifesteal sustains LC in fights and Duels: the more she is attacked, the more often she counterattacks, and higher levels need fewer attacks."
   },
   "legion_commander_duel": {
     "heroes": [
@@ -1778,7 +1793,7 @@
     ],
     "hero": "Leshrac",
     "ability_name": "Diabolic Edict",
-    "description": "Surrounds Leshrac with explosions that deal physical damage to nearby units and buildings.",
+    "description": "Surrounds Leshrac with explosions that deal pure damage to nearby units and buildings.",
     "coaching_tip": "Devastates towers when no creeps are nearby to split damage; activate and walk up to buildings for fast pushes."
   },
   "leshrac_lightning_storm": {
@@ -1841,7 +1856,7 @@
     ],
     "hero": "Lifestealer",
     "ability_name": "Rage",
-    "description": "Grants spell immunity and bonus attack speed for a duration.",
+    "description": "Grants debuff immunity, magic resistance and bonus movement speed for a duration.",
     "coaching_tip": "Activate Rage to ignore disables during fights; time it to dodge key enemy stuns and silences."
   },
   "life_stealer_open_wounds": {
@@ -1859,8 +1874,9 @@
     ],
     "hero": "Lifestealer",
     "ability_name": "Ghoul Frenzy",
-    "description": "Passively grants attack speed and slows enemies on attack.",
-    "coaching_tip": "The passive slow keeps targets in melee range; combined with Rage, you stick to enemies easily."
+    "description": "Passively grants Lifestealer attack speed.",
+    "coaching_tip": "A cheap source of attack speed: more attacks mean more Feast damage and healing.",
+    "is_innate": true
   },
   "life_stealer_infest": {
     "heroes": [
@@ -1905,7 +1921,7 @@
     "hero": "Lina",
     "ability_name": "Laguna Blade",
     "description": "Fires a bolt of lightning dealing massive single-target magic damage.",
-    "coaching_tip": "Use as a finisher on low-HP targets; with Aghanim's it becomes pure damage that pierces BKB."
+    "coaching_tip": "Use as a finisher on low-HP targets; with Aghanim's Shard, casting it gives Lina stacks of Fiery Soul."
   },
   "lion_impale": {
     "heroes": [
@@ -1941,7 +1957,7 @@
     "hero": "Lion",
     "ability_name": "Finger of Death",
     "description": "Deals massive magic damage to a target. Each kill permanently increases the damage.",
-    "coaching_tip": "Secure kills with Finger to stack permanent bonus damage; the 40s max-level CD means you can use it frequently."
+    "coaching_tip": "Secure kills with Finger to stack permanent bonus damage; the 30s max-level CD means you can use it frequently."
   },
   "lone_druid_spirit_bear": {
     "heroes": [
@@ -1950,7 +1966,8 @@
     "hero": "Lone Druid",
     "ability_name": "Summon Spirit Bear",
     "description": "Summons a powerful bear companion that can carry items and has its own abilities.",
-    "coaching_tip": "The bear is your primary damage dealer and item carrier; keep it close in fights and use it to push towers."
+    "coaching_tip": "The bear is your primary damage dealer and item carrier; keep it close in fights and use it to push towers.",
+    "is_innate": true
   },
   "lone_druid_spirit_link": {
     "heroes": [
@@ -2003,8 +2020,9 @@
     ],
     "hero": "Luna",
     "ability_name": "Lunar Blessing",
-    "description": "Passively grants bonus damage and night vision to nearby allied heroes.",
-    "coaching_tip": "The night vision advantage helps your team spot ganks; stay near allies in fights for the damage aura."
+    "description": "Grants attack damage to Luna and nearby allied heroes (to all of them at night) and gives Luna bonus night vision.",
+    "coaching_tip": "Luna's own night vision helps her spot ganks; by day stay near allies in fights for the damage aura, at night it reaches them anywhere.",
+    "is_innate": true
   },
   "luna_eclipse": {
     "heroes": [
@@ -2021,7 +2039,7 @@
     ],
     "hero": "Lycan",
     "ability_name": "Summon Wolves",
-    "description": "Summons two wolves that gain abilities as the skill levels, including invisibility and critical strike.",
+    "description": "Summons two wolves that gain abilities as the skill levels, including permanent invisibility and Cripple, a chance to deal damage over time and slow attack speed.",
     "coaching_tip": "Use wolves for scouting, farming, and harassing; at max level their invisibility makes them excellent scouts."
   },
   "lycan_howl": {
@@ -2093,8 +2111,8 @@
     ],
     "hero": "Marci",
     "ability_name": "Dispose",
-    "description": "Grabs an allied or enemy unit and throws them behind Marci, stunning and damaging nearby enemies on landing.",
-    "coaching_tip": "Throw an enemy into their teammates for AoE stun; can also throw allies to safety or into better positions."
+    "description": "Grabs an allied or enemy unit and throws it behind Marci, damaging and slowing an enemy target and any enemies in the landing area.",
+    "coaching_tip": "Throw an enemy into their teammates for an AoE slow; can also throw allies to safety or into better positions."
   },
   "marci_companion_run": {
     "heroes": [
@@ -2111,8 +2129,8 @@
     ],
     "hero": "Marci",
     "ability_name": "Bodyguard",
-    "description": "Buffs a target ally with lifesteal and damage reduction, providing protection.",
-    "coaching_tip": "Cast on your carry to give them sustain and survivability in fights; the lifesteal helps them stay topped up."
+    "description": "Passively gives Marci lifesteal and attack damage. Cast on an ally, it shares most of both with them and puts a shared damage barrier on the pair, which her attacks on heroes refill.",
+    "coaching_tip": "Cast on your carry to give them sustain and survivability in fights, and keep attacking heroes yourself to refill the shared barrier."
   },
   "marci_unleash": {
     "heroes": [
@@ -2184,7 +2202,8 @@
     "hero": "Medusa",
     "ability_name": "Mana Shield",
     "description": "Absorbs a portion of incoming damage using mana instead of health.",
-    "coaching_tip": "Keep Mana Shield active to effectively double your survivability; manage mana carefully since running out makes you fragile."
+    "coaching_tip": "Keep Mana Shield active to effectively double your survivability; manage mana carefully since running out makes you fragile.",
+    "is_innate": true
   },
   "medusa_stone_gaze": {
     "heroes": [
@@ -2247,7 +2266,7 @@
     "hero": "Mirana",
     "ability_name": "Sacred Arrow",
     "description": "Fires a long-range arrow that stuns and damages the first enemy hit. Stun duration increases with distance.",
-    "coaching_tip": "Max range arrows stun for 5 seconds; shoot from fog and long distance for devastating ganks."
+    "coaching_tip": "Max range arrows stun for up to 5 seconds at max level; shoot from fog and long distance for devastating ganks."
   },
   "mirana_leap": {
     "heroes": [
@@ -2391,9 +2410,9 @@
     "hero": "Naga Siren",
     "ability_name": "Ensnare",
     "description": "Roots a target in place, preventing movement but not abilities.",
-    "coaching_tip": "Ensnare goes through BKB, making it a reliable catch tool; use to pin down targets for your illusions to attack."
+    "coaching_tip": "A long root for catching mobile heroes: it stops movement and blinks but not spells, and without Aghanim's Scepter it does not go through debuff immunity. Use it to pin down targets for your illusions to attack."
   },
-  "naga_siren_reel_in": {
+  "naga_siren_rip_tide": {
     "heroes": [
       "Naga Siren"
     ],
@@ -2426,7 +2445,7 @@
     ],
     "hero": "Nature's Prophet",
     "ability_name": "Teleportation",
-    "description": "Teleports to any point on the map after a short channel.",
+    "description": "Teleports to any point on the map after a cast time of a few seconds, and grants a barrier on arrival.",
     "coaching_tip": "Use to join fights globally, push empty lanes, or secure objectives; the global presence pressures the entire map."
   },
   "furion_force_of_nature": {
@@ -2508,7 +2527,8 @@
     "hero": "Night Stalker",
     "ability_name": "Hunter in the Night",
     "description": "Passively grants bonus attack speed and movement speed during night time.",
-    "coaching_tip": "Night Stalker dominates at night with massive speed advantages; play aggressively during nighttime and farm during day."
+    "coaching_tip": "Night Stalker dominates at night with massive speed advantages; play aggressively during nighttime and farm during day.",
+    "is_innate": true
   },
   "night_stalker_darkness": {
     "heroes": [
@@ -2606,8 +2626,8 @@
     ],
     "hero": "Omniknight",
     "ability_name": "Repel",
-    "description": "Buffs an ally with strong dispel and status resistance, removing debuffs.",
-    "coaching_tip": "Use to cleanse disables from your carry; the strong dispel removes almost all negative effects."
+    "description": "Grants an ally debuff immunity with 60% magic resistance, and bonus HP regen.",
+    "coaching_tip": "Cast it on your carry before the enemy's disables land: while it lasts, new debuffs do not affect the target."
   },
   "omniknight_hammer_of_purity": {
     "heroes": [
@@ -2652,7 +2672,7 @@
     "hero": "Oracle",
     "ability_name": "Purifying Flames",
     "description": "Deals magic damage then heals the target over time. Net effect is healing if the target survives the burst.",
-    "coaching_tip": "Cast on allies to heal them (burst then heal over time); combo with Fortune's End to purge the heal from enemies for pure damage."
+    "coaching_tip": "Cast on allies to heal them (burst then heal over time); combo with Fortune's End to purge the heal from enemies so only the damage remains."
   },
   "oracle_false_promise": {
     "heroes": [
@@ -2665,36 +2685,37 @@
   },
   "obsidian_destroyer_arcane_orb": {
     "heroes": [
-      "Outworld Devourer"
+      "Outworld Destroyer"
     ],
-    "hero": "Outworld Devourer",
+    "hero": "Outworld Destroyer",
     "ability_name": "Arcane Orb",
     "description": "Attacks deal bonus pure damage based on OD's current mana pool.",
     "coaching_tip": "Manual cast in lane to harass without drawing aggro; build mana pool items to scale the pure damage."
   },
   "obsidian_destroyer_astral_imprisonment": {
     "heroes": [
-      "Outworld Devourer"
+      "Outworld Destroyer"
     ],
-    "hero": "Outworld Devourer",
+    "hero": "Outworld Destroyer",
     "ability_name": "Astral Imprisonment",
     "description": "Banishes a target into an astral prison, dealing damage when it ends. Can be used on allies.",
     "coaching_tip": "Use on enemies to set up ganks or on allies to save them; the AoE damage on release can hit grouped enemies."
   },
   "obsidian_destroyer_equilibrium": {
     "heroes": [
-      "Outworld Devourer"
+      "Outworld Destroyer"
     ],
-    "hero": "Outworld Devourer",
+    "hero": "Outworld Destroyer",
     "ability_name": "Essence Flux",
     "description": "Passively grants a chance to restore a percentage of mana on spell cast.",
-    "coaching_tip": "Keeps your mana topped up for Arcane Orb usage; the passive sustains your damage output in extended fights."
+    "coaching_tip": "Keeps your mana topped up for Arcane Orb usage; the passive sustains your damage output in extended fights.",
+    "is_innate": true
   },
   "obsidian_destroyer_sanity_eclipse": {
     "heroes": [
-      "Outworld Devourer"
+      "Outworld Destroyer"
     ],
-    "hero": "Outworld Devourer",
+    "hero": "Outworld Destroyer",
     "ability_name": "Sanity's Eclipse",
     "description": "Deals damage in an area based on the difference between OD's mana and each enemy's mana.",
     "coaching_tip": "Deals more damage to low-mana targets; Astral Imprisonment to drain mana first then Sanity's Eclipse for maximum burst."
@@ -2714,8 +2735,8 @@
     ],
     "hero": "Pangolier",
     "ability_name": "Shield Crash",
-    "description": "Jumps forward and slams down, dealing damage and gaining damage reduction per hero hit.",
-    "coaching_tip": "Jump into groups of enemies for maximum damage reduction stacks; combo with Swashbuckle for mobility."
+    "description": "Jumps forward and slams down, damaging enemies around him; hitting an enemy hero gives Pangolier a damage barrier for a short time.",
+    "coaching_tip": "Make sure the slam hits a hero for the barrier; during Rolling Thunder it keeps your momentum and lets you clear walls and cliffs."
   },
   "pangolier_lucky_shot": {
     "heroes": [
@@ -2723,8 +2744,8 @@
     ],
     "hero": "Pangolier",
     "ability_name": "Lucky Shot",
-    "description": "Attacks have a chance to disarm and slow enemies.",
-    "coaching_tip": "Lucky Shot procs on Swashbuckle strikes, potentially disarming multiple enemies; strong against right-click carries."
+    "description": "Damage dealt by Pangolier's attacks and abilities has a chance to slow the enemy's attack speed and reduce its armor.",
+    "coaching_tip": "Lucky Shot procs on Swashbuckle strikes, potentially slowing the attacks of multiple enemies; strong against right-click carries."
   },
   "pangolier_gyroshell": {
     "heroes": [
@@ -2759,8 +2780,9 @@
     ],
     "hero": "Phantom Assassin",
     "ability_name": "Blur",
-    "description": "Passively grants evasion. Actively makes PA disappear from the minimap briefly.",
-    "coaching_tip": "Activate Blur to sneak into Roshan or set up ganks without being seen on the minimap; passive evasion counters physical attackers."
+    "description": "Blurs her body: disjoints incoming projectiles, grants movement speed and makes PA impossible to see until she comes near enemy heroes or towers.",
+    "coaching_tip": "Activate Blur to sneak into Roshan or set up ganks without being seen.",
+    "is_innate": true
   },
   "phantom_assassin_coup_de_grace": {
     "heroes": [
@@ -2795,8 +2817,8 @@
     ],
     "hero": "Phantom Lancer",
     "ability_name": "Phantom Rush",
-    "description": "Passively charges at enemies from a distance when attacking, gaining bonus agility.",
-    "coaching_tip": "The charge bonus helps close distance; engage from max range to trigger the agility boost for extra damage."
+    "description": "Charges at enemies from a distance when attacking, gaining movement speed and evasion.",
+    "coaching_tip": "The charge helps close distance; engage from range to trigger it and fight with its evasion bonus."
   },
   "phantom_lancer_juxtapose": {
     "heroes": [
@@ -2831,7 +2853,7 @@
     ],
     "hero": "Phoenix",
     "ability_name": "Sun Ray",
-    "description": "Channels a beam dealing percentage-based damage to enemies and healing allies in the ray.",
+    "description": "Fires a beam at the cost of Phoenix's own health, dealing percentage-based damage to enemies and healing allies in the ray.",
     "coaching_tip": "Strong against tanky heroes due to percentage damage; the ally healing makes it useful for sustained fights."
   },
   "phoenix_supernova": {
@@ -2931,7 +2953,7 @@
     "hero": "Pudge",
     "ability_name": "Rot",
     "description": "Toggleable aura that damages nearby enemies and Pudge himself while slowing enemies.",
-    "coaching_tip": "Toggle on after hooking to slow and damage the target; the self-damage builds Flesh Heap stacks."
+    "coaching_tip": "Toggle on after hooking to slow and damage the target."
   },
   "pudge_flesh_heap": {
     "heroes": [
@@ -2939,8 +2961,8 @@
     ],
     "hero": "Pudge",
     "ability_name": "Meat Shield",
-    "description": "Provides passive damage reduction. Nearby enemy hero deaths permanently grant bonus strength.",
-    "coaching_tip": "Stack strength from kills and assists to become increasingly tanky; late-game Pudge with many stacks is extremely hard to kill."
+    "description": "Pudge covers himself with a layer of flesh that blocks damage of any type from any source for a few seconds.",
+    "coaching_tip": "Activate it when you are being focused or just before going in with Rot; the permanent strength per hero kill comes from his innate ability, Flesh Heap."
   },
   "pudge_dismember": {
     "heroes": [
@@ -3083,7 +3105,7 @@
     ],
     "hero": "Riki",
     "ability_name": "Tricks of the Trade",
-    "description": "Becomes hidden and attacks all enemies in an area from behind for several seconds.",
+    "description": "Channels while hidden from the world, striking random enemies in an area from behind.",
     "coaching_tip": "Use when surrounded for invulnerable AoE backstab damage; also dodges incoming abilities during the effect."
   },
   "riki_backstab": {
@@ -3092,44 +3114,44 @@
     ],
     "hero": "Riki",
     "ability_name": "Cloak and Dagger",
-    "description": "Passively grants permanent invisibility with a fade delay. Attacks from behind deal bonus damage based on agility.",
-    "coaching_tip": "Always position behind your target for maximum backstab damage; build agility items to scale the bonus damage."
+    "description": "Riki is invisible until he attacks and fades again after a short delay; hero kills and assists give him extra experience.",
+    "coaching_tip": "Being invisible by default lets Riki choose every fight: scout, get behind the target and open from there for his Backstab damage. Watch for enemy Sentry Wards, Dust and Gem."
   },
   "ringmaster_tame_the_beasts": {
     "heroes": [
-      "Ring Master"
+      "Ringmaster"
     ],
-    "hero": "Ring Master",
+    "hero": "Ringmaster",
     "ability_name": "Tame the Beasts",
-    "description": "Cracks a whip to damage and control enemies in a line.",
-    "coaching_tip": "Use for lane harass and to control enemy positioning; the range lets you stay safe while dealing damage."
+    "description": "Channels a whip crack over an area: enemies hit take damage and flee in fear. A longer channel raises the damage and the fear duration but narrows the area.",
+    "coaching_tip": "Charge it fully from fog or behind your frontline for the long fear, or release it early when you need the wide area to catch several heroes."
   },
   "ringmaster_the_box": {
     "heroes": [
-      "Ring Master"
+      "Ringmaster"
     ],
-    "hero": "Ring Master",
+    "hero": "Ringmaster",
     "ability_name": "Escape Act",
-    "description": "Creates a box that can trap or protect units inside.",
-    "coaching_tip": "Use defensively to save allies or offensively to trap enemies; versatile utility for various fight situations."
+    "description": "Packs Ringmaster or an allied hero into a moving box: the boxed hero is untargetable and gains movement speed, magic resistance and slow resistance, but is muted, silenced and disarmed until the box opens or leaves its area.",
+    "coaching_tip": "A save, not a trap: box the ally who is being focused so that targeted spells and attacks cannot reach them. It cannot be cast on enemies, and the boxed hero cannot act either."
   },
   "ringmaster_impalement": {
     "heroes": [
-      "Ring Master"
+      "Ringmaster"
     ],
-    "hero": "Ring Master",
+    "hero": "Ringmaster",
     "ability_name": "Impalement Arts",
-    "description": "Throws knives that damage and pin enemies in place.",
-    "coaching_tip": "Aim for grouped enemies to pin multiple targets; the lockdown sets up follow-up damage from your team."
+    "description": "Throws a dagger to a chosen point: the first enemy hit takes damage, is briefly slowed and bleeds for a percentage of its max health per second.",
+    "coaching_tip": "A long-range skillshot on charges: throw from fog at heroes with large health pools, and use the brief slow to line up Tame the Beasts or the Wheel."
   },
   "ringmaster_wheel": {
     "heroes": [
-      "Ring Master"
+      "Ringmaster"
     ],
-    "hero": "Ring Master",
+    "hero": "Ringmaster",
     "ability_name": "Wheel of Wonder",
-    "description": "Spins a wheel that applies random powerful effects to enemies in the area.",
-    "coaching_tip": "Position the wheel to cover the teamfight area; the random effects can swing fights significantly."
+    "description": "Rolls a wheel to the target point, knocking enemies aside on the way. Enemies near it are slowed and take damage over time, heroes who face it are mesmerized and drawn towards it, and it then explodes.",
+    "coaching_tip": "Roll it into the middle of the fight so that enemies have to look at it or turn away from your team; the heroes it mesmerizes walk into the explosion, so follow up with your team's area damage."
   },
   "rubick_telekinesis": {
     "heroes": [
@@ -3182,7 +3204,7 @@
     ],
     "hero": "Sand King",
     "ability_name": "Sand Storm",
-    "description": "Channels a sandstorm around Sand King, dealing AoE damage and making him invisible.",
+    "description": "Creates a sandstorm that damages enemies and keeps Sand King invisible while he stays inside it.",
     "coaching_tip": "Use to disappear during fights or farm jungle camps; enemies need detection to reveal you inside the storm."
   },
   "sandking_caustic_finale": {
@@ -3191,8 +3213,9 @@
     ],
     "hero": "Sand King",
     "ability_name": "Caustic Finale",
-    "description": "Attacks apply a debuff that explodes on death, dealing damage and slowing nearby enemies.",
-    "coaching_tip": "Hit creeps to make them explode on death for splash damage; excellent for lane harass and pushing."
+    "description": "Attacks inject a venom that makes enemy units explode when they die, damaging the enemies around them.",
+    "coaching_tip": "Hit creeps to make them explode on death for splash damage; excellent for lane harass and pushing.",
+    "is_innate": true
   },
   "sandking_epicenter": {
     "heroes": [
@@ -3200,8 +3223,8 @@
     ],
     "hero": "Sand King",
     "ability_name": "Epicenter",
-    "description": "Channels then releases powerful pulses that damage and slow all nearby enemies.",
-    "coaching_tip": "Channel from fog then Blink or Burrowstrike into enemies for a surprise Epicenter; the channeling time requires safe setup."
+    "description": "After a long cast point, releases pulses around Sand King that damage and slow all nearby enemies.",
+    "coaching_tip": "Cast it from fog, then Blink or Burrowstrike into enemies for a surprise Epicenter; the cast time requires safe setup."
   },
   "shadow_demon_disruption": {
     "heroes": [
@@ -3239,7 +3262,7 @@
     "description": "Purges an enemy, slowing them continuously and dealing damage over time.",
     "coaching_tip": "Use to remove buffs from enemies and apply a strong slow; effective for kiting and chasing targets."
   },
-  "nevermore_shadowraze3": {
+  "nevermore_shadowraze1": {
     "heroes": [
       "Shadow Fiend"
     ],
@@ -3255,7 +3278,8 @@
     "hero": "Shadow Fiend",
     "ability_name": "Necromastery",
     "description": "Gains bonus damage for each unit killed, up to a cap. Loses half the souls on death.",
-    "coaching_tip": "Prioritize last-hitting to build soul stacks; dying loses half your souls, so position carefully to avoid deaths."
+    "coaching_tip": "Prioritize last-hitting to build soul stacks; dying loses half your souls, so position carefully to avoid deaths.",
+    "is_innate": true
   },
   "nevermore_dark_lord": {
     "heroes": [
@@ -3317,7 +3341,7 @@
     ],
     "hero": "Silencer",
     "ability_name": "Arcane Curse",
-    "description": "Curses enemies in an area, dealing damage over time that increases when they cast spells.",
+    "description": "Curses enemies in an area, damaging them over time and slowing them; every spell they cast prolongs the curse.",
     "coaching_tip": "Cast on enemies who want to spam abilities; they take more damage for each spell they cast during the curse."
   },
   "silencer_glaives_of_wisdom": {
@@ -3326,8 +3350,8 @@
     ],
     "hero": "Silencer",
     "ability_name": "Glaives of Wisdom",
-    "description": "Attacks deal bonus pure damage based on Silencer's intelligence.",
-    "coaching_tip": "Manual cast to harass without aggro in lane; the pure damage scales with stolen intelligence from kills."
+    "description": "Attacks deal bonus magical damage based on Silencer's intelligence and steal intelligence from the target.",
+    "coaching_tip": "Manual cast to harass without aggro in lane; the damage scales with stolen intelligence."
   },
   "silencer_last_word": {
     "heroes": [
@@ -3389,8 +3413,8 @@
     ],
     "hero": "Slardar",
     "ability_name": "Guardian Sprint",
-    "description": "Grants bonus movement speed with extra speed in water areas.",
-    "coaching_tip": "Use to chase enemies or rotate between lanes quickly; the river speed bonus is massive for securing rune fights."
+    "description": "Grants bonus movement speed and lets Slardar pass through units; it starts with full slow resistance that fades over the sprint.",
+    "coaching_tip": "Use to chase enemies or rotate between lanes quickly; at the start of the sprint slows cannot stop the engage."
   },
   "slardar_slithereen_crush": {
     "heroes": [
@@ -3444,7 +3468,8 @@
     "hero": "Slark",
     "ability_name": "Essence Shift",
     "description": "Each attack steals stats from the enemy, gaining agility while they lose attributes.",
-    "coaching_tip": "Extended fights favor Slark as stats stack; focus one target to drain them of all attributes quickly."
+    "coaching_tip": "Extended fights favor Slark as stats stack; focus one target to drain them of all attributes quickly.",
+    "is_innate": true
   },
   "slark_shadow_dance": {
     "heroes": [
@@ -3452,7 +3477,7 @@
     ],
     "hero": "Slark",
     "ability_name": "Shadow Dance",
-    "description": "Becomes invisible and untargetable with bonus movement speed and health regeneration.",
+    "description": "Hides Slark in a cloud of shadows that detection cannot see through. Passively, while no enemy sees him, he gains movement speed and health regeneration.",
     "coaching_tip": "Use to reset during fights and regenerate health; you cannot be revealed by detection during Shadow Dance."
   },
   "snapfire_scatterblast": {
@@ -3515,8 +3540,8 @@
     ],
     "hero": "Sniper",
     "ability_name": "Take Aim",
-    "description": "Passively increases attack range. Can be activated for extra range and terrain ignoring.",
-    "coaching_tip": "The massive range lets Sniper attack safely from behind the team; activate to attack over cliffs and trees."
+    "description": "Passively increases attack range. Activated, Sniper gains more range, vision and Headshot chance, but is slowed and only sees a cone in front of him.",
+    "coaching_tip": "The massive range lets Sniper attack safely from behind the team; activate it once you are in position, because you are slowed by 65% while it lasts."
   },
   "sniper_assassinate": {
     "heroes": [
@@ -3543,7 +3568,8 @@
     "hero": "Spectre",
     "ability_name": "Desolate",
     "description": "Passively deals bonus pure damage to enemies who are alone, without allied units nearby.",
-    "coaching_tip": "Target isolated heroes for the Desolate bonus; Haunt illusions also proc Desolate on lonely targets."
+    "coaching_tip": "Target isolated heroes for the Desolate bonus; Haunt illusions also proc Desolate on lonely targets.",
+    "is_innate": true
   },
   "spectre_dispersion": {
     "heroes": [
@@ -3695,8 +3721,8 @@
     ],
     "hero": "Techies",
     "ability_name": "Blast Off!",
-    "description": "Techies launches into the air toward a target area, dealing damage and silencing enemies on landing at the cost of HP.",
-    "coaching_tip": "Use for aggressive initiations with the AoE silence; the self-damage is significant so ensure the trade is worth it."
+    "description": "Techies launches into the air toward a target area, dealing damage and stunning enemies on landing at the cost of part of their current HP.",
+    "coaching_tip": "Use for aggressive initiations with the AoE stun; the self-damage is significant so ensure the trade is worth it."
   },
   "techies_land_mines": {
     "heroes": [
@@ -3869,22 +3895,13 @@
     "description": "Deploys a wave of robots that march forward, dealing magic damage to enemies they pass through.",
     "coaching_tip": "Stack March casts with Rearm for massive area denial; use to defend high ground or farm dangerous areas safely."
   },
-  "tinker_defense_matrix": {
-    "heroes": [
-      "Tinker"
-    ],
-    "hero": "Tinker",
-    "ability_name": "Defense Matrix",
-    "description": "Shields an ally with a barrier that absorbs damage and grants status resistance.",
-    "coaching_tip": "Cast on allies who are being focused to absorb burst damage; Rearm lets you recast it repeatedly."
-  },
   "tinker_rearm": {
     "heroes": [
       "Tinker"
     ],
     "hero": "Tinker",
     "ability_name": "Rearm",
-    "description": "Channels to reset the cooldowns of most abilities and items.",
+    "description": "Channels to reset the cooldowns of Tinker's abilities.",
     "coaching_tip": "Rearm is what makes Tinker powerful; manage mana carefully and chain ability resets for sustained teamfight pressure."
   },
   "tiny_avalanche": {
@@ -3894,7 +3911,7 @@
     "hero": "Tiny",
     "ability_name": "Avalanche",
     "description": "Drops rocks in an area dealing damage and stunning enemies.",
-    "coaching_tip": "Combo with Toss for double damage; Avalanche into Toss is the standard burst combo for early kills."
+    "coaching_tip": "Avalanche into Toss is the standard burst combo for early kills: the stuns hold the target in place for the Toss."
   },
   "tiny_toss": {
     "heroes": [
@@ -3929,7 +3946,7 @@
     ],
     "hero": "Treant Protector",
     "ability_name": "Nature's Grasp",
-    "description": "Creates a line of vines that damage and root enemies who touch them.",
+    "description": "Creates a line of vines that damage and slow enemies who walk through them.",
     "coaching_tip": "Place in chokepoints to zone enemies; the vines linger and provide area control in teamfights."
   },
   "treant_leech_seed": {
@@ -3938,8 +3955,8 @@
     ],
     "hero": "Treant Protector",
     "ability_name": "Leech Seed",
-    "description": "Plants a seed on a target that slows them and heals nearby allies over time.",
-    "coaching_tip": "Cast on enemies near your allies for sustained healing and slow; strong for trading in lane."
+    "description": "Treant's next attack plants a seed in the target: it takes extra magic damage, is rooted and disarmed for a short time, and sends healing pulses to nearby allies.",
+    "coaching_tip": "Use the empowered attack to pin an enemy in lane: the brief root and disarm set up your partner's hits, and the pulses heal the allies around the target."
   },
   "treant_living_armor": {
     "heroes": [
@@ -3965,8 +3982,8 @@
     ],
     "hero": "Troll Warlord",
     "ability_name": "Berserker's Rage",
-    "description": "Toggles between ranged and melee form. Melee form gains bonus armor, movement speed, and bash.",
-    "coaching_tip": "Switch to melee for the bash and durability when fighting, ranged for safe harass and farming; toggle dynamically."
+    "description": "Switches between ranged and melee form. In melee form attacks have a chance to ensnare (root) the target and Troll gains movement speed; in ranged form attacks have a chance to maim, dealing bonus damage and slowing.",
+    "coaching_tip": "Switch to melee for the ensnare and movement speed when fighting, ranged for safe harass and farming; switch dynamically."
   },
   "troll_warlord_whirling_axes_ranged": {
     "heroes": [
@@ -4002,7 +4019,7 @@
     "hero": "Tusk",
     "ability_name": "Ice Shards",
     "description": "Launches a shard projectile that creates an impassable wall of ice, trapping enemies.",
-    "coaching_tip": "Aim to trap enemies against terrain with the ice wall; the wall blocks paths for 7 seconds."
+    "coaching_tip": "Aim to trap enemies against terrain with the ice wall; the wall blocks paths for up to 7 seconds at max level."
   },
   "tusk_snowball": {
     "heroes": [
@@ -4020,7 +4037,8 @@
     "hero": "Tusk",
     "ability_name": "Walrus Kick",
     "description": "Kicks an enemy away, dealing damage and slowing them.",
-    "coaching_tip": "Use to kick enemies into your team or away from allies; the reposition can be fight-winning."
+    "coaching_tip": "Use to kick enemies into your team or away from allies; the reposition can be fight-winning.",
+    "behavior": "Hidden"
   },
   "tusk_walrus_punch": {
     "heroes": [
@@ -4100,8 +4118,8 @@
     ],
     "hero": "Undying",
     "ability_name": "Flesh Golem",
-    "description": "Transforms into a flesh golem, amplifying damage enemies take and slowing nearby enemies.",
-    "coaching_tip": "Activate and walk into the enemy team; the damage amp aura makes your team's burst significantly stronger."
+    "description": "Transforms into a flesh golem with bonus strength and movement speed; his attacks slow, amplify the damage the target takes and spawn zombies.",
+    "coaching_tip": "Activate and attack the hero your team is focusing: the damage amplification comes from your attacks, so stay on that target."
   },
   "ursa_earthshock": {
     "heroes": [
@@ -4163,8 +4181,8 @@
     ],
     "hero": "Vengeful Spirit",
     "ability_name": "Vengeance Aura",
-    "description": "Passively grants bonus damage to nearby allies. On death, spawns an illusion of VS.",
-    "coaching_tip": "Stay near your carry for the damage aura; the death illusion provides continued presence after dying."
+    "description": "Passively increases the attack damage of nearby allied heroes; Vengeful Spirit herself gets a larger bonus.",
+    "coaching_tip": "Stay near your carry for the damage aura; right-click cores benefit the most from it."
   },
   "vengefulspirit_nether_swap": {
     "heroes": [
@@ -4191,7 +4209,8 @@
     "hero": "Venomancer",
     "ability_name": "Poison Sting",
     "description": "Passively applies a slow and damage over time to enemies on attack.",
-    "coaching_tip": "Auto-attacks constantly apply poison, making Venomancer excellent at harassment; plague wards also apply Poison Sting."
+    "coaching_tip": "Auto-attacks constantly apply poison, making Venomancer excellent at harassment; plague wards also apply Poison Sting.",
+    "is_innate": true
   },
   "venomancer_plague_ward": {
     "heroes": [
@@ -4208,8 +4227,8 @@
     ],
     "hero": "Venomancer",
     "ability_name": "Noxious Plague",
-    "description": "Infects an enemy hero with a deadly plague that deals damage and spreads to nearby enemies on death.",
-    "coaching_tip": "Cast on enemies grouped together since the plague spreads on death; the damage scales with enemy proximity."
+    "description": "Infects an enemy with a plague that damages on impact, then slows and deals damage over time based on their max health. When it ends it spreads, together with Venomancer's other debuffs, to nearby enemies.",
+    "coaching_tip": "Cast on a hero in the middle of the enemy team: when the plague ends, by death or by time, it jumps to the enemies around the target."
   },
   "viper_poison_attack": {
     "heroes": [
@@ -4226,8 +4245,8 @@
     ],
     "hero": "Viper",
     "ability_name": "Nethertoxin",
-    "description": "Creates a pool of toxin that deals increasing damage and disables passives of enemies standing in it.",
-    "coaching_tip": "Counters passive-reliant heroes like Bristleback and PA; place under controlled enemies for guaranteed effect."
+    "description": "Creates a pool of toxin that deals increasing damage and slows the attack speed of enemies standing in it.",
+    "coaching_tip": "Place under controlled enemies for guaranteed effect."
   },
   "viper_corrosive_skin": {
     "heroes": [
@@ -4245,7 +4264,7 @@
     "hero": "Viper",
     "ability_name": "Viper Strike",
     "description": "Fires a powerful poison at a target dealing heavy DoT and massive slow. Pierces spell immunity.",
-    "coaching_tip": "The BKB-piercing slow pins down enemy carries; 10s max-level CD means use it frequently."
+    "coaching_tip": "The BKB-piercing slow pins down enemy carries and disables their passives; the cooldown drops to 30s at max level, so do not hold it for a perfect fight."
   },
   "visage_grave_chill": {
     "heroes": [
@@ -4496,7 +4515,7 @@
     ],
     "hero": "Witch Doctor",
     "ability_name": "Death Ward",
-    "description": "Channels a powerful ward that attacks nearby enemies with high physical damage.",
+    "description": "Channels a powerful ward that attacks nearby enemies with high pure damage.",
     "coaching_tip": "Channel from hidden positions to avoid interruption; BKB protects the channel. Aghanim's adds bounce attacks."
   },
   "skeleton_king_hellfire_blast": {
@@ -4514,8 +4533,8 @@
     ],
     "hero": "Wraith King",
     "ability_name": "Mortal Strike",
-    "description": "Grants a chance for critical strikes and summons skeletons from killed creeps.",
-    "coaching_tip": "The crit chance makes WK a strong right-clicker; skeletons help with farming, pushing, and providing bodies in fights."
+    "description": "Passively turns an attack into a critical strike whenever its cooldown is ready.",
+    "coaching_tip": "The guaranteed crit makes WK a strong right-clicker; the skeletons that help with farming and pushing come from Bone Guard."
   },
   "skeleton_king_vampiric_spirit": {
     "heroes": [
@@ -4523,8 +4542,9 @@
     ],
     "hero": "Wraith King",
     "ability_name": "Vampiric Spirit",
-    "description": "Passively grants lifesteal to Wraith King and nearby allied heroes.",
-    "coaching_tip": "The aura sustains your team during fights and farming; stay near allies to share the lifesteal benefit."
+    "description": "Passively grants Wraith King lifesteal. When slain he fights on as a wraith for a few seconds before dying.",
+    "coaching_tip": "The lifesteal sustains you while farming and fighting.",
+    "is_innate": true
   },
   "skeleton_king_reincarnation": {
     "heroes": [
@@ -4560,7 +4580,8 @@
     "hero": "Zeus",
     "ability_name": "Static Field",
     "description": "Every spell cast deals a percentage of nearby enemies' current HP as magic damage.",
-    "coaching_tip": "Percentage-based damage is strong against tanky heroes; casting spells rapidly stacks the passive damage quickly."
+    "coaching_tip": "Percentage-based damage is strong against tanky heroes; casting spells rapidly stacks the passive damage quickly.",
+    "is_innate": true
   },
   "zuus_thundergods_wrath": {
     "heroes": [

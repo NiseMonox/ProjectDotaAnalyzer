@@ -12,15 +12,21 @@ distiller.
 Small samples are noise: a position pattern needs at least
 :data:`_MIN_POSITION_SAMPLE` player-games, a hero item-timing chunk at least
 :data:`_MIN_HERO_GAMES` games of that hero and :data:`_MIN_ITEM_SAMPLE`
-observations per listed item. Sample counts are recorded in every chunk's
-provenance.
+observations per listed item (:data:`MIN_SAMPLES`; smoke runs pass lower
+values). Sample counts are recorded in every chunk's provenance, and the
+aggregates say whether they were ``sufficient`` to produce any chunk.
+
+The per-position aggregates are also what ``pro_patterns`` rates last hits
+and kill participation against (the mean, the top quarter as "good"):
+besides the values the chunks quote they hold the last hits at
+:data:`CS_MINUTES` (``cs_curve``) and the third quartile of kill
+participation.
 
 Zero LLM cost — everything here is deterministic template rendering.
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import statistics
 import time
@@ -31,10 +37,15 @@ from .. import data_manager
 from .base import (
     LEARNED_DIR,
     MINING_AGGREGATES,
+    MINING_MIN_SAMPLES,
     LearnedChunk,
     current_patch_version,
+    is_key_item,
+    load_item_meta,
     opendota_get,
+    pause_for_rate_limit,
     save_learned_file,
+    stop_requested,
     write_json_atomic,
 )
 
@@ -63,73 +74,46 @@ _POS_LABEL_EN = {
 
 LEARNED_FILE_NAME = "mining_patterns"
 
-# Minimum sample sizes (below these the numbers are noise).
-_MIN_POSITION_SAMPLE = 30   # player-games per position
-_MIN_HERO_GAMES = 5         # games of a hero for an item-timing chunk
-_MIN_ITEM_SAMPLE = 4        # observations of one item's first timing
-
-# An item counts as "core" when it costs at least this much gold.
-_CORE_ITEM_MIN_COST = 2000
-
-# Fallback core-item keys used when the item catalog has no costs.
-_FALLBACK_CORE_ITEMS = frozenset({
-    "bfury", "maelstrom", "mjollnir", "radiance", "manta", "black_king_bar",
-    "blink", "ultimate_scepter", "desolator", "greater_crit", "butterfly",
-    "satanic", "skadi", "assault", "heart", "sheepstick", "orchid",
-    "bloodthorn", "shivas_guard", "pipe", "crimson_guard", "vladmir",
-    "spirit_vessel", "lotus_orb", "aeon_disk", "octarine_core", "refresher",
-    "cyclone", "force_staff", "aether_lens", "glimmer_cape", "guardian_greaves",
-    "hand_of_midas", "armlet", "echo_sabre", "sange_and_yasha", "kaya_and_sange",
-    "yasha_and_kaya", "silver_edge", "abyssal_blade", "monkey_king_bar",
-    "hurricane_pike", "nullifier", "dagon", "ethereal_blade", "sphere",
-    "solar_crest", "mekansm", "gungir", "diffusal_blade", "mage_slayer",
-    "witch_blade", "eternal_shroud", "bloodstone", "travel_boots",
-})
+# Minimum sample sizes (below these the numbers are noise); shared with the
+# Level-3 distiller through base.MINING_MIN_SAMPLES.
+MIN_SAMPLES = MINING_MIN_SAMPLES
+_MIN_POSITION_SAMPLE = MIN_SAMPLES["position"]   # player-games per position
+_MIN_HERO_GAMES = MIN_SAMPLES["hero_games"]      # games of a hero for an item-timing chunk
+_MIN_ITEM_SAMPLE = MIN_SAMPLES["item"]           # observations of one item's first timing
+# The sentence telling the player what to do about a later timing is only
+# added when every listed average rests on this many purchases: below it the
+# numbers are shown and the reader draws the conclusion.
+_ADVICE_MIN_ITEM_SAMPLE = 15
+# Minutes at which the last hits of every player are sampled (the points of
+# pro_patterns.CS_BENCHMARKS).
+CS_MINUTES = (5, 10, 15, 20, 25, 30)
 
 # Between full-match fetches through OpenDotaParser (which bypasses the
 # base.opendota_get throttle) keep the same polite rate-limit floor.
 _MATCH_FETCH_INTERVAL = 1.1
 # proMatches / publicMatches pages fetched at most for candidate discovery.
 _MAX_DISCOVERY_PAGES = 4
+# Give up after this many match fetches in a row got no answer from the API
+# (timeout, DNS, 5xx): it is unreachable, the other candidates would only
+# wait for the same timeout.
+_MAX_CONSECUTIVE_FETCH_ERRORS = 5
+# A match fetch refused for the rate limit (HTTP 429) is repeated this often,
+# each time after base.pause_for_rate_limit(); see base._RATE_LIMIT_PAUSE_S.
+_RATE_LIMIT_RETRIES = 4
+
+
+def _min_samples(overrides: dict | None) -> dict[str, int]:
+    """Effective minimum samples (module defaults + optional overrides)."""
+    limits = dict(MIN_SAMPLES)
+    for key, value in (overrides or {}).items():
+        if key in limits:
+            limits[key] = max(1, int(value))
+    return limits
 
 
 # ---------------------------------------------------------------------------
 # Item metadata
 # ---------------------------------------------------------------------------
-
-def _load_item_meta() -> dict[str, dict]:
-    """Item key -> {name, cost}: committed frontend catalog + merged item table.
-
-    Returns {} when neither is available — callers then fall back to the
-    builtin core-item key set.
-    """
-    meta: dict[str, dict] = {}
-    try:
-        with open(data_manager.STATIC_DATA_DIR / "items.json", "r", encoding="utf-8") as f:
-            by_key = (json.load(f) or {}).get("by_key") or {}
-        for key, info in by_key.items():
-            if isinstance(info, dict):
-                meta[str(key)] = {"name": info.get("name") or key, "cost": info.get("cost") or 0}
-    except Exception as exc:
-        logger.warning("Frontend item catalog unavailable: %s", exc)
-    try:
-        for name, data in data_manager.load_items().items():
-            key = data.get("key")
-            if key and (key not in meta or not meta[key].get("cost")):
-                meta[str(key)] = {"name": name, "cost": data.get("cost") or 0}
-    except Exception as exc:
-        logger.warning("Item table unavailable: %s", exc)
-    return meta
-
-
-def _is_core_item(key: str, item_meta: dict[str, dict]) -> bool:
-    if not key or key.startswith("recipe"):
-        return False
-    cost = item_meta.get(key, {}).get("cost", 0) if item_meta else 0
-    if isinstance(cost, (int, float)) and cost > 0:
-        return cost >= _CORE_ITEM_MIN_COST
-    return key in _FALLBACK_CORE_ITEMS
-
 
 def _item_display_name(key: str, item_meta: dict[str, dict]) -> str:
     if key in item_meta and item_meta[key].get("name"):
@@ -175,8 +159,9 @@ def _discover_match_ids(source: str, wanted: int) -> list[int]:
 # Aggregation
 # ---------------------------------------------------------------------------
 
-def _new_position_bucket() -> dict[str, list]:
-    return {"cs_at_10": [], "gpm": [], "deaths": [], "kill_participation": [], "obs_placed": []}
+def _new_position_bucket() -> dict:
+    return {"cs_at_10": [], "cs_at": {minute: [] for minute in CS_MINUTES},
+            "gpm": [], "deaths": [], "kill_participation": [], "obs_placed": []}
 
 
 def _accumulate_match(
@@ -201,6 +186,9 @@ def _accumulate_match(
 
         if len(p.lh_t) > 10:
             bucket["cs_at_10"].append(p.lh_t[10])
+        for minute in CS_MINUTES:   # games that ended earlier do not count for a later minute
+            if len(p.lh_t) > minute:
+                bucket["cs_at"][minute].append(p.lh_t[minute])
         bucket["gpm"].append(p.gold_per_min)
         bucket["deaths"].append(p.deaths)
         tk = team_kills.get(p.team, 0)
@@ -208,7 +196,7 @@ def _accumulate_match(
             bucket["kill_participation"].append(min(1.0, (p.kills + p.assists) / tk))
         bucket["obs_placed"].append(p.obs_placed)
 
-        # Per-hero first-purchase timing of core items (canonical hero slug,
+        # Per-hero first-purchase timing of key items (canonical hero slug,
         # identical to the knowledge store's hero tags).
         slug = data_manager.hero_slug(p.hero_name or p.hero_slug)
         hero = hero_stats.setdefault(
@@ -220,7 +208,7 @@ def _accumulate_match(
         for entry in p.purchase_log:
             key = str(entry.get("key", "") or "")
             t = entry.get("time")
-            if t is None or not _is_core_item(key, item_meta):
+            if t is None or not is_key_item(key, item_meta):
                 continue
             if key not in first_seen or t < first_seen[key]:
                 first_seen[key] = t
@@ -246,6 +234,7 @@ def _finalize_aggregates(
     match_ids: list[int],
     source: str,
     patch: str,
+    min_samples: dict[str, int] | None = None,
 ) -> dict:
     """Reduce raw sample lists into the aggregates dict persisted for Level 3."""
     positions_out: dict[str, dict] = {}
@@ -258,9 +247,14 @@ def _finalize_aggregates(
             "cs_at_10_sample": len(bucket["cs_at_10"]),
             "cs_at_10_mean": _mean(bucket["cs_at_10"]),
             "cs_at_10_p75": _p75(bucket["cs_at_10"]),
+            "cs_curve": {
+                str(minute): {"sample": len(values), "mean": _mean(values), "p75": _p75(values)}
+                for minute, values in sorted((bucket.get("cs_at") or {}).items()) if values
+            },
             "gpm_mean": _mean(bucket["gpm"]),
             "deaths_mean": _mean(bucket["deaths"]),
             "kill_participation_mean": _mean(bucket["kill_participation"]),
+            "kill_participation_p75": _p75(bucket["kill_participation"]),
             "obs_placed_mean": _mean(bucket["obs_placed"]),
         }
 
@@ -283,11 +277,7 @@ def _finalize_aggregates(
         "patch": patch,
         "match_ids": match_ids,
         "matches_mined": len(match_ids),
-        "min_samples": {
-            "position": _MIN_POSITION_SAMPLE,
-            "hero_games": _MIN_HERO_GAMES,
-            "item": _MIN_ITEM_SAMPLE,
-        },
+        "min_samples": _min_samples(min_samples),
         "positions": positions_out,
         "hero_item_timings": heroes_out,
     }
@@ -386,26 +376,34 @@ def _support_position_content(pos: int, stats: dict, lang: str) -> str | None:
 def _hero_timing_content(
     hero_name: str, games: int, timing_lines: list[tuple[str, float, int]], lang: str
 ) -> str:
+    # The closing advice holds for every position: most heroes with enough
+    # pro games are played as 4 or 5 (Dazzle, Dark Willow, Techies), where a
+    # late item is not a matter of last hits and farming routes. It is only
+    # given when every average is well founded (_ADVICE_MIN_ITEM_SAMPLE).
+    advise = all(n >= _ADVICE_MIN_ITEM_SAMPLE for _name, _t, n in timing_lines)
     if lang == "zh":
         listed = "、".join(
             f"{name} 平均{_fmt_time(t)}（{n}场）" for name, t, n in timing_lines
         )
-        return (
-            f"职业对局中{hero_name}（样本{games}场）的关键装成型时间：{listed}。"
-            f"如果你的同款关键装比这个时间晚3分钟以上，优先检查补刀效率、"
-            f"打钱路线和死亡次数，而不是急着改出装。"
-        )
+        content = f"职业对局中{hero_name}（样本{games}场）的关键装成型时间：{listed}。"
+        if advise:
+            content += ("如果你的同款关键装比这个时间晚3分钟以上，先找出经济差在哪里"
+                        "（死亡次数、经济来源、其他花费），而不是急着改出装。")
+        return content
     listed = "; ".join(
         f"{name} avg {_fmt_time(t)} ({n} games)" for name, t, n in timing_lines
     )
-    return (
-        f"In pro matches, {hero_name} (sample: {games} games) reaches key items at: {listed}. "
-        f"If your timing on the same item is 3+ minutes later, review your last-hitting, "
-        f"farming routes and death count before changing the build."
-    )
+    content = f"In pro matches, {hero_name} (sample: {games} games) reaches key items at: {listed}."
+    if advise:
+        content += (" If your timing on the same item is 3+ minutes later, find out where the gold went "
+                    "(deaths, income, other purchases) before changing the build.")
+    return content
 
 
-def _build_chunks(aggregates: dict, langs: tuple[str, ...], patch: str) -> list[LearnedChunk]:
+def _build_chunks(aggregates: dict, langs: tuple[str, ...], patch: str, *,
+                  min_samples: dict[str, int] | None = None) -> list[LearnedChunk]:
+    """Render the aggregates into chunks; *min_samples* overrides :data:`MIN_SAMPLES`."""
+    limits = _min_samples(min_samples)
     chunks: list[LearnedChunk] = []
     source = aggregates.get("source", "pro")
     match_count = int(aggregates.get("matches_mined") or len(aggregates.get("match_ids", [])))
@@ -413,7 +411,7 @@ def _build_chunks(aggregates: dict, langs: tuple[str, ...], patch: str) -> list[
     # Per-position pattern chunks (minimum sample enforced).
     for pos_str, stats in sorted(aggregates.get("positions", {}).items()):
         pos = int(pos_str)
-        if pos not in _POS_ROLE_TAG or stats.get("sample", 0) < _MIN_POSITION_SAMPLE:
+        if pos not in _POS_ROLE_TAG or stats.get("sample", 0) < limits["position"]:
             continue
         for lang in langs:
             if pos in (4, 5):
@@ -437,21 +435,23 @@ def _build_chunks(aggregates: dict, langs: tuple[str, ...], patch: str) -> list[
                     "source": source,
                     "match_count": match_count,
                     "sample": stats["sample"],
+                    "sample_unit": "player_games",
                     "cs_at_10_sample": stats.get("cs_at_10_sample", 0),
                 },
             ))
 
-    # Per-hero core item timing chunks (minimum samples enforced).
-    item_meta = _load_item_meta()
+    # Per-hero key item timing chunks (minimum samples enforced).
+    item_meta = load_item_meta()
     for slug, hero in sorted(aggregates.get("hero_item_timings", {}).items()):
         games = int(hero.get("games", 0) or 0)
-        if games < _MIN_HERO_GAMES:
+        if games < limits["hero_games"]:
             continue
         timing_lines: list[tuple[str, float, int]] = []
         item_samples: dict[str, int] = {}
         for key, info in sorted(hero.get("items", {}).items()):
             sample = int(info.get("sample", 0) or 0)
-            if sample >= _MIN_ITEM_SAMPLE and info.get("mean_first_time_s") is not None:
+            if (sample >= limits["item"] and info.get("mean_first_time_s") is not None
+                    and is_key_item(key, item_meta)):
                 timing_lines.append(
                     (_item_display_name(key, item_meta), info["mean_first_time_s"], sample)
                 )
@@ -480,6 +480,8 @@ def _build_chunks(aggregates: dict, langs: tuple[str, ...], patch: str) -> list[
                     "source": source,
                     "match_count": match_count,
                     "games": games,
+                    "sample": games,
+                    "sample_unit": "games",
                     "item_samples": item_samples,
                 },
             ))
@@ -491,13 +493,34 @@ def _build_chunks(aggregates: dict, langs: tuple[str, ...], patch: str) -> list[
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _parse_match(parser, mid: int):
+    """One match through the project's OpenDota parser.
+
+    The parser does not use ``base.opendota_get``, so the pause after a
+    rate-limit refusal is repeated here: the same match is asked for again
+    instead of ending the run with the matches mined so far.
+    """
+    for attempt in range(_RATE_LIMIT_RETRIES + 1):
+        try:
+            return asyncio.run(parser.parse(str(mid)))
+        except Exception as exc:
+            if (getattr(exc, "status", None) != 429 or attempt == _RATE_LIMIT_RETRIES
+                    or not pause_for_rate_limit()):
+                raise
+
+
 def learn_from_matches(
     source: str = "pro",
     limit: int = 100,
     langs: tuple[str, ...] = ("zh", "en"),
     output_dir: Path | None = None,
+    *,
+    min_samples: dict[str, int] | None = None,
 ) -> dict:
     """Mine recent pro / high-MMR matches into per-position pattern chunks.
+
+    *min_samples* overrides :data:`MIN_SAMPLES` (keys ``position``,
+    ``hero_games``, ``item``); only smoke runs lower them.
 
     Returns ``{"chunks_written": int, "matches_mined": int, "match_ids": [...]}``
     plus ``"error"`` on failure. Never raises.
@@ -523,24 +546,41 @@ def learn_from_matches(
     logger.info("Mining up to %d of %d candidate matches (source=%s)", limit, len(candidates), source)
 
     parser = OpenDotaParser()
-    item_meta = _load_item_meta()
+    item_meta = load_item_meta()
     pos_stats: dict[int, dict[str, list]] = {p: _new_position_bucket() for p in range(1, 6)}
     hero_stats: dict[str, dict] = {}
     mined: list[int] = []
+    consecutive_errors = 0
+    unreachable = False
 
     for i, mid in enumerate(candidates):
         if len(mined) >= limit:
             break
+        if stop_requested():
+            logger.info("Match mining stopped on request after %d matches", len(mined))
+            return {**empty, "error": "cancelled"}
         if i > 0:
             time.sleep(_MATCH_FETCH_INTERVAL)
         try:
-            match = asyncio.run(parser.parse(str(mid)))
+            match = _parse_match(parser, mid)
         except Exception as exc:
             logger.warning("Failed to fetch/parse match %s: %s", mid, exc)
-            if getattr(exc, "status", None) == 429:
+            status = getattr(exc, "status", None)
+            if status == 429:  # still refused after the pauses (or a stop request)
                 logger.warning("OpenDota rate limit reached, stopping match mining early")
                 break
+            # An HTTP answer below 500 (e.g. 404) shows the API is reachable.
+            if status is None or status >= 500:
+                consecutive_errors += 1
+                if consecutive_errors >= _MAX_CONSECUTIVE_FETCH_ERRORS:
+                    logger.warning("OpenDota unreachable (%d fetches failed in a row), "
+                                   "stopping match mining early", consecutive_errors)
+                    unreachable = True
+                    break
+            else:
+                consecutive_errors = 0
             continue
+        consecutive_errors = 0
         if not match.gold_xp_timeline:
             logger.info("Match %s has no parsed timeline data, skipping", mid)
             continue
@@ -553,10 +593,13 @@ def learn_from_matches(
 
     if not mined:
         logger.warning("No usable parsed matches out of %d candidates", len(candidates))
-        return {**empty, "error": "no_parsed_matches"}
+        return {**empty, "error": "api_unreachable" if unreachable else "no_parsed_matches"}
 
     patch = current_patch_version()
-    aggregates = _finalize_aggregates(pos_stats, hero_stats, mined, source, patch)
+    aggregates = _finalize_aggregates(pos_stats, hero_stats, mined, source, patch, min_samples)
+    chunks = _build_chunks(aggregates, langs, patch, min_samples=min_samples)
+    # Level 3 must not distil numbers that were too thin for Level 2 itself.
+    aggregates["sufficient"] = bool(chunks)
 
     # Persist raw aggregates for the Level-3 distiller.
     try:
@@ -567,7 +610,6 @@ def learn_from_matches(
         logger.warning("Failed to write mining aggregates: %s", exc)
 
     result: dict = {"chunks_written": 0, "matches_mined": len(mined), "match_ids": mined}
-    chunks = _build_chunks(aggregates, langs, patch)
     if not chunks:
         logger.warning(
             "Match mining: no pattern met the minimum sample sizes (%d matches); "

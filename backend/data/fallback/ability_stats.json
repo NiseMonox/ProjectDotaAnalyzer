@@ -1,5 +1,5 @@
 {
-  "_comment": "Minimal numeric fallback (patch-7.37-era values) used only when backend/data/gamedata/ has not been fetched yet. Coaching text lives in backend/data/editorial/.",
+  "_comment": "Fallback generated from dotaconstants by backend/scripts/gen_static_catalogs.py (game version 7.41f); used only for what backend/data/gamedata/ has not fetched yet. Coaching text lives in backend/data/editorial/.",
   "abilities": {
     "hoodwink_acorn_shot": {
       "hero": "Hoodwink",
@@ -7,35 +7,25 @@
       "type": "active",
       "damage_type": "physical",
       "pierces_bkb": false,
-      "cooldown": [18, 14, 10, 6],
-      "mana_cost": [60, 70, 80, 90],
-      "damage": [70, 100, 130, 160],
-      "cast_range": [575, 575, 575, 575],
-      "slow_pct": [100, 100, 100, 100],
-      "duration": [0.3, 0.3, 0.3, 0.3]
+      "cooldown": [19, 16, 13, 10],
+      "mana_cost": [70, 80, 90, 100]
     },
     "hoodwink_bushwhack": {
       "hero": "Hoodwink",
       "ability_name": "Bushwhack",
       "type": "active",
       "damage_type": "magical",
-      "pierces_bkb": false,
-      "cooldown": [14, 14, 14, 14],
+      "cooldown": [15, 14, 13, 12],
       "mana_cost": [90, 100, 110, 120],
-      "damage": [90, 160, 230, 300],
-      "stun_duration": [1.4, 1.6, 1.8, 2.0],
-      "cast_range": [1100, 1100, 1100, 1100],
-      "radius": [265, 265, 265, 265]
+      "stun_duration": [1.5, 1.7, 1.9, 2.1]
     },
     "hoodwink_scurry": {
       "hero": "Hoodwink",
       "ability_name": "Scurry",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [18, 16, 14, 12],
-      "mana_cost": [35, 35, 35, 35],
-      "duration": [4, 4, 4, 4]
+      "cooldown": [0],
+      "mana_cost": [35],
+      "duration": [3.5, 4, 4.5, 5]
     },
     "hoodwink_sharpshooter": {
       "hero": "Hoodwink",
@@ -43,36 +33,26 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [45, 35, 25],
-      "mana_cost": [125, 150, 175],
-      "damage": [400, 600, 800],
-      "cast_range": [3000, 3000, 3000],
-      "slow_pct": [40, 50, 60],
-      "duration": [4, 4, 4]
+      "cooldown": [45],
+      "mana_cost": [150, 200, 250],
+      "is_ultimate": true
     },
     "drow_ranger_frost_arrows": {
       "hero": "Drow Ranger",
       "ability_name": "Frost Arrows",
       "type": "autocast",
-      "damage_type": "magical",
+      "damage_type": "physical",
       "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [12, 12, 12, 12],
-      "damage": [10, 20, 30, 40],
-      "slow_pct": [16, 24, 32, 40],
-      "duration": [1.5, 1.5, 1.5, 1.5]
+      "cooldown": [0],
+      "mana_cost": [9, 10, 11, 12]
     },
     "drow_ranger_wave_of_silence": {
       "hero": "Drow Ranger",
       "ability_name": "Gust",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": false,
-      "cooldown": [18, 15, 12, 9],
-      "mana_cost": [70, 80, 90, 100],
-      "duration": [3.0, 4.0, 5.0, 6.0],
-      "cast_range": [900, 900, 900, 900]
+      "cooldown": [19, 17, 15, 13],
+      "mana_cost": [55]
     },
     "drow_ranger_multishot": {
       "hero": "Drow Ranger",
@@ -80,11 +60,8 @@
       "type": "active",
       "damage_type": "physical",
       "pierces_bkb": true,
-      "cooldown": [26, 22, 18, 14],
-      "mana_cost": [75, 85, 95, 105],
-      "damage": [75, 100, 125, 150],
-      "duration": [1.75, 1.75, 1.75, 1.75],
-      "slow_pct": [40, 40, 40, 40]
+      "cooldown": [24, 21, 18, 15],
+      "mana_cost": [70, 85, 100, 115]
     },
     "drow_ranger_marksmanship": {
       "hero": "Drow Ranger",
@@ -92,21 +69,16 @@
       "type": "passive",
       "damage_type": "physical",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [],
-      "mana_cost": [],
-      "proc_chance": 40
+      "is_ultimate": true
     },
     "warlock_fatal_bonds": {
       "hero": "Warlock",
       "ability_name": "Fatal Bonds",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": false,
-      "cooldown": [24, 20, 16, 12],
+      "cooldown": [42, 34, 26, 18],
       "mana_cost": [120, 130, 140, 150],
-      "cast_range": [1000, 1000, 1000, 1000],
-      "duration": [18, 18, 18, 18]
+      "duration": [18]
     },
     "warlock_shadow_word": {
       "hero": "Warlock",
@@ -114,37 +86,29 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [14, 12, 10, 8],
-      "mana_cost": [120, 130, 140, 150],
-      "damage": [15, 25, 35, 45],
-      "duration": [12, 12, 12, 12],
-      "cast_range": [600, 600, 600, 600]
+      "cooldown": [15, 14, 13, 12],
+      "mana_cost": [110, 120, 130, 140],
+      "duration": [10]
     },
     "warlock_upheaval": {
       "hero": "Warlock",
       "ability_name": "Upheaval",
       "type": "active",
-      "damage_type": "none",
+      "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [50, 42, 34, 26],
-      "mana_cost": [100, 110, 120, 130],
-      "radius": [650, 650, 650, 650],
-      "cast_range": [1200, 1200, 1200, 1200],
-      "slow_pct": [30, 42, 54, 66]
+      "cooldown": [45, 40, 35, 30],
+      "mana_cost": [100],
+      "duration": [1]
     },
     "warlock_rain_of_chaos": {
       "hero": "Warlock",
       "ability_name": "Chaotic Offering",
       "type": "active",
-      "damage_type": "magical",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [170, 150, 130],
-      "mana_cost": [250, 350, 450],
-      "damage": [100, 200, 300],
-      "stun_duration": [1.0, 1.25, 1.5],
-      "radius": [600, 600, 600],
-      "cast_range": [1200, 1200, 1200]
+      "cooldown": [165],
+      "mana_cost": [200, 400, 600],
+      "stun_duration": [0.8],
+      "is_ultimate": true
     },
     "razor_plasma_field": {
       "hero": "Razor",
@@ -153,32 +117,21 @@
       "damage_type": "magical",
       "pierces_bkb": false,
       "cooldown": [13, 12, 11, 10],
-      "mana_cost": [125, 125, 125, 125],
-      "damage": [80, 130, 180, 230],
-      "radius": [700, 700, 700, 700],
-      "slow_pct": [30, 35, 40, 45]
+      "mana_cost": [125]
     },
     "razor_static_link": {
       "hero": "Razor",
       "ability_name": "Static Link",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": true,
-      "cooldown": [32, 28, 24, 20],
-      "mana_cost": [65, 65, 65, 65],
-      "damage": [10, 20, 30, 40],
-      "duration": [8, 8, 8, 8],
-      "cast_range": [550, 550, 550, 550]
+      "cooldown": [44, 36, 28, 20],
+      "mana_cost": [65]
     },
     "razor_storm_surge": {
       "hero": "Razor",
       "ability_name": "Storm Surge",
       "type": "passive",
-      "damage_type": "magical",
-      "pierces_bkb": false,
-      "cooldown": [],
-      "mana_cost": [],
-      "damage": [20, 40, 60, 80]
+      "damage_type": "magical"
     },
     "razor_eye_of_the_storm": {
       "hero": "Razor",
@@ -186,59 +139,50 @@
       "type": "active",
       "damage_type": "physical",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [70, 60, 50],
-      "mana_cost": [200, 250, 300],
+      "cooldown": [80, 70, 60],
+      "mana_cost": [100, 150, 200],
       "damage": [60, 75, 90],
-      "duration": [25, 30, 35]
+      "duration": [30],
+      "is_ultimate": true
     },
     "axe_berserkers_call": {
       "hero": "Axe",
       "ability_name": "Berserker's Call",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": true,
-      "cooldown": [16, 14, 12, 10],
-      "mana_cost": [80, 90, 100, 110],
-      "duration": [2.0, 2.4, 2.8, 3.2],
-      "radius": [315, 315, 315, 315]
+      "cooldown": [18, 16, 14, 12],
+      "mana_cost": [90, 100, 110, 120],
+      "duration": [2.1, 2.4, 2.7, 3]
     },
     "axe_battle_hunger": {
       "hero": "Axe",
       "ability_name": "Battle Hunger",
       "type": "active",
-      "damage_type": "magical",
+      "damage_type": "pure",
       "pierces_bkb": false,
-      "cooldown": [5, 5, 5, 5],
+      "cooldown": [20, 15, 10, 5],
       "mana_cost": [50, 60, 70, 80],
-      "damage": [16, 24, 32, 40],
-      "duration": [12, 12, 12, 12],
-      "slow_pct": [12, 14, 16, 18],
-      "cast_range": [750, 750, 750, 750]
+      "duration": [12]
     },
     "axe_counter_helix": {
       "hero": "Axe",
       "ability_name": "Counter Helix",
       "type": "passive",
-      "damage_type": "physical",
+      "damage_type": "pure",
       "pierces_bkb": true,
-      "cooldown": [0.3, 0.3, 0.3, 0.3],
-      "mana_cost": [],
-      "damage": [60, 100, 140, 180],
-      "proc_chance": 20,
-      "radius": [275, 275, 275, 275]
+      "cooldown": [0.3],
+      "damage": [100, 120, 140, 160]
     },
     "axe_culling_blade": {
       "hero": "Axe",
       "ability_name": "Culling Blade",
       "type": "active",
-      "damage_type": "magical",
+      "damage_type": "pure",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [75, 65, 55],
-      "mana_cost": [100, 150, 200],
-      "damage": [150, 250, 350],
-      "cast_range": [200, 200, 200]
+      "cooldown": [80, 75, 70],
+      "mana_cost": [100, 125, 150],
+      "damage": [275, 375, 475],
+      "is_ultimate": true
     },
     "shadow_shaman_ether_shock": {
       "hero": "Shadow Shaman",
@@ -247,20 +191,17 @@
       "damage_type": "magical",
       "pierces_bkb": false,
       "cooldown": [14, 12, 10, 8],
-      "mana_cost": [95, 110, 125, 140],
-      "damage": [140, 200, 260, 320],
-      "cast_range": [600, 600, 600, 600]
+      "mana_cost": [90, 105, 120, 135],
+      "damage": [125, 190, 255, 320]
     },
     "shadow_shaman_voodoo": {
       "hero": "Shadow Shaman",
       "ability_name": "Hex",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": false,
-      "cooldown": [18, 14, 10, 6],
-      "mana_cost": [110, 120, 130, 140],
-      "duration": [1.25, 2.0, 2.75, 3.5],
-      "cast_range": [500, 500, 500, 500]
+      "cooldown": [24, 20, 16, 12],
+      "mana_cost": [130, 150, 170, 190],
+      "duration": [2, 2.3, 2.6, 2.9]
     },
     "shadow_shaman_shackles": {
       "hero": "Shadow Shaman",
@@ -268,11 +209,8 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [10, 10, 10, 10],
-      "mana_cost": [140, 150, 160, 170],
-      "damage": [60, 120, 180, 240],
-      "duration": [2.75, 3.25, 3.75, 4.25],
-      "cast_range": [400, 400, 400, 400]
+      "cooldown": [14, 13, 12, 11],
+      "mana_cost": [125, 140, 155, 170]
     },
     "shadow_shaman_mass_serpent_ward": {
       "hero": "Shadow Shaman",
@@ -280,12 +218,10 @@
       "type": "active",
       "damage_type": "physical",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [120, 100, 80],
-      "mana_cost": [200, 350, 500],
-      "damage": [55, 75, 95],
-      "duration": [45, 45, 45],
-      "cast_range": [550, 550, 550]
+      "cooldown": [110, 105, 100],
+      "mana_cost": [200, 350, 550],
+      "duration": [45],
+      "is_ultimate": true
     },
     "viper_poison_attack": {
       "hero": "Viper",
@@ -293,11 +229,10 @@
       "type": "autocast",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [20, 20, 20, 20],
-      "damage": [6, 12, 18, 24],
-      "slow_pct": [10, 16, 22, 28],
-      "duration": [4, 4, 4, 4]
+      "cooldown": [0],
+      "mana_cost": [20],
+      "damage_per_second": [4, 8, 12, 16],
+      "duration": [4]
     },
     "viper_nethertoxin": {
       "hero": "Viper",
@@ -305,12 +240,9 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [14, 13, 12, 11],
-      "mana_cost": [70, 70, 70, 70],
-      "damage": [30, 55, 80, 105],
-      "duration": [4, 4, 4, 4],
-      "cast_range": [900, 900, 900, 900],
-      "radius": [400, 400, 400, 400]
+      "cooldown": [14],
+      "mana_cost": [70],
+      "duration": [6.5, 7, 7.5, 8]
     },
     "viper_corrosive_skin": {
       "hero": "Viper",
@@ -318,11 +250,8 @@
       "type": "passive",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [],
-      "mana_cost": [],
-      "damage": [10, 20, 30, 40],
-      "slow_pct": [10, 15, 20, 25],
-      "duration": [4, 4, 4, 4]
+      "damage_per_second": [10, 15, 20, 25],
+      "duration": [4]
     },
     "viper_viper_strike": {
       "hero": "Viper",
@@ -330,13 +259,11 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [30, 20, 10],
-      "mana_cost": [125, 175, 225],
-      "damage": [100, 145, 190],
-      "slow_pct": [40, 60, 80],
-      "duration": [5.0, 5.0, 5.0],
-      "cast_range": [500, 500, 500]
+      "cooldown": [50, 40, 30],
+      "mana_cost": [100, 150, 200],
+      "damage_per_second": [70, 110, 150],
+      "duration": [6],
+      "is_ultimate": true
     },
     "lion_impale": {
       "hero": "Lion",
@@ -344,33 +271,28 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [12, 12, 12, 12],
-      "mana_cost": [70, 100, 130, 160],
-      "damage": [80, 140, 200, 260],
-      "stun_duration": [1.4, 1.6, 1.8, 2.0],
-      "cast_range": [500, 500, 500, 500]
+      "cooldown": [14, 13, 12, 11],
+      "mana_cost": [90, 110, 130, 150],
+      "damage": [105, 170, 235, 300],
+      "stun_duration": [1.3, 1.6, 1.9, 2.2]
     },
     "lion_voodoo": {
       "hero": "Lion",
       "ability_name": "Hex",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": false,
       "cooldown": [24, 20, 16, 12],
-      "mana_cost": [125, 150, 175, 200],
-      "duration": [1.75, 2.5, 3.25, 4.0],
-      "cast_range": [500, 500, 500, 500]
+      "mana_cost": [110, 140, 170, 200],
+      "duration": [2, 2.4, 2.8, 3.2]
     },
     "lion_mana_drain": {
       "hero": "Lion",
       "ability_name": "Mana Drain",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": false,
-      "cooldown": [16, 12, 8, 4],
-      "mana_cost": [10, 10, 10, 10],
-      "duration": [5, 5, 5, 5],
-      "cast_range": [850, 850, 850, 850]
+      "cooldown": [15, 12, 9, 6],
+      "mana_cost": [0],
+      "duration": [5]
     },
     "lion_finger_of_death": {
       "hero": "Lion",
@@ -378,11 +300,10 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [160, 100, 40],
-      "mana_cost": [200, 420, 650],
+      "cooldown": [110, 70, 30],
+      "mana_cost": [200, 400, 600],
       "damage": [600, 725, 850],
-      "cast_range": [900, 900, 900]
+      "is_ultimate": true
     },
     "dragon_knight_breathe_fire": {
       "hero": "Dragon Knight",
@@ -391,9 +312,9 @@
       "damage_type": "magical",
       "pierces_bkb": false,
       "cooldown": [14, 13, 12, 11],
-      "mana_cost": [100, 110, 120, 130],
-      "damage": [75, 150, 225, 300],
-      "cast_range": [700, 700, 700, 700]
+      "mana_cost": [90, 95, 100, 105],
+      "damage": [80, 160, 240, 320],
+      "duration": [11]
     },
     "dragon_knight_dragon_tail": {
       "hero": "Dragon Knight",
@@ -401,164 +322,121 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [12, 11, 10, 9],
-      "mana_cost": [100, 100, 100, 100],
-      "damage": [25, 75, 125, 175],
-      "stun_duration": [2.5, 2.75, 3.0, 3.25],
-      "cast_range": [150, 150, 150, 150]
+      "cooldown": [16, 14, 12, 10],
+      "mana_cost": [70, 80, 90, 100],
+      "damage": [60, 90, 120, 150],
+      "stun_duration": [1.8, 2, 2.2, 2.4]
     },
     "dragon_knight_dragon_blood": {
       "hero": "Dragon Knight",
       "ability_name": "Dragon Blood",
-      "type": "passive",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [],
-      "mana_cost": []
+      "type": "passive"
     },
     "dragon_knight_elder_dragon_form": {
       "hero": "Dragon Knight",
       "ability_name": "Elder Dragon Form",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [115, 100, 85],
-      "mana_cost": [50, 50, 50],
-      "duration": [60, 60, 60]
+      "damage_type": "magical",
+      "pierces_bkb": true,
+      "cooldown": [100],
+      "mana_cost": [50],
+      "duration": [60],
+      "is_ultimate": true
     },
     "bristleback_viscous_nasal_goo": {
       "hero": "Bristleback",
       "ability_name": "Viscous Nasal Goo",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": false,
-      "cooldown": [1.75, 1.5, 1.25, 1.0],
-      "mana_cost": [12, 16, 20, 24],
-      "duration": [5, 5, 5, 5],
-      "slow_pct": [15, 20, 25, 30],
-      "cast_range": [600, 600, 600, 600]
+      "cooldown": [1.75],
+      "mana_cost": [12, 16, 20, 24]
     },
     "bristleback_quill_spray": {
       "hero": "Bristleback",
       "ability_name": "Quill Spray",
-      "type": "active",
+      "type": "autocast",
       "damage_type": "physical",
       "pierces_bkb": true,
-      "cooldown": [3, 3, 3, 3],
-      "mana_cost": [35, 35, 35, 35],
-      "damage": [25, 50, 75, 100],
-      "radius": [700, 700, 700, 700]
+      "cooldown": [3],
+      "mana_cost": [35]
     },
     "bristleback_bristleback": {
       "hero": "Bristleback",
       "ability_name": "Bristleback",
-      "type": "passive",
-      "damage_type": "physical",
-      "pierces_bkb": true,
-      "cooldown": [],
-      "mana_cost": []
+      "type": "passive"
     },
     "bristleback_warpath": {
       "hero": "Bristleback",
       "ability_name": "Warpath",
       "type": "passive",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [],
-      "mana_cost": [],
-      "damage": [18, 24, 30],
-      "duration": [14, 14, 14]
+      "is_ultimate": true
     },
     "antimage_mana_break": {
       "hero": "Anti-Mage",
       "ability_name": "Mana Break",
       "type": "passive",
       "damage_type": "physical",
-      "pierces_bkb": true,
-      "cooldown": [],
-      "mana_cost": [],
-      "damage": [28, 40, 52, 64]
+      "pierces_bkb": false
     },
     "antimage_blink": {
       "hero": "Anti-Mage",
       "ability_name": "Blink",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [15, 12, 9, 6],
-      "mana_cost": [45, 45, 45, 45],
-      "cast_range": [925, 1000, 1075, 1150]
+      "cooldown": [10.5, 9, 7.5, 6],
+      "mana_cost": [60, 55, 50, 45]
     },
     "antimage_counterspell": {
       "hero": "Anti-Mage",
       "ability_name": "Counterspell",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
       "cooldown": [15, 11, 7, 3],
-      "mana_cost": [45, 50, 55, 60],
-      "duration": [1.2, 1.2, 1.2, 1.2]
+      "mana_cost": [50],
+      "duration": [1.3]
     },
     "antimage_mana_void": {
       "hero": "Anti-Mage",
       "ability_name": "Mana Void",
       "type": "active",
       "damage_type": "magical",
-      "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [70, 70, 70],
-      "mana_cost": [100, 200, 300],
-      "damage": [0.8, 0.95, 1.1],
-      "stun_duration": [0.15, 0.15, 0.15],
-      "radius": [500, 500, 500],
-      "cast_range": [600, 600, 600]
+      "pierces_bkb": false,
+      "cooldown": [100, 85, 70],
+      "mana_cost": [100, 150, 200],
+      "stun_duration": [0.3],
+      "is_ultimate": true
     },
     "phantom_assassin_stifling_dagger": {
       "hero": "Phantom Assassin",
       "ability_name": "Stifling Dagger",
       "type": "active",
       "damage_type": "physical",
-      "pierces_bkb": true,
-      "cooldown": [6, 5, 4, 3],
-      "mana_cost": [30, 25, 20, 15],
-      "damage": [65, 75, 85, 95],
-      "slow_pct": [50, 50, 50, 50],
-      "duration": [1.75, 2.5, 3.25, 4.0],
-      "cast_range": [525, 750, 975, 1200]
+      "cooldown": [6],
+      "mana_cost": [30],
+      "duration": [2.1, 2.4, 2.7, 3]
     },
     "phantom_assassin_phantom_strike": {
       "hero": "Phantom Assassin",
       "ability_name": "Phantom Strike",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [11, 9, 7, 5],
+      "pierces_bkb": true,
+      "cooldown": [0.1],
       "mana_cost": [35, 40, 45, 50],
-      "duration": [2.5, 2.5, 2.5, 2.5],
-      "cast_range": [1000, 1000, 1000, 1000]
+      "duration": [3]
     },
     "phantom_assassin_blur": {
       "hero": "Phantom Assassin",
       "ability_name": "Blur",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [60, 45, 30, 15],
-      "mana_cost": [50, 50, 50, 50],
-      "duration": [25, 25, 25, 25]
+      "cooldown": [45],
+      "mana_cost": [50],
+      "duration": [30]
     },
     "phantom_assassin_coup_de_grace": {
       "hero": "Phantom Assassin",
       "ability_name": "Coup de Grace",
       "type": "passive",
-      "damage_type": "physical",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [],
-      "mana_cost": [],
-      "proc_chance": 15
+      "duration": [6, 8, 10],
+      "is_ultimate": true
     },
     "crystal_maiden_crystal_nova": {
       "hero": "Crystal Maiden",
@@ -566,13 +444,9 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [12, 11, 10, 9],
-      "mana_cost": [130, 145, 160, 175],
-      "damage": [130, 170, 210, 260],
-      "radius": [425, 425, 425, 425],
-      "slow_pct": [30, 40, 50, 60],
-      "duration": [5, 5, 5, 5],
-      "cast_range": [700, 700, 700, 700]
+      "cooldown": [11, 10, 9, 8],
+      "mana_cost": [115, 135, 155, 175],
+      "duration": [4]
     },
     "crystal_maiden_frostbite": {
       "hero": "Crystal Maiden",
@@ -581,19 +455,14 @@
       "damage_type": "magical",
       "pierces_bkb": false,
       "cooldown": [9, 8, 7, 6],
-      "mana_cost": [140, 145, 150, 155],
-      "damage": [100, 150, 200, 250],
-      "duration": [1.5, 2.0, 2.5, 3.0],
-      "cast_range": [550, 550, 550, 550]
+      "mana_cost": [125, 135, 145, 155],
+      "duration": [1.5, 2, 2.5, 3]
     },
     "crystal_maiden_brilliance_aura": {
       "hero": "Crystal Maiden",
       "ability_name": "Arcane Aura",
       "type": "passive",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [],
-      "mana_cost": []
+      "pierces_bkb": true
     },
     "crystal_maiden_freezing_field": {
       "hero": "Crystal Maiden",
@@ -601,13 +470,9 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [110, 100, 90],
+      "cooldown": [100, 95, 90],
       "mana_cost": [200, 400, 600],
-      "damage": [105, 170, 250],
-      "radius": [835, 835, 835],
-      "duration": [10, 10, 10],
-      "slow_pct": [30, 30, 30]
+      "is_ultimate": true
     },
     "pudge_meat_hook": {
       "hero": "Pudge",
@@ -615,33 +480,24 @@
       "type": "active",
       "damage_type": "pure",
       "pierces_bkb": true,
-      "cooldown": [27, 22, 17, 12],
-      "mana_cost": [110, 120, 130, 140],
-      "damage": [150, 220, 290, 360],
-      "cast_range": [1000, 1100, 1200, 1300]
+      "cooldown": [18, 16, 14, 12],
+      "mana_cost": [120],
+      "damage": [150, 220, 290, 360]
     },
     "pudge_rot": {
       "hero": "Pudge",
       "ability_name": "Rot",
       "type": "active",
       "damage_type": "magical",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "damage": [30, 60, 90, 120],
-      "radius": [250, 250, 250, 250],
-      "slow_pct": [14, 20, 26, 32]
+      "pierces_bkb": false
     },
     "pudge_flesh_heap": {
       "hero": "Pudge",
-      "ability_name": "Flesh Heap",
-      "type": "passive",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "magic_resistance": [6, 8, 10, 12],
-      "str_per_kill": [1.5, 2.0, 2.5, 3.0]
+      "ability_name": "Meat Shield",
+      "type": "active",
+      "cooldown": [20, 19, 18, 17],
+      "mana_cost": [65, 70, 75, 80],
+      "duration": [4, 5, 6, 7]
     },
     "pudge_dismember": {
       "hero": "Pudge",
@@ -649,13 +505,9 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": true,
-      "is_ultimate": true,
       "cooldown": [30, 25, 20],
       "mana_cost": [100, 130, 170],
-      "damage": [60, 90, 120],
-      "duration": [3.0, 3.0, 3.0],
-      "strength_damage_mult": [0.3, 0.5, 0.7],
-      "cast_range": [160, 160, 160]
+      "is_ultimate": true
     },
     "juggernaut_blade_fury": {
       "hero": "Juggernaut",
@@ -663,34 +515,22 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [42, 34, 26, 18],
-      "mana_cost": [110, 110, 110, 110],
-      "damage": [80, 105, 130, 155],
-      "radius": [260, 260, 260, 260],
-      "duration": [5, 5, 5, 5]
+      "cooldown": [30, 26, 22, 18],
+      "mana_cost": [110],
+      "duration": [5]
     },
     "juggernaut_healing_ward": {
       "hero": "Juggernaut",
       "ability_name": "Healing Ward",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [60, 60, 60, 60],
-      "mana_cost": [120, 125, 130, 135],
-      "heal_pct": [2, 3, 4, 5],
-      "duration": [25, 25, 25, 25],
-      "radius": [500, 500, 500, 500]
+      "pierces_bkb": true,
+      "cooldown": [60],
+      "mana_cost": [120]
     },
     "juggernaut_blade_dance": {
       "hero": "Juggernaut",
       "ability_name": "Blade Dance",
-      "type": "passive",
-      "damage_type": "physical",
-      "pierces_bkb": true,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "proc_chance": [20, 25, 30, 35],
-      "crit_multiplier": [180, 180, 180, 180]
+      "type": "passive"
     },
     "juggernaut_omni_slash": {
       "hero": "Juggernaut",
@@ -698,12 +538,10 @@
       "type": "active",
       "damage_type": "physical",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [140, 120, 100],
+      "cooldown": [120],
       "mana_cost": [200, 275, 350],
-      "damage": [200, 225, 250],
-      "cast_range": [350, 350, 350],
-      "duration": [3.0, 3.5, 4.0]
+      "duration": [3, 3.25, 3.5],
+      "is_ultimate": true
     },
     "sniper_shrapnel": {
       "hero": "Sniper",
@@ -711,38 +549,25 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [75, 75, 75, 75],
-      "damage": [15, 35, 55, 75],
-      "radius": [450, 450, 450, 450],
-      "duration": [10, 10, 10, 10],
-      "slow_pct": [15, 20, 25, 30],
-      "cast_range": [1800, 1800, 1800, 1800],
-      "charges": [3, 3, 3, 3]
+      "cooldown": [0],
+      "mana_cost": [75],
+      "duration": [10]
     },
     "sniper_headshot": {
       "hero": "Sniper",
       "ability_name": "Headshot",
       "type": "passive",
       "damage_type": "physical",
-      "pierces_bkb": true,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "damage": [15, 40, 65, 90],
-      "proc_chance": [40, 40, 40, 40],
-      "slow_pct": [100, 100, 100, 100],
-      "duration": [0.5, 0.5, 0.5, 0.5]
+      "pierces_bkb": false,
+      "damage": [20, 50, 80, 110]
     },
     "sniper_take_aim": {
       "hero": "Sniper",
       "ability_name": "Take Aim",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
       "cooldown": [20, 18, 16, 14],
-      "mana_cost": [50, 50, 50, 50],
-      "attack_range_bonus": [100, 200, 300, 400],
-      "duration": [3, 3, 3, 3]
+      "mana_cost": [50],
+      "duration": [3]
     },
     "sniper_assassinate": {
       "hero": "Sniper",
@@ -750,12 +575,10 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "is_ultimate": true,
       "cooldown": [20, 15, 10],
-      "mana_cost": [175, 275, 375],
-      "damage": [320, 485, 650],
-      "cast_range": [3000, 3000, 3000],
-      "stun_duration": [0.5, 1.0, 1.5]
+      "mana_cost": [175],
+      "damage": [300, 400, 500],
+      "is_ultimate": true
     },
     "zuus_arc_lightning": {
       "hero": "Zeus",
@@ -763,11 +586,8 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [1.6, 1.6, 1.6, 1.6],
-      "mana_cost": [80, 85, 90, 95],
-      "damage": [85, 100, 115, 145],
-      "cast_range": [850, 850, 850, 850],
-      "bounce_count": [5, 7, 9, 15]
+      "cooldown": [1.6],
+      "mana_cost": [85, 90, 95, 100]
     },
     "zuus_lightning_bolt": {
       "hero": "Zeus",
@@ -775,22 +595,16 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [6, 6, 6, 6],
-      "mana_cost": [120, 130, 140, 150],
-      "damage": [100, 175, 275, 350],
-      "cast_range": [700, 700, 700, 700],
-      "stun_duration": [0.25, 0.25, 0.25, 0.25]
+      "cooldown": [6],
+      "mana_cost": [120, 125, 130, 135],
+      "damage": [140, 220, 300, 380]
     },
     "zuus_static_field": {
       "hero": "Zeus",
       "ability_name": "Static Field",
       "type": "passive",
       "damage_type": "magical",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "hp_damage_pct": [4, 6, 8, 10],
-      "radius": [1200, 1200, 1200, 1200]
+      "pierces_bkb": false
     },
     "zuus_thundergods_wrath": {
       "hero": "Zeus",
@@ -798,10 +612,10 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [120, 110, 100],
-      "mana_cost": [250, 350, 450],
-      "damage": [300, 400, 500]
+      "cooldown": [130],
+      "mana_cost": [250, 375, 500],
+      "damage": [275, 425, 575],
+      "is_ultimate": true
     },
     "witch_doctor_paralyzing_cask": {
       "hero": "Witch Doctor",
@@ -811,21 +625,16 @@
       "pierces_bkb": false,
       "cooldown": [20, 18, 16, 14],
       "mana_cost": [80, 100, 120, 140],
-      "damage": [75, 75, 75, 75],
-      "cast_range": [700, 700, 700, 700],
-      "stun_duration": [1.0, 1.0, 1.0, 1.0],
-      "bounce_count": [2, 4, 6, 8]
+      "stun_duration": [0.8]
     },
     "witch_doctor_voodoo_restoration": {
       "hero": "Witch Doctor",
       "ability_name": "Voodoo Restoration",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [20, 30, 40, 50],
-      "heal_per_sec": [16, 24, 32, 40],
-      "radius": [500, 500, 500, 500]
+      "damage_type": "magical",
+      "pierces_bkb": true,
+      "cooldown": [0],
+      "mana_cost": [25]
     },
     "witch_doctor_maledict": {
       "hero": "Witch Doctor",
@@ -833,37 +642,28 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [28, 24, 20, 16],
+      "cooldown": [30, 26, 22, 18],
       "mana_cost": [105, 110, 115, 120],
-      "damage": [5, 10, 15, 20],
-      "duration": [12, 12, 12, 12],
-      "cast_range": [575, 575, 575, 575],
-      "radius": [180, 180, 180, 180],
-      "hp_loss_damage_bonus": [16, 24, 32, 40]
+      "damage": [18, 22, 26, 30]
     },
     "witch_doctor_death_ward": {
       "hero": "Witch Doctor",
       "ability_name": "Death Ward",
       "type": "active",
-      "damage_type": "physical",
+      "damage_type": "pure",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [80, 80, 80],
-      "mana_cost": [200, 200, 200],
-      "damage": [90, 130, 170],
-      "duration": [8, 8, 8],
-      "cast_range": [700, 700, 700]
+      "cooldown": [100, 90, 80],
+      "mana_cost": [200],
+      "damage": [60, 90, 120],
+      "is_ultimate": true
     },
     "faceless_void_time_walk": {
       "hero": "Faceless Void",
       "ability_name": "Time Walk",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [24, 18, 12, 6],
-      "mana_cost": [40, 40, 40, 40],
-      "cast_range": [650, 650, 650, 650],
-      "backtrack_duration": [2.0, 2.0, 2.0, 2.0]
+      "pierces_bkb": true,
+      "cooldown": [21, 16, 11, 6],
+      "mana_cost": [40]
     },
     "faceless_void_time_dilation": {
       "hero": "Faceless Void",
@@ -871,12 +671,9 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [36, 30, 24, 18],
-      "mana_cost": [60, 70, 80, 90],
-      "damage": [20, 30, 40, 50],
-      "radius": [775, 775, 775, 775],
-      "duration": [6, 7, 8, 9],
-      "slow_pct": [10, 12, 14, 16]
+      "cooldown": [28, 24, 20, 16],
+      "mana_cost": [90],
+      "duration": [7, 8, 9, 10]
     },
     "faceless_void_time_lock": {
       "hero": "Faceless Void",
@@ -884,24 +681,17 @@
       "type": "passive",
       "damage_type": "magical",
       "pierces_bkb": true,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "damage": [25, 30, 35, 40],
-      "proc_chance": [10, 15, 20, 25],
-      "stun_duration": [0.5, 0.65, 0.8, 0.95]
+      "duration": [0.5]
     },
     "faceless_void_chronosphere": {
       "hero": "Faceless Void",
       "ability_name": "Chronosphere",
       "type": "active",
-      "damage_type": "none",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [160, 150, 140],
-      "mana_cost": [150, 175, 200],
-      "radius": [500, 500, 500],
-      "duration": [4.0, 4.5, 5.0],
-      "cast_range": [600, 600, 600]
+      "cooldown": [155, 145, 135],
+      "mana_cost": [125, 200, 275],
+      "duration": [3.75, 4.25, 4.75],
+      "is_ultimate": true
     },
     "earthshaker_fissure": {
       "hero": "Earthshaker",
@@ -910,33 +700,22 @@
       "damage_type": "magical",
       "pierces_bkb": false,
       "cooldown": [18, 17, 16, 15],
-      "mana_cost": [125, 140, 155, 170],
-      "damage": [110, 160, 210, 260],
-      "stun_duration": [1.0, 1.25, 1.5, 1.75],
-      "cast_range": [1400, 1400, 1400, 1400],
-      "duration": [6, 6, 6, 6]
+      "mana_cost": [115, 120, 125, 130],
+      "stun_duration": [1, 1.2, 1.4, 1.6]
     },
     "earthshaker_enchant_totem": {
       "hero": "Earthshaker",
       "ability_name": "Enchant Totem",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [5, 5, 5, 5],
-      "mana_cost": [20, 30, 40, 50],
-      "attack_damage_mult": [100, 200, 300, 400]
+      "cooldown": [5],
+      "mana_cost": [45, 55, 65, 75]
     },
     "earthshaker_aftershock": {
       "hero": "Earthshaker",
       "ability_name": "Aftershock",
       "type": "passive",
       "damage_type": "magical",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "damage": [60, 100, 140, 180],
-      "radius": [300, 300, 300, 300],
-      "stun_duration": [0.6, 0.9, 1.2, 1.5]
+      "pierces_bkb": false
     },
     "earthshaker_echo_slam": {
       "hero": "Earthshaker",
@@ -944,12 +723,9 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [150, 130, 110],
-      "mana_cost": [145, 205, 265],
-      "damage": [100, 150, 200],
-      "echo_damage": [60, 85, 110],
-      "radius": [600, 600, 600]
+      "cooldown": [130, 120, 110],
+      "mana_cost": [150, 200, 250],
+      "is_ultimate": true
     },
     "tidehunter_gush": {
       "hero": "Tidehunter",
@@ -957,24 +733,15 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [12, 12, 12, 12],
-      "mana_cost": [90, 100, 110, 120],
-      "damage": [110, 160, 210, 260],
-      "cast_range": [800, 800, 800, 800],
-      "slow_pct": [40, 40, 40, 40],
-      "armor_reduction": [3, 4, 5, 6],
-      "duration": [4, 4, 4, 4]
+      "cooldown": [12],
+      "mana_cost": [100]
     },
     "tidehunter_kraken_shell": {
       "hero": "Tidehunter",
       "ability_name": "Kraken Shell",
-      "type": "passive",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "damage_block": [14, 24, 34, 44],
-      "damage_threshold": [500, 475, 450, 425]
+      "type": "active",
+      "cooldown": [30],
+      "mana_cost": [45]
     },
     "tidehunter_anchor_smash": {
       "hero": "Tidehunter",
@@ -983,11 +750,7 @@
       "damage_type": "physical",
       "pierces_bkb": false,
       "cooldown": [7, 6, 5, 4],
-      "mana_cost": [30, 40, 50, 60],
-      "damage": [45, 90, 135, 180],
-      "radius": [375, 375, 375, 375],
-      "attack_damage_reduction": [30, 40, 50, 60],
-      "duration": [6, 6, 6, 6]
+      "mana_cost": [40, 45, 50, 55]
     },
     "tidehunter_ravage": {
       "hero": "Tidehunter",
@@ -995,12 +758,11 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [150, 150, 150],
-      "mana_cost": [150, 225, 325],
-      "damage": [200, 290, 380],
-      "radius": [1250, 1250, 1250],
-      "stun_duration": [2.0, 2.4, 2.8]
+      "cooldown": [150, 145, 140],
+      "mana_cost": [125, 225, 325],
+      "damage": [275, 375, 475],
+      "duration": [2, 2.2, 2.4],
+      "is_ultimate": true
     },
     "enigma_malefice": {
       "hero": "Enigma",
@@ -1008,40 +770,27 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [15, 13, 11, 9],
-      "mana_cost": [100, 120, 140, 160],
-      "damage": [40, 60, 80, 120],
-      "duration": [6, 6, 6, 6],
-      "stun_duration": [0.4, 0.6, 0.8, 1.0],
-      "stun_interval": [2, 2, 2, 2],
-      "cast_range": [600, 600, 600, 600]
+      "cooldown": [20, 18, 16, 14],
+      "mana_cost": [100, 110, 120, 130],
+      "stun_duration": [0.3, 0.5, 0.7, 0.9]
     },
     "enigma_demonic_conversion": {
       "hero": "Enigma",
       "ability_name": "Demonic Summoning",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [35, 35, 35, 35],
-      "mana_cost": [140, 150, 160, 170],
-      "eidolon_count": [3, 3, 3, 3],
-      "eidolon_hp": [180, 200, 220, 240],
-      "eidolon_damage": [21, 30, 39, 48],
-      "duration": [35, 35, 35, 35],
-      "cast_range": [700, 700, 700, 700]
+      "damage_type": "physical",
+      "cooldown": [45, 40, 35, 30],
+      "mana_cost": [70, 80, 90, 100]
     },
     "enigma_midnight_pulse": {
       "hero": "Enigma",
       "ability_name": "Midnight Pulse",
       "type": "active",
-      "damage_type": "pure",
+      "damage_type": "magical",
       "pierces_bkb": true,
-      "cooldown": [35, 35, 35, 35],
-      "mana_cost": [50, 80, 110, 140],
-      "hp_damage_pct": [3.0, 3.75, 4.5, 5.25],
-      "radius": [600, 600, 600, 600],
-      "duration": [11, 11, 11, 11],
-      "cast_range": [700, 700, 700, 700]
+      "cooldown": [40, 35, 30, 25],
+      "mana_cost": [65, 90, 115, 140],
+      "duration": [9, 10, 11, 12]
     },
     "enigma_black_hole": {
       "hero": "Enigma",
@@ -1049,13 +798,11 @@
       "type": "active",
       "damage_type": "pure",
       "pierces_bkb": true,
-      "is_ultimate": true,
-      "cooldown": [200, 180, 160],
-      "mana_cost": [275, 350, 425],
-      "damage": [50, 100, 150],
-      "radius": [420, 420, 420],
-      "duration": [4.0, 4.0, 4.0],
-      "cast_range": [275, 275, 275]
+      "cooldown": [180, 170, 160],
+      "mana_cost": [300, 400, 500],
+      "damage_per_second": [100, 150, 200],
+      "duration": [4],
+      "is_ultimate": true
     },
     "phoenix_icarus_dive": {
       "hero": "Phoenix",
@@ -1063,12 +810,8 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [36, 32, 28, 24],
-      "mana_cost": [0, 0, 0, 0],
-      "damage": [15, 35, 55, 75],
-      "duration": [4, 4, 4, 4],
-      "slow_pct": [19, 22, 25, 28],
-      "hp_cost_pct": [6, 6, 6, 6]
+      "cooldown": [40, 35, 30, 25],
+      "mana_cost": [0]
     },
     "phoenix_fire_spirits": {
       "hero": "Phoenix",
@@ -1076,14 +819,9 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [45, 40, 35, 30],
-      "mana_cost": [80, 90, 100, 110],
-      "damage": [20, 40, 60, 80],
-      "duration": [4, 4, 4, 4],
-      "attack_speed_slow": [40, 60, 80, 100],
-      "spirit_count": [4, 4, 4, 4],
-      "hp_cost_pct": [3, 3, 3, 3],
-      "cast_range": [1400, 1400, 1400, 1400]
+      "cooldown": [50, 40, 30, 20],
+      "mana_cost": [100],
+      "duration": [4]
     },
     "phoenix_sun_ray": {
       "hero": "Phoenix",
@@ -1091,28 +829,19 @@
       "type": "active",
       "damage_type": "magical",
       "pierces_bkb": false,
-      "cooldown": [26, 22, 18, 14],
-      "mana_cost": [100, 100, 100, 100],
-      "damage": [14, 22, 30, 38],
-      "hp_damage_pct": [1.25, 2.5, 3.75, 5.0],
-      "heal_pct": [0.625, 1.25, 1.875, 2.5],
-      "duration": [6, 6, 6, 6],
-      "hp_cost_pct": [6, 6, 6, 6]
+      "cooldown": [30],
+      "mana_cost": [100, 110, 120, 130]
     },
     "phoenix_supernova": {
       "hero": "Phoenix",
       "ability_name": "Supernova",
       "type": "active",
       "damage_type": "magical",
-      "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [110, 110, 110],
-      "mana_cost": [200, 200, 200],
-      "damage": [60, 90, 120],
-      "radius": [1000, 1000, 1000],
-      "duration": [6, 6, 6],
-      "attack_count_to_destroy": [5, 8, 11],
-      "stun_duration": [1.5, 2.0, 2.5]
+      "pierces_bkb": true,
+      "cooldown": [120],
+      "mana_cost": [150, 200, 250],
+      "stun_duration": [1.6, 2, 2.4],
+      "is_ultimate": true
     },
     "rubick_fade_bolt": {
       "hero": "Rubick",
@@ -1121,74 +850,53 @@
       "damage_type": "magical",
       "pierces_bkb": false,
       "cooldown": [16, 14, 12, 10],
-      "mana_cost": [120, 130, 140, 150],
-      "damage": [100, 175, 250, 325],
-      "cast_range": [800, 800, 800, 800],
-      "attack_damage_reduction": [10, 18, 26, 34],
-      "duration": [10, 10, 10, 10]
+      "mana_cost": [110, 125, 140, 155],
+      "damage": [85, 165, 245, 325],
+      "duration": [9]
     },
     "rubick_arcane_supremacy": {
       "hero": "Rubick",
       "ability_name": "Arcane Supremacy",
-      "type": "passive",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0],
-      "cast_range_bonus": [60, 120, 180, 240],
-      "spell_amp_pct": [14, 18, 22, 26]
+      "type": "passive"
     },
     "rubick_spell_steal": {
       "hero": "Rubick",
       "ability_name": "Spell Steal",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [20, 14, 8],
-      "mana_cost": [25, 25, 25],
-      "cast_range": [1000, 1000, 1000]
+      "pierces_bkb": true,
+      "cooldown": [16, 10, 4],
+      "mana_cost": [25],
+      "duration": [180, 240, 300],
+      "is_ultimate": true
     },
     "invoker_quas": {
       "hero": "Invoker",
       "ability_name": "Quas",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0, 0, 0, 0],
-      "hp_regen": [1, 3, 5, 7, 9, 11, 13]
+      "cooldown": [0],
+      "mana_cost": [0]
     },
     "invoker_wex": {
       "hero": "Invoker",
       "ability_name": "Wex",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0, 0, 0, 0],
-      "attack_speed": [6, 12, 18, 24, 30, 36, 42],
-      "move_speed_pct": [1, 2, 3, 4, 5, 6, 7]
+      "cooldown": [0],
+      "mana_cost": [0]
     },
     "invoker_exort": {
       "hero": "Invoker",
       "ability_name": "Exort",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "cooldown": [0, 0, 0, 0, 0, 0, 0],
-      "mana_cost": [0, 0, 0, 0, 0, 0, 0],
-      "bonus_damage": [4, 8, 12, 16, 20, 24, 28]
+      "cooldown": [0],
+      "mana_cost": [0]
     },
     "invoker_invoke": {
       "hero": "Invoker",
       "ability_name": "Invoke",
       "type": "active",
-      "damage_type": "none",
-      "pierces_bkb": false,
-      "is_ultimate": true,
-      "cooldown": [6, 6, 6],
-      "mana_cost": [60, 60, 60]
+      "cooldown": [7],
+      "mana_cost": [0],
+      "is_ultimate": true
     }
   }
 }

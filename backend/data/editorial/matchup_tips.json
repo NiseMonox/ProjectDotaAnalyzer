@@ -53,7 +53,7 @@
   },
   "Anti-Mage:Doom": {
     "heroes": ["Anti-Mage", "Doom"],
-    "tip": "Doom disables all your abilities including Blink and Spell Shield, making you a sitting duck. In lane, Doom's Scorched Earth sustain is hard to deal with. Build Linken's Sphere to block Doom and always keep a Blink escape ready. Split-push when Doom is on cooldown."
+    "tip": "Doom disables all your abilities including Blink and Counterspell, making you a sitting duck. In lane, Doom's Scorched Earth sustain is hard to deal with. Build Linken's Sphere to block Doom and always keep a Blink escape ready. Split-push when Doom is on cooldown."
   },
   "Anti-Mage:Centaur Warrunner": {
     "heroes": ["Anti-Mage", "Centaur Warrunner"],
@@ -69,7 +69,7 @@
   },
   "Anti-Mage:Sand King": {
     "heroes": ["Anti-Mage", "Sand King"],
-    "tip": "Sand King's Burrowstrike stun followed by Epicenter can destroy you in teamfights. In lane, Caustic Finale makes last hitting risky since killed creeps explode for damage. Use Blink aggressively after Sand King uses Burrowstrike to jump on him before he can channel Epicenter."
+    "tip": "Sand King's Burrowstrike stun followed by Epicenter can destroy you in teamfights. In lane, Caustic Finale makes last hitting risky since killed creeps explode for damage. Use Blink aggressively after Sand King uses Burrowstrike to jump on him before he can finish casting Epicenter."
   },
   "Anti-Mage:Storm Spirit": {
     "heroes": ["Anti-Mage", "Storm Spirit"],
@@ -105,7 +105,7 @@
   },
   "Phantom Assassin:Slardar": {
     "heroes": ["Phantom Assassin", "Slardar"],
-    "tip": "Corrosive Haze strips away your armor and provides vision, eliminating your Blur evasion advantage. Slardar's Bash of the Deep can lock you down in fights. Manta Style can remove the Haze debuff. You win this matchup late game once you have BKB and Satanic to lifesteal through his damage."
+    "tip": "Corrosive Haze strips away your armor and provides vision of you, so Blur cannot hide you. Slardar's Bash of the Deep can lock you down in fights. Manta Style can remove the Haze debuff. You win this matchup late game once you have BKB and Satanic to lifesteal through his damage."
   },
   "Phantom Assassin:Bristleback": {
     "heroes": ["Phantom Assassin", "Bristleback"],
@@ -129,7 +129,7 @@
   },
   "Juggernaut:Legion Commander": {
     "heroes": ["Juggernaut", "Legion Commander"],
-    "tip": "Duel locks you in place and prevents Blade Fury and Omnislash. Press the Attack dispels your Healing Ward debuffs and provides Legion with attack speed. Spin through Overwhelming Odds damage and save Omnislash for after Duel is used. Linken's Sphere blocks Duel entirely."
+    "tip": "Duel locks you in place and prevents Blade Fury and Omnislash. Press the Attack dispels debuffs from Legion and gives her movement speed and health regen. Spin through Overwhelming Odds damage and save Omnislash for after Duel is used. Linken's Sphere blocks Duel entirely."
   },
   "Juggernaut:Bristleback": {
     "heroes": ["Juggernaut", "Bristleback"],
@@ -165,7 +165,7 @@
   },
   "Faceless Void:Sand King": {
     "heroes": ["Faceless Void", "Sand King"],
-    "tip": "Sand King can Burrowstrike out of Chronosphere edges and channel Epicenter before you catch him. Sandstorm makes him hard to catch. Use Chronosphere when Sand King is visible and has committed his Burrowstrike. Time Walk can dodge Epicenter damage if timed correctly."
+    "tip": "Sand King can Burrowstrike out of Chronosphere edges and cast Epicenter before you catch him. Sandstorm makes him hard to catch. Use Chronosphere when Sand King is visible and has committed his Burrowstrike. Time Walk can dodge Epicenter damage if timed correctly."
   },
   "Faceless Void:Enigma": {
     "heroes": ["Faceless Void", "Enigma"],
@@ -201,7 +201,7 @@
   },
   "Luna:Clockwerk": {
     "heroes": ["Luna", "Clockwerk"],
-    "tip": "Clockwerk's Hookshot into Power Cogs is a death sentence for Luna since you have no escape. Battery Assault interrupts your channeling and Eclipse is wasted in Cogs. Build BKB to survive the Cogs lockdown and Force Staff as a secondary escape. Stay near your team to deter solo Hookshot ganks."
+    "tip": "Clockwerk's Hookshot into Power Cogs is a death sentence for Luna since you have no escape. Battery Assault keeps mini-stunning you and Eclipse is wasted in Cogs. Build BKB to survive the Cogs lockdown and Force Staff as a secondary escape. Stay near your team to deter solo Hookshot ganks."
   },
   "Slark:Axe": {
     "heroes": ["Slark", "Axe"],
@@ -285,7 +285,7 @@
   },
   "Shadow Fiend:Tinker": {
     "heroes": ["Shadow Fiend", "Tinker"],
-    "tip": "Tinker's Laser blinds you, preventing last hits and Necromastery stacks. Heat-Seeking Missiles chunk your HP. Tinker pushes waves from base after BoTs, limiting your map control. Focus on dominating before Tinker gets Boots of Travel. Stack ancients and build BKB to fight through Laser."
+    "tip": "Tinker's Laser blinds you, preventing last hits and Necromastery stacks. Tinker pushes waves and teleports back to base with Keen Conveyance, limiting your map control. Focus on dominating the lane before he has the levels for it. Stack ancients and build BKB to fight through Laser."
   },
   "Shadow Fiend:Invoker": {
     "heroes": ["Shadow Fiend", "Invoker"],
@@ -341,7 +341,7 @@
   },
   "Templar Assassin:Viper": {
     "heroes": ["Templar Assassin", "Viper"],
-    "tip": "Viper is TA's hardest counter in lane. Poison Attack strips Refraction charges with low-damage instances, and Nethertoxin's break disables Refraction entirely. Corrosive Skin makes Psi Blades splash less effective. Consider leaving mid to stack ancients and avoid this lane entirely. Build early Dragon Lance for range."
+    "tip": "Viper is TA's hardest counter in lane. Poison Attack strips Refraction charges with low-damage instances. Corrosive Skin makes Psi Blades splash less effective. Consider leaving mid to stack ancients and avoid this lane entirely. Build early Dragon Lance for range."
   },
   "Templar Assassin:Puck": {
     "heroes": ["Templar Assassin", "Puck"],
@@ -481,7 +481,7 @@
   },
   "Beastmaster:Anti-Mage": {
     "heroes": ["Beastmaster", "Anti-Mage"],
-    "tip": "Primal Roar pierces Counterspell and BKB, providing reliable lockdown against Anti-Mage's mobility. Boar's slow prevents Blink for several seconds. Hawk scouts Anti-Mage's farming patterns for ganks. Push towers with your summons and force Anti-Mage to respond rather than free-farming."
+    "tip": "Primal Roar pierces Counterspell and BKB, providing reliable lockdown against Anti-Mage's mobility. The boar's poison slows him and the hawks root him when they dive. Push towers with your summons and force Anti-Mage to respond rather than free-farming."
   },
   "Beastmaster:Ember Spirit": {
     "heroes": ["Beastmaster", "Ember Spirit"],
@@ -569,7 +569,7 @@
   },
   "Oracle:Huskar": {
     "heroes": ["Oracle", "Huskar"],
-    "tip": "False Promise combined with Huskar's Life Break is extremely potent. Huskar can dive at low HP with False Promise ensuring he survives, while his Berserker's Blood gives maximum attack speed and magic resistance. Fate's Edict provides physical damage immunity during False Promise. Purifying Flames heals Huskar under False Promise's delayed healing."
+    "tip": "False Promise combined with Huskar's Life Break is extremely potent. Huskar can dive at low HP with False Promise ensuring he survives, while his Berserker's Blood gives maximum attack speed and magic resistance. Fate's Edict grants 100% magic damage resistance during False Promise but disarms him. Purifying Flames heals Huskar under False Promise's delayed healing."
   },
   "Winter Wyvern:Ursa": {
     "heroes": ["Winter Wyvern", "Ursa"],
@@ -757,7 +757,7 @@
   },
   "Axe:Phantom Assassin": {
     "heroes": ["Axe", "Phantom Assassin"],
-    "tip": "Berserker's Call forces PA to attack you, and her fast attacks from Phantom Strike trigger Counter Helix multiple times. Culling Blade ignores PA's evasion from Blur and kills through Satanic lifesteal. Build Blade Mail to reflect PA's own crits back. You are one of PA's hardest counters."
+    "tip": "Berserker's Call forces PA to attack you, and her fast attacks from Phantom Strike trigger Counter Helix multiple times. Culling Blade ignores PA's evasion and kills through Satanic lifesteal. Build Blade Mail to reflect PA's own crits back. You are one of PA's hardest counters."
   },
   "Axe:Anti-Mage": {
     "heroes": ["Axe", "Anti-Mage"],
@@ -833,7 +833,7 @@
   },
   "Marci:Storm Spirit": {
     "heroes": ["Marci", "Storm Spirit"],
-    "tip": "Dispose throws Storm Spirit into your team and stuns, preventing Ball Lightning escape. Rebound closes gap instantly. Sidekick provides burst potential with the attack damage bonus. Unleash provides sustained lockdown with rapid attacks. Your mobility matches Storm's, making you an effective counter in the mid game."
+    "tip": "Dispose throws Storm Spirit into your team and stuns, preventing Ball Lightning escape. Rebound closes gap instantly. Bodyguard adds lifesteal and attack damage for the fight. Unleash provides sustained lockdown with rapid attacks. Your mobility matches Storm's, making you an effective counter in the mid game."
   },
   "Primal Beast:Puck": {
     "heroes": ["Primal Beast", "Puck"],
@@ -853,7 +853,7 @@
   },
   "Razor:Anti-Mage": {
     "heroes": ["Razor", "Anti-Mage"],
-    "tip": "Static Link drains Anti-Mage's attack damage, but AM can Blink to break the link. Eye of the Storm provides sustained damage that AM's spell shield cannot block. Your lane presence is stronger, but AM outscales you. Force fights with your team before AM completes his core items."
+    "tip": "Static Link drains Anti-Mage's attack damage, but AM can Blink to break the link. Eye of the Storm provides sustained damage that AM's Counterspell cannot block. Your lane presence is stronger, but AM outscales you. Force fights with your team before AM completes his core items."
   },
   "Doom:Invoker": {
     "heroes": ["Doom", "Invoker"],
@@ -997,7 +997,7 @@
   },
   "Dazzle:Faceless Void": {
     "heroes": ["Dazzle", "Faceless Void"],
-    "tip": "Shallow Grave can save allies caught inside Chronosphere if cast before the Chrono hits. Shadow Wave heals targets inside Chrono. Poison Touch slows Void if he Walks toward your team. Bad Juju reduces cooldowns letting you Grave multiple allies. Position behind your team and react instantly with Grave when Void initiates."
+    "tip": "Shallow Grave can save allies caught inside Chronosphere if cast before the Chrono hits. Shadow Wave heals targets inside Chrono. Poison Touch slows Void if he Walks toward your team. Position behind your team and react instantly with Grave when Void initiates."
   },
   "Oracle:Faceless Void": {
     "heroes": ["Oracle", "Faceless Void"],
