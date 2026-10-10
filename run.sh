@@ -5,9 +5,11 @@
 #   DEV=1 ./run.sh           # auto-reload on code changes
 #   HOST=127.0.0.1 PORT=8001 ./run.sh
 #
-# Creates backend/venv on first run and reinstalls dependencies whenever
-# backend/requirements.txt changes. Settings come from the environment or
-# .env (see .env.example); the environment wins.
+# Creates backend/venv on first run (Python 3.10-3.13; PYTHON=... selects the
+# interpreter) and reinstalls dependencies whenever backend/requirements.txt
+# changes. Settings come from the environment or .env (see .env.example); the
+# environment wins. Optional extras (backend/requirements-rag.txt) are never
+# installed here.
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -32,6 +34,15 @@ JAVA_PATH="${JAVA_PATH:-$(dotenv_value JAVA_PATH)}"
 CLARITY_JAR_PATH="${CLARITY_JAR_PATH:-$(dotenv_value CLARITY_JAR_PATH)}"
 
 if [ ! -x "$VENV_DIR/bin/python" ]; then
+    # The pinned dependencies have wheels for these versions only; with
+    # another one pip fails halfway with an error about a missing package.
+    PY_VERSION="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+    case "$PY_VERSION" in
+        3.10|3.11|3.12|3.13) ;;
+        "") echo "ERROR: cannot run '$PYTHON'. Set PYTHON to a Python 3.10-3.13 interpreter." >&2; exit 1 ;;
+        *)  echo "ERROR: $PYTHON is Python $PY_VERSION, this project needs Python 3.10-3.13" >&2
+            echo "       (for example: PYTHON=python3.12 ./run.sh)." >&2; exit 1 ;;
+    esac
     echo "Creating virtual environment in $VENV_DIR ..."
     "$PYTHON" -m venv "$VENV_DIR"
     rm -f "$STAMP"

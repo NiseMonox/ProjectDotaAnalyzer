@@ -1,13 +1,30 @@
-# Runtime dependencies (Python 3.10+). Install: pip install -r backend/requirements.txt
-fastapi==0.115.0
+# Runtime dependencies (Python 3.10-3.13: pydantic 2.9.0 has no wheels for 3.14).
+# Install: pip install -r backend/requirements.txt
+# >=0.115.3 pulls starlette >=0.40, which caps non-file multipart parts
+# (CVE-2024-47874). starlette >=0.46 also never gzips text/event-stream, which
+# the AI-coach progress stream relies on (backend/app/main.py).
+fastapi==0.115.14
+starlette==0.46.2
 uvicorn[standard]==0.30.0
-# >=0.0.18 fixes CVE-2024-53981 (multipart boundary DoS); still provides the
-# `multipart` module starlette 0.38 imports.
+# Upload parsing (starlette imports it as `python_multipart`); >=0.0.18 fixes
+# CVE-2024-53981 (multipart boundary DoS).
 python-multipart==0.0.20
 pydantic==2.9.0
-aiofiles==24.1.0
 # AI coach LLM client (DeepSeek, OpenAI-compatible). Without it the coach
-# silently falls back to rule-based reports.
-openai>=1.30,<4
+# silently falls back to rule-based reports. Capped at the major version the
+# coach has made live calls with: 2.31.0 wrote the validated reports of
+# 2026-10-11 (4 reports, no protocol error). A fresh install resolves to the
+# newest 2.x (2.54.0 on that day), which passes the test suite on Python
+# 3.11, 3.12 and 3.13. 3.28.0 also passes the suite and a round trip of the
+# coach's call path against a local fake endpoint, but has not written a real
+# report: widen the range after one.
+openai>=1.30,<3
 # Loads <project>/.env (backend/app/config.py)
 python-dotenv>=1.0,<2
+# Vector maths for the knowledge retrieval (dense term of the RAG ranker).
+numpy>=1.26,<3
+# Unpacks Zstandard-compressed replay uploads: Valve's replay servers now send
+# Zstandard under the .dem.bz2 name (bzip2 uploads need only the standard
+# library). No dependencies of its own. Optional at runtime: without it such
+# an upload is refused with a message asking the user to decompress it first.
+zstandard>=0.22,<1

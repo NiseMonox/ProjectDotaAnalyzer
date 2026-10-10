@@ -115,7 +115,7 @@ def project_path(value: str) -> Path:
 
 CLARITY_JAR_PATH = project_path(env_str("CLARITY_JAR_PATH", "tools/clarity-analyzer.jar"))
 
-# Java 17+ is required by clarity 3.x. Resolution order:
+# Java 17+ is required by clarity 4.x (5.x would need Java 21). Resolution order:
 #   1. $JAVA_PATH (explicit override)
 #   2. project-local JDK in tools/jdk17 (macOS bundle or Linux layout)
 #   3. $JAVA_HOME/bin/java
@@ -169,6 +169,32 @@ TRUST_PROXY_HEADERS = env_bool("TRUST_PROXY_HEADERS", False)
 # on/off switches GAMEDATA_AUTO_UPDATE / AI_COACH_AUTO_LEARN are read by
 # main.run_startup_maintenance() at startup.
 GAMEDATA_STALE_DAYS = env_int("GAMEDATA_STALE_DAYS", 7, minimum=1)
+# The running server repeats the game-version check this often, so a patch
+# released after the start is picked up without a restart (0 = only at
+# startup). Skipped with GAMEDATA_AUTO_UPDATE=0. Every round is three
+# requests, one of them to GitHub's API (60 per hour without a token): a
+# typo like 0.001 must not turn into a request loop, so anything between 0
+# and GAMEDATA_RECHECK_MIN_HOURS counts as that minimum.
+GAMEDATA_RECHECK_MIN_HOURS = 0.25
+
+
+def _recheck_hours() -> float:
+    hours = env_float("GAMEDATA_RECHECK_HOURS", 24.0, minimum=0.0)
+    if 0.0 < hours < GAMEDATA_RECHECK_MIN_HOURS:
+        logger.warning(
+            "GAMEDATA_RECHECK_HOURS=%s is below the minimum of %s (0 switches the check off), using %s",
+            hours, GAMEDATA_RECHECK_MIN_HOURS, GAMEDATA_RECHECK_MIN_HOURS,
+        )
+        return GAMEDATA_RECHECK_MIN_HOURS
+    return hours
+
+
+GAMEDATA_RECHECK_HOURS = _recheck_hours()
+
+# Worker threads for blocking request work (analysis, disk I/O, OpenDota
+# calls, AI coach steps). asyncio's default of min(32, cpu + 4) is only 6 on
+# a 2-vCPU VM, where a few slow OpenDota fetches would stall everything else.
+THREADPOOL_SIZE = env_int("THREADPOOL_SIZE", 32, minimum=4)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +206,14 @@ MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 # Concurrent uploads being received/stored at once (each may spool up to
 # MAX_UPLOAD_MB to the temp dir).
 UPLOAD_MAX_CONCURRENCY = env_int("UPLOAD_MAX_CONCURRENCY", 3, minimum=1)
+# ... and how many of those one client IP may hold, so a single client
+# cannot occupy every slot with slow uploads.
+UPLOAD_MAX_PER_CLIENT = env_int("UPLOAD_MAX_PER_CLIENT", 1, minimum=1)
+# Seconds a client has to send the whole upload body before it is dropped.
+UPLOAD_RECEIVE_TIMEOUT_S = env_int("UPLOAD_RECEIVE_TIMEOUT_S", 900, minimum=10)
+# ... and how long the body may stall in between: a connection that died
+# without closing must not hold its client's upload slot until that deadline.
+UPLOAD_IDLE_TIMEOUT_S = env_int("UPLOAD_IDLE_TIMEOUT_S", 60, minimum=5)
 # Uploaded replays kept on disk (content-hash named; oldest pruned first).
 REPLAY_MAX_FILES = env_int("REPLAY_MAX_FILES", 50, minimum=1)
 
@@ -188,7 +222,8 @@ MATCH_CACHE_DIR = CACHE_DIR / "matches"
 MATCH_CACHE_MAX_FILES = env_int("MATCH_CACHE_MAX_FILES", 200, minimum=1)
 # Parsed matches kept in memory (LRU).
 MATCH_MEMORY_CACHE_SIZE = env_int("MATCH_MEMORY_CACHE_SIZE", 12, minimum=1)
-# OpenDota results without parsed replay data are re-fetched after this TTL.
+# /api/fetch downloads an OpenDota match without parsed replay data again
+# once our copy is older than this (the copy itself keeps being served).
 OPENDOTA_UNPARSED_TTL_S = env_int("OPENDOTA_UNPARSED_TTL_S", 120, minimum=0)
 
 

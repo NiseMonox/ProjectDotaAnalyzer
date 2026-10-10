@@ -18,5 +18,5 @@
 ## Key Conventions
 - All user-facing text supports `lang` parameter ("zh" or "en")
 - Log messages should be in English (developer-facing)
-- Parser is abstraction layer (mock/clarity/future parsers)
-- Map coords: game space (-8000,8000) mapped to (0,100) for ECharts
+- Parser is abstraction layer (mock/clarity/opendota parsers)
+- Map coords: world units in every backend payload; only the frontend maps them to (0,100) for ECharts with `pct = (v + 8192) / 16256 * 100` (`backend/app/geo.py`)

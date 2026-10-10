@@ -1,7 +1,9 @@
 """Request-level protections for the public server.
 
 - :class:`ApiError`: short, user-safe, localized (zh/en) error responses
-  carrying a stable ``code`` (rendered as ``{"detail", "code", ...}``).
+  carrying a stable ``code`` (rendered as ``{"detail", "code", ...}``). The
+  same shape is used for every other error under ``/api/`` (unknown route,
+  wrong method, request validation, unhandled exception).
 - Admin auth (``X-Admin-Token`` vs env ``ADMIN_TOKEN``; unset → 403).
 - Per-client-IP sliding-window rate limits and a global daily quota for
   cold LLM-backed AI-coach reports.
@@ -25,8 +27,11 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from starlette.datastructures import Headers
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import config
@@ -66,6 +71,14 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The server is busy with other uploads. Please retry shortly.",
         "zh": "服务器正忙于处理其他上传，请稍后重试。",
     },
+    "upload_in_progress": {
+        "en": "Another upload from your network is still in progress. Please wait for it to finish.",
+        "zh": "您的网络已有录像正在上传，请等待其完成后再试。",
+    },
+    "upload_timeout": {
+        "en": "The upload took too long and was cancelled. Please check your connection and try again.",
+        "zh": "上传耗时过长，已被取消。请检查网络后重试。",
+    },
     "upload_missing_file": {
         "en": "No replay file was uploaded.",
         "zh": "未收到录像文件。",
@@ -74,17 +87,48 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Malformed request.",
         "zh": "请求格式错误。",
     },
+    "not_found": {
+        "en": "This API endpoint does not exist.",
+        "zh": "该接口不存在。",
+    },
+    "method_not_allowed": {
+        "en": "This request method is not allowed here.",
+        "zh": "该接口不支持此请求方法。",
+    },
     "invalid_match_id": {
         "en": "Invalid match ID.",
         "zh": "无效的比赛 ID。",
     },
     "upload_bad_extension": {
-        "en": "Only .dem replay files are supported.",
-        "zh": "仅支持 .dem 录像文件。",
+        "en": "Only .dem replay files are supported (also compressed: .dem.bz2, .dem.zst).",
+        "zh": "仅支持 .dem 录像文件（也可上传压缩文件 .dem.bz2、.dem.zst）。",
     },
+    # Only for a format the server cannot unpack itself: Zstandard without
+    # the optional zstandard package (bzip2 uploads are always unpacked).
     "replay_compressed": {
-        "en": "This replay is compressed (.bz2). Please decompress it to a .dem file first.",
-        "zh": "该录像为压缩文件（.bz2），请先解压为 .dem 文件。",
+        "en": "This replay is Zstandard-compressed (Valve's replay servers use it, even for files named "
+              ".dem.bz2) and this server cannot unpack it. Please decompress it to a .dem file first, "
+              "for example with the zstd tool (zstd -d).",
+        "zh": "该录像为 Zstandard 压缩文件（Valve 录像服务器使用此格式，文件名可能仍是 .dem.bz2），"
+              "本服务器无法解压。请先解压为 .dem 文件（例如使用 zstd 工具：zstd -d）后再上传。",
+    },
+    # bzip2 on a Python built without the bz2 module.
+    "replay_compressed_bzip2": {
+        "en": "This replay is bzip2-compressed and this server cannot unpack it. Please decompress it "
+              "to a .dem file first, for example with bunzip2.",
+        "zh": "该录像为 bzip2 压缩文件，本服务器无法解压。请先解压为 .dem 文件（例如使用 bunzip2）后再上传。",
+    },
+    "replay_decompress_failed": {
+        "en": "This compressed replay is damaged or incomplete. Please download it again, "
+              "or decompress it yourself and upload the .dem file.",
+        "zh": "该压缩录像已损坏或不完整，请重新下载，或自行解压后上传 .dem 文件。",
+    },
+    # An intact Zstandard file whose window is above storage.ZSTD_MAX_WINDOW.
+    "replay_window_too_large": {
+        "en": "This replay was compressed with a Zstandard window larger than this server unpacks "
+              "(zstd --ultra or --long). Please decompress it yourself (zstd -d) and upload the .dem file.",
+        "zh": "该录像压缩时使用的 Zstandard 窗口超出了本服务器的解压上限（zstd --ultra 或 --long）。"
+              "请自行解压（zstd -d）后上传 .dem 文件。",
     },
     "replay_invalid": {
         "en": "This file is not a valid Dota 2 replay.",
@@ -130,6 +174,11 @@ MESSAGES: dict[str, dict[str, str]] = {
     "replay_not_found": {
         "en": "Replay file not found.",
         "zh": "未找到录像文件。",
+    },
+    "coach_no_game": {
+        "en": "This replay ends before the game starts or within its first minutes, so there is nothing "
+              "to analyze. Please upload the complete replay.",
+        "zh": "该录像在比赛开始前或刚开始几分钟就已结束，没有可分析的对局内容，请上传完整的录像。",
     },
     "coach_failed": {
         "en": "AI coaching analysis failed. Please try again later.",
@@ -231,9 +280,55 @@ async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse(error_payload(exc), status_code=exc.status_code, headers=exc.headers)
 
 
+def _is_api_path(request: Request) -> bool:
+    path = request.scope.get("path", "")
+    return path == "/api" or path.startswith("/api/")
+
+
+# Framework-raised HTTP errors (no ApiError involved) → error code.
+_HTTP_STATUS_CODES = {404: "not_found", 405: "method_not_allowed"}
+
+
+async def http_error_handler(request: Request, exc: StarletteHTTPException) -> Response:
+    """Render framework HTTP errors under ``/api/`` like an :class:`ApiError`.
+
+    Covers unknown routes (404) and wrong methods (405); other paths (static
+    files) keep FastAPI's default body.
+    """
+    if not _is_api_path(request):
+        return await http_exception_handler(request, exc)
+    code = _HTTP_STATUS_CODES.get(exc.status_code)
+    if code is None:
+        code = "bad_request" if exc.status_code < 500 else "internal_error"
+    error = ApiError(exc.status_code, code, request_lang(request), headers=getattr(exc, "headers", None))
+    return await api_error_handler(request, error)
+
+
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Path/query validation failures: 400 ``bad_request`` instead of FastAPI's
+    422 with a list of English error objects."""
+    logger.debug("Request validation failed for %s: %s", request.scope.get("path"), exc.errors())
+    return await api_error_handler(request, ApiError(400, "bad_request", request_lang(request)))
+
+
+async def unhandled_error_handler(request: Request, exc: Exception) -> Response:
+    """Body of the 500 answer for an unhandled exception (Starlette logs the
+    traceback and calls this)."""
+    if not _is_api_path(request):
+        return PlainTextResponse("Internal Server Error", status_code=500)
+    return await api_error_handler(request, ApiError(500, "internal_error", request_lang(request)))
+
+
 def install_exception_handlers(app) -> None:
-    """Register the :class:`ApiError` renderer on a FastAPI app."""
+    """Register the error renderers on a FastAPI app.
+
+    After this every error response under ``/api/`` is
+    ``{"detail": <localized str>, "code": <code>, ...}``.
+    """
     app.add_exception_handler(ApiError, api_error_handler)
+    app.add_exception_handler(StarletteHTTPException, http_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(Exception, unhandled_error_handler)
 
 
 # ---------------------------------------------------------------------------
@@ -350,12 +445,18 @@ class SlidingWindowRateLimiter:
 
 
 # name → default "count/seconds"; override with env RATE_LIMIT_<NAME>
-# ("0" or "off" disables that limit).
+# ("0" or "off" disables that limit, a blank value means the default).
+# "ai_coach" guards the LLM budget: cold reports while an API key is set.
+# Without a key a report is rule-based and costs 1-400 ms of CPU, and one
+# match has ten players in two languages: those get the far higher
+# "ai_coach_rules" (under the LLM limit the 11th player of an hour was
+# answered 429 with a retry time of an hour).
 RATE_LIMIT_DEFAULTS: dict[str, str] = {
     "upload": "10/3600",
     "fetch": "30/600",
     "request_parse": "10/600",
     "ai_coach": "10/3600",
+    "ai_coach_rules": "120/3600",
 }
 
 _limiters: dict[str, SlidingWindowRateLimiter | None] = {}
@@ -382,7 +483,7 @@ def get_rate_limiter(name: str) -> SlidingWindowRateLimiter | None:
             return _limiters[name]
         env_name = f"RATE_LIMIT_{name.upper()}"
         default = RATE_LIMIT_DEFAULTS.get(name, "0")
-        spec = os.environ.get(env_name, default)
+        spec = os.environ.get(env_name, "").strip() or default
         try:
             parsed = parse_rate_spec(spec)
         except ValueError:
@@ -502,21 +603,27 @@ ai_coach_daily_quota = DailyQuota(
 # ---------------------------------------------------------------------------
 
 class RequestTooLarge(ApiError):
-    """Raised from the receive channel once a request body exceeds its limit."""
+    """Raised from the receive channel once a request body exceeds its limit.
+
+    The rest of such a body has no known end, so the connection is closed.
+    """
 
     def __init__(self, lang: str, limit_bytes: int) -> None:
-        super().__init__(413, "upload_too_large", lang, limit_mb=max(1, limit_bytes // (1024 * 1024)))
+        super().__init__(
+            413, "upload_too_large", lang,
+            headers={"Connection": "close"},
+            limit_mb=max(1, limit_bytes // (1024 * 1024)),
+        )
 
 
-async def _send_json(send: Send, status: int, payload: dict, headers: dict[str, str] | None = None) -> None:
+async def _send_json(send: Send, status: int, payload: dict, close: bool = False) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     raw_headers = [
         (b"content-type", b"application/json"),
         (b"content-length", str(len(body)).encode()),
-        (b"connection", b"close"),
     ]
-    for key, value in (headers or {}).items():
-        raw_headers.append((key.lower().encode("latin-1"), value.encode("latin-1")))
+    if close:
+        raw_headers.append((b"connection", b"close"))
     await send({"type": "http.response.start", "status": status, "headers": raw_headers})
     await send({"type": "http.response.body", "body": body})
 
@@ -527,10 +634,21 @@ class BodySizeLimitMiddleware:
     Checks Content-Length up front (before any byte is read) and also
     counts streamed bytes, so chunked uploads cannot bypass the limit.
     ``max_bytes`` is a callable so the limit can follow config changes.
+
+    Browsers only read the response after they sent the whole body, and a
+    server that closes the socket with unread data resets the connection,
+    which destroys the answer (measured against uvicorn: the client gets
+    "connection reset" instead of the JSON). The early 413 therefore keeps
+    the connection open and lets the HTTP server discard the rest of the
+    body; only a body declared larger than ``DISCARD_FACTOR`` times the
+    limit is cut off with ``Connection: close``.
     """
 
     # Allowance for multipart boundaries / part headers around the file.
     MULTIPART_OVERHEAD = 64 * 1024
+    # An over-limit body up to this multiple of the limit is still received
+    # (and thrown away) so the client can read the 413.
+    DISCARD_FACTOR = 2
 
     def __init__(self, app: ASGIApp, paths: tuple[str, ...], max_bytes: Callable[[], int]) -> None:
         self.app = app
@@ -553,7 +671,7 @@ class BodySizeLimitMiddleware:
                 declared = -1
             if declared > limit:
                 exc = RequestTooLarge(lang, file_limit)
-                await _send_json(send, 413, error_payload(exc))
+                await _send_json(send, 413, error_payload(exc), close=declared > limit * self.DISCARD_FACTOR)
                 return
 
         received = 0
@@ -581,7 +699,7 @@ class BodySizeLimitMiddleware:
             # when the exception escapes the app before a response started.
             if response_started:
                 raise
-            await _send_json(send, 413, error_payload(exc))
+            await _send_json(send, 413, error_payload(exc), close=True)
 
 
 class SecurityHeadersMiddleware:

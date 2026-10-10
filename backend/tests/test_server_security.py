@@ -92,6 +92,23 @@ def test_rate_limiter_env_override(monkeypatch):
         security.reset_rate_limits()
 
 
+def test_blank_rate_limit_means_default_not_disabled(monkeypatch):
+    """`RATE_LIMIT_UPLOAD=` in .env must not switch the limit off."""
+    monkeypatch.setenv("RATE_LIMIT_UPLOAD", "")
+    monkeypatch.setenv("RATE_LIMIT_FETCH", "   ")
+    monkeypatch.setenv("RATE_LIMIT_AI_COACH", "0")
+    monkeypatch.delenv("RATE_LIMIT_REQUEST_PARSE", raising=False)
+    security.reset_rate_limits()
+    try:
+        upload = security.get_rate_limiter("upload")
+        assert upload is not None and (upload.limit, upload.window_s) == (10, 3600.0)
+        assert security.get_rate_limiter("fetch").limit == 30
+        assert security.get_rate_limiter("request_parse").limit == 10
+        assert security.get_rate_limiter("ai_coach") is None      # 0 / off still disables
+    finally:
+        security.reset_rate_limits()
+
+
 def test_enforce_rate_limit_raises_429(monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_FETCH", "1/100")
     security.reset_rate_limits()
@@ -200,6 +217,52 @@ def test_body_limit_rejects_declared_content_length(install_handler):
     assert ok.status_code == 200 and ok.json() == {"size": 5}
 
 
+def _declared_upload(app, declared: int) -> dict:
+    """Send only the headers of an upload declaring ``declared`` bytes; return the response start."""
+    sent: list[dict] = []
+
+    async def run():
+        async def receive():
+            raise AssertionError("an over-limit body must be refused before it is read")
+
+        async def send(msg):
+            sent.append(msg)
+
+        scope = {
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+            "method": "POST", "path": "/api/upload", "raw_path": b"/api/upload",
+            "root_path": "", "scheme": "http", "query_string": b"lang=en",
+            "headers": [(b"host", b"test"), (b"content-length", str(declared).encode())],
+            "client": ("1.2.3.4", 1), "server": ("test", 80),
+        }
+        await app(scope, receive, send)
+
+    asyncio.run(run())
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    body = json.loads(b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body"))
+    return {"status": start["status"], "headers": dict(start["headers"]), "body": body}
+
+
+def test_early_413_keeps_the_connection_so_browsers_can_read_it():
+    """Closing with the body unread resets the connection and the client never sees the JSON.
+
+    (Measured against uvicorn: curl reports "connection reset by peer".) The
+    connection is only closed for bodies far beyond the limit.
+    """
+    app = _body_echo_app(install_handler=True)
+    limit = 10 + BodySizeLimitMiddleware.MULTIPART_OVERHEAD
+    slightly_over = _declared_upload(app, limit + 1)
+    assert slightly_over["status"] == 413
+    assert slightly_over["body"]["code"] == "upload_too_large"
+    assert b"connection" not in slightly_over["headers"]
+    at_bound = _declared_upload(app, limit * BodySizeLimitMiddleware.DISCARD_FACTOR)
+    assert b"connection" not in at_bound["headers"]
+
+    huge = _declared_upload(app, limit * BodySizeLimitMiddleware.DISCARD_FACTOR + 1)
+    assert huge["status"] == 413 and huge["body"]["code"] == "upload_too_large"
+    assert huge["headers"][b"connection"] == b"close"
+
+
 @pytest.mark.parametrize("install_handler", [True, False])
 def test_body_limit_counts_streamed_chunks(install_handler):
     """Chunked bodies without Content-Length are cut off once over the limit."""
@@ -235,6 +298,8 @@ def test_body_limit_counts_streamed_chunks(install_handler):
     assert "too large" in body["detail"] or "过大" in body["detail"]
     if install_handler:
         assert body["code"] == "upload_too_large"
+    # A body without a declared end is cut off, not drained.
+    assert (b"connection", b"close") in [(k.lower(), v.lower()) for k, v in start["headers"]]
 
 
 @pytest.mark.parametrize("ip,key", [
