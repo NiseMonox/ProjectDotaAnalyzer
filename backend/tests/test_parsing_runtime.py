@@ -8,7 +8,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -99,10 +101,15 @@ def _process_gone(pid: int) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return True
-    try:  # killed but not yet reaped by init: a zombie is gone for our purposes
-        return Path(f"/proc/{pid}/status").read_text().find("State:\tZ") >= 0
-    except OSError:
-        return True
+    # Still in the process table. Killed but not yet reaped by init (a zombie)
+    # is gone for our purposes: /proc says so on Linux, ps where there is none (macOS).
+    if Path("/proc/self/status").exists():
+        try:
+            return "State:\tZ" in Path(f"/proc/{pid}/status").read_text()
+        except OSError:
+            return True
+    state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    return not state or state.startswith("Z")
 
 
 def _wait_for(path: Path, timeout: float = 10.0) -> None:
@@ -265,3 +272,138 @@ def test_legacy_check_requirements_raises_unavailable(env):
     env["jar"].unlink()
     with pytest.raises(ParserUnavailableError):
         ClarityParser()._check_requirements()
+
+
+# ---------------------------------------------------------------------------
+# Probe cache, event-loop blocking, leftover JVMs
+# ---------------------------------------------------------------------------
+
+def test_failed_probe_is_retried_after_a_while(env, monkeypatch):
+    monkeypatch.setenv("FAKE_JAVA_VERSION", 'java version "1.8.0_292"')
+    assert asyncio.run(check_clarity_available()) is False
+    assert asyncio.run(check_clarity_available()) is False
+    assert _log_lines(env).count("version") == 1               # a failure is cached too
+    monkeypatch.setenv("FAKE_JAVA_VERSION", 'openjdk version "17.0.9" 2023-10-17')
+    assert asyncio.run(check_clarity_available()) is False      # ... for a while
+    monkeypatch.setattr(parser, "_JAVA_PROBE_RETRY_S", 0.0)
+    assert asyncio.run(check_clarity_available()) is True       # then probed again
+    monkeypatch.setattr(parser, "_JAVA_PROBE_RETRY_S", 300.0)
+    assert asyncio.run(check_clarity_available()) is True       # a success never expires
+    assert _log_lines(env).count("version") == 2
+
+
+def test_availability_check_never_waits_for_the_probe_lock(env):
+    assert asyncio.run(check_clarity_available()) is True
+    held, release = threading.Event(), threading.Event()
+
+    def other_callers_probe():  # holds the lock like a java -version run in a worker thread
+        with parser._java_probe_lock:
+            held.set()
+            release.wait(3)
+
+    worker = threading.Thread(target=other_callers_probe)
+    worker.start()
+    assert held.wait(5)
+    try:
+        started = time.monotonic()
+        assert asyncio.run(check_clarity_available()) is True
+        assert get_parser("auto").name() == "clarity"
+        assert time.monotonic() - started < 1.5      # answered from the cache, lock or no lock
+    finally:
+        release.set()
+        worker.join()
+
+
+def test_decode_and_transform_run_off_the_event_loop(env, monkeypatch):
+    seen = {}
+    original = ClarityParser._transform_data
+
+    def spy(self, raw):
+        seen["thread"] = threading.current_thread()
+        return original(self, raw)
+
+    monkeypatch.setattr(ClarityParser, "_transform_data", spy)
+    match = asyncio.run(ClarityParser().parse(_replay(env, "ok")))
+    assert match.match_id == 5
+    assert seen["thread"] is not threading.main_thread()
+
+
+def test_kill_running_parsers_stops_leftover_jvms(env):
+    replay = _replay(env, "sleep3")
+
+    async def scenario():
+        task = asyncio.create_task(ClarityParser().parse(replay))
+        await asyncio.to_thread(_wait_for, Path(replay + ".pids"))
+        assert len(parser._live_clarity_pids) == 1
+        assert parser.kill_running_parsers() == 1      # what the atexit hook and the server shutdown do
+        # The parse ends because its JVM was killed, long before the JVM would stop by itself
+        # (60 s). The replay is not at fault: a ReplayParseError would make the server answer
+        # "corrupted replay" and delete the stored file.
+        with pytest.raises(ParserUnavailableError) as info:
+            await asyncio.wait_for(task, timeout=10)
+        assert "stopped" in str(info.value)
+
+    started = time.monotonic()
+    asyncio.run(scenario())
+    assert time.monotonic() - started < 20
+    pid, child = (int(v) for v in Path(replay + ".pids").read_text().split())
+    assert _process_gone(pid)
+    deadline = time.monotonic() + 5
+    while not _process_gone(child) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert _process_gone(child)
+    assert not parser._live_clarity_pids and parser.kill_running_parsers() == 0
+    assert not parser._stopped_clarity_pids        # a later process with that pid is judged on its own
+
+
+# ---------------------------------------------------------------------------
+# tools/setup_parser.sh: the committed jar is used, not rebuilt
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(os.name != "posix", reason="shell script")
+def test_setup_script_does_not_rebuild_an_existing_jar(tmp_path):
+    """The install runbook ran it on the server: with any JDK other than the pinned one the tracked
+    jar came out with other bytes, and the next `git pull` that brought a new jar was refused."""
+    tools = tmp_path / "tools"
+    source = tools / "clarity-analyzer"
+    source.mkdir(parents=True)
+    script = tools / "setup_parser.sh"
+    script.write_text((Path(__file__).resolve().parents[2] / "tools" / "setup_parser.sh").read_text(encoding="utf-8"),
+                      encoding="utf-8")
+    (source / "build.gradle").write_text("// stub\n", encoding="utf-8")
+    # A "build" that leaves a marker and a new jar, so a rebuild cannot go unnoticed
+    (source / "gradlew").write_text(
+        "#!/bin/sh\ntouch built.marker\nmkdir -p build/libs\nprintf 'rebuilt' > build/libs/clarity-analyzer.jar\n",
+        encoding="utf-8")
+    jdk = tmp_path / "jdk" / "bin"
+    jdk.mkdir(parents=True)
+    (jdk / "java").write_text(
+        "#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then echo 'openjdk version \"17.0.9\" 2023-10-17' >&2; exit 0; fi\n"
+        "echo 'clarity-analyzer 1.4.0'; exit 64\n", encoding="utf-8")
+    (jdk / "javac").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    for tool in (jdk / "java", jdk / "javac"):
+        tool.chmod(0o755)
+    jar = tools / "clarity-analyzer.jar"
+    jar.write_bytes(b"committed")
+
+    def run(**extra):
+        env = {"PATH": os.environ.get("PATH", ""), "JAVA_HOME": str(tmp_path / "jdk"), **extra}
+        return subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env, timeout=60)
+
+    for value in ({}, {"REBUILD": "0"}, {"REBUILD": ""}):
+        done = run(**value)
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert "Using the existing JAR" in done.stdout and "analyzer 1.4.0" in done.stdout
+        assert jar.read_bytes() == b"committed" and not (source / "built.marker").exists()
+    # Asked for, or with no jar at all, it builds
+    done = run(REBUILD="1")
+    assert done.returncode == 0 and "Building from source" in done.stdout
+    assert jar.read_bytes() == b"rebuilt" and (source / "built.marker").exists()
+    jar.unlink()
+    (source / "built.marker").unlink()
+    done = run()
+    assert done.returncode == 0 and jar.read_bytes() == b"rebuilt" and (source / "built.marker").exists()
+    # The runbook no longer tells a server to rebuild
+    readme = (Path(__file__).resolve().parents[2] / "deploy" / "README.md").read_text(encoding="utf-8")
+    assert "Do NOT rebuild the jar on the server" in readme and "git checkout -- tools/clarity-analyzer.jar" in readme
+    assert "rebuild the jar with `bash tools/setup_parser.sh`" not in readme

@@ -5,7 +5,9 @@ plugins {
 }
 
 group = 'com.dotaanalyzer'
-version = '1.1.0'
+// Written to the JAR manifest (Implementation-Version) and by the analyzer into every output
+// (`analyzer_version`): raise it with each change of the output.
+version = '1.4.0'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -16,6 +18,16 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     // Produce Java 17 bytecode/API even when built with a newer JDK.
     options.release = 17
+}
+
+// The built JAR is committed (tools/clarity-analyzer.jar): identical sources must give an
+// identical file, so no timestamps and a fixed entry order. That holds for one JDK build:
+// the committed JAR was built with Eclipse Temurin 17.0.13+11 (tools/jdk17). Another JDK 17
+// (tried: Homebrew OpenJDK 17.0.20.1) compiles ReplayAnalyzer.class to different bytes that
+// give the same output, so a rebuild on such a machine shows the tracked JAR as modified.
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
 }
 
 // Optional extra Maven mirror, tried before Maven Central (see settings.gradle).
@@ -29,10 +41,22 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.skadistats:clarity:3.1.3'
+    // clarity 4.x reads replays of current game builds that 3.1.3 gives up on ("Entity not
+    // found for update"); it still runs on Java 17. Do not take 5.x: it needs Java 21.
+    implementation 'com.skadistats:clarity:4.0.3'
+    // clarity asks for clarity-protobuf [6.1,7.0); pinned so that the committed JAR stays reproducible.
+    implementation('com.skadistats:clarity-protobuf') { version { strictly '6.3' } }
     implementation 'com.google.code.gson:gson:2.10.1'
     // clarity logs through SLF4J; bind it to a no-op logger so stderr stays readable.
     runtimeOnly 'org.slf4j:slf4j-nop:2.0.7'
+
+    // Unit tests (`./gradlew test`); not run by the shadowJar build of setup_parser.sh.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 application {
@@ -48,6 +72,8 @@ shadowJar {
 
 jar {
     manifest {
-        attributes 'Main-Class': 'com.dotaanalyzer.ReplayAnalyzer'
+        // shadowJar inherits this manifest.
+        attributes 'Main-Class': 'com.dotaanalyzer.ReplayAnalyzer',
+                   'Implementation-Version': project.version
     }
 }

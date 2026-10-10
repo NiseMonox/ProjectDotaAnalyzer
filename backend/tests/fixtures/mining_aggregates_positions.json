@@ -1,0 +1,230 @@
+{
+ "generated_at": "2026-10-10T21:42:27Z",
+ "source": "pro",
+ "patch": "7.41",
+ "matches_mined": 100,
+ "min_samples": {
+  "position": 30,
+  "hero_games": 10,
+  "item": 8
+ },
+ "sufficient": true,
+ "positions": {
+  "1": {
+   "sample": 200,
+   "cs_at_10_sample": 198,
+   "cs_at_10_mean": 65.086,
+   "cs_at_10_p75": 74.0,
+   "gpm_mean": 718.17,
+   "deaths_mean": 4.32,
+   "kill_participation_mean": 0.581,
+   "kill_participation_p75": 0.693,
+   "obs_placed_mean": 0.19,
+   "cs_curve": {
+    "5": {
+     "sample": 200,
+     "mean": 23.96,
+     "p75": 28.0
+    },
+    "10": {
+     "sample": 198,
+     "mean": 65.09,
+     "p75": 74.0
+    },
+    "15": {
+     "sample": 192,
+     "mean": 126.76,
+     "p75": 145.0
+    },
+    "20": {
+     "sample": 186,
+     "mean": 202.88,
+     "p75": 231.0
+    },
+    "25": {
+     "sample": 176,
+     "mean": 278.47,
+     "p75": 322.75
+    },
+    "30": {
+     "sample": 158,
+     "mean": 349.27,
+     "p75": 411.25
+    }
+   }
+  },
+  "2": {
+   "sample": 200,
+   "cs_at_10_sample": 198,
+   "cs_at_10_mean": 57.283,
+   "cs_at_10_p75": 64.0,
+   "gpm_mean": 568.69,
+   "deaths_mean": 4.75,
+   "kill_participation_mean": 0.696,
+   "kill_participation_p75": 0.771,
+   "obs_placed_mean": 1.61,
+   "cs_curve": {
+    "5": {
+     "sample": 200,
+     "mean": 24.76,
+     "p75": 29.0
+    },
+    "10": {
+     "sample": 198,
+     "mean": 57.28,
+     "p75": 64.0
+    },
+    "15": {
+     "sample": 192,
+     "mean": 96.27,
+     "p75": 107.0
+    },
+    "20": {
+     "sample": 186,
+     "mean": 136.89,
+     "p75": 151.25
+    },
+    "25": {
+     "sample": 176,
+     "mean": 182.61,
+     "p75": 203.0
+    },
+    "30": {
+     "sample": 158,
+     "mean": 227.77,
+     "p75": 254.5
+    }
+   }
+  },
+  "3": {
+   "sample": 200,
+   "cs_at_10_sample": 198,
+   "cs_at_10_mean": 54.793,
+   "cs_at_10_p75": 64.0,
+   "gpm_mean": 568.86,
+   "deaths_mean": 5.305,
+   "kill_participation_mean": 0.627,
+   "kill_participation_p75": 0.722,
+   "obs_placed_mean": 0.18,
+   "cs_curve": {
+    "5": {
+     "sample": 200,
+     "mean": 20.03,
+     "p75": 24.0
+    },
+    "10": {
+     "sample": 198,
+     "mean": 54.79,
+     "p75": 64.0
+    },
+    "15": {
+     "sample": 192,
+     "mean": 100.49,
+     "p75": 119.0
+    },
+    "20": {
+     "sample": 186,
+     "mean": 149.72,
+     "p75": 174.25
+    },
+    "25": {
+     "sample": 176,
+     "mean": 198.84,
+     "p75": 228.5
+    },
+    "30": {
+     "sample": 158,
+     "mean": 245.87,
+     "p75": 285.0
+    }
+   }
+  },
+  "4": {
+   "sample": 200,
+   "cs_at_10_sample": 198,
+   "cs_at_10_mean": 8.636,
+   "cs_at_10_p75": 11.0,
+   "gpm_mean": 326.015,
+   "deaths_mean": 7.335,
+   "kill_participation_mean": 0.668,
+   "kill_participation_p75": 0.75,
+   "obs_placed_mean": 7.24,
+   "cs_curve": {
+    "5": {
+     "sample": 200,
+     "mean": 3.75,
+     "p75": 5.0
+    },
+    "10": {
+     "sample": 198,
+     "mean": 8.64,
+     "p75": 11.0
+    },
+    "15": {
+     "sample": 192,
+     "mean": 16.71,
+     "p75": 21.0
+    },
+    "20": {
+     "sample": 186,
+     "mean": 25.82,
+     "p75": 33.0
+    },
+    "25": {
+     "sample": 176,
+     "mean": 35.56,
+     "p75": 46.0
+    },
+    "30": {
+     "sample": 158,
+     "mean": 45.09,
+     "p75": 58.0
+    }
+   }
+  },
+  "5": {
+   "sample": 200,
+   "cs_at_10_sample": 198,
+   "cs_at_10_mean": 7.47,
+   "cs_at_10_p75": 10.0,
+   "gpm_mean": 316.365,
+   "deaths_mean": 8.3,
+   "kill_participation_mean": 0.64,
+   "kill_participation_p75": 0.75,
+   "obs_placed_mean": 9.875,
+   "cs_curve": {
+    "5": {
+     "sample": 200,
+     "mean": 3.35,
+     "p75": 5.0
+    },
+    "10": {
+     "sample": 198,
+     "mean": 7.47,
+     "p75": 10.0
+    },
+    "15": {
+     "sample": 192,
+     "mean": 13.95,
+     "p75": 16.75
+    },
+    "20": {
+     "sample": 186,
+     "mean": 21.29,
+     "p75": 26.0
+    },
+    "25": {
+     "sample": 176,
+     "mean": 28.81,
+     "p75": 36.75
+    },
+    "30": {
+     "sample": 158,
+     "mean": 36.93,
+     "p75": 46.0
+    }
+   }
+  }
+ },
+ "hero_item_timings": {}
+}

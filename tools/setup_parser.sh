@@ -2,7 +2,7 @@
 # Setup script for the Clarity replay parser (tools/clarity-analyzer.jar).
 #
 # REQUIREMENTS:
-#   - Java 17+ (clarity 3.x requires Java 17; Java 11 is NOT sufficient)
+#   - Java 17+ (clarity 4.x requires Java 17; Java 11 is NOT sufficient)
 #   - A JDK (javac) when building from source
 #
 # Java is looked up in this order:
@@ -11,12 +11,28 @@
 #   2. $JAVA_HOME
 #   3. `java` on PATH
 #
+# The committed JAR is used as it is: this script only checks Java and that
+# the JAR starts. It builds from source when the JAR is missing, or when asked
+# to with REBUILD=1 (after changing tools/clarity-analyzer/).
+#
+# Why not always: the committed JAR was built with Eclipse Temurin 17.0.13+11,
+# and the build is reproducible for that JDK build only. Another JDK 17
+# (Ubuntu's openjdk-17, Homebrew) gives a JAR that behaves the same but is not
+# byte-identical: git then shows the tracked tools/clarity-analyzer.jar as
+# modified, and the next `git pull` that brings a new JAR is refused. If that
+# happened on a server: `git checkout -- tools/clarity-analyzer.jar`.
+#
 # Environment:
+#   REBUILD        1 = build from source even though the JAR exists
 #   MAVEN_MIRROR   optional extra Maven repository tried before Maven Central,
-#                  e.g. https://maven.aliyun.com/repository/public (China)
+#                  e.g. https://maven.aliyun.com/repository/public (China).
+#                  The Gradle wrapper itself is downloaded from
+#                  services.gradle.org, which this does not cover: use
+#                  GRADLE_CMD where that host cannot be reached.
 #   GRADLE_CMD     build with this Gradle instead of ./gradlew (e.g. "gradle")
 #
-# Usage: bash tools/setup_parser.sh
+# Usage: bash tools/setup_parser.sh            # check Java + the committed JAR
+#        REBUILD=1 bash tools/setup_parser.sh  # rebuild the JAR from source
 
 set -euo pipefail
 
@@ -63,7 +79,7 @@ if [ -z "$JAVA_HOME_DIR" ] && command -v java > /dev/null 2>&1; then
 fi
 
 if [ -z "$JAVA_HOME_DIR" ] || [ ! -x "${JAVA_HOME_DIR}/bin/java" ]; then
-    echo "ERROR: Java not found. Java 17+ is required for clarity 3.x."
+    echo "ERROR: Java not found. Java 17+ is required for clarity 4.x."
     echo ""
     echo "  Install Java 17+:"
     echo "    Ubuntu:  sudo apt install openjdk-17-jdk"
@@ -85,7 +101,7 @@ if [ "${JAVA_MAJOR:-0}" = "1" ]; then
 fi
 if ! [ "${JAVA_MAJOR:-0}" -ge 17 ] 2> /dev/null; then
     echo ""
-    echo "ERROR: Java ${JAVA_MAJOR:-?} detected, but Java 17+ is required (clarity 3.x)."
+    echo "ERROR: Java ${JAVA_MAJOR:-?} detected, but Java 17+ is required (clarity 4.x)."
     echo ""
     exit 1
 fi
@@ -93,7 +109,16 @@ echo ""
 
 # --- Build or reuse clarity-analyzer.jar --------------------------------------
 
-if [ -d "$CLARITY_SRC" ] && [ -f "$CLARITY_SRC/build.gradle" ]; then
+case "${REBUILD:-0}" in
+    1 | true | yes | on) REBUILD=1 ;;
+    *) REBUILD=0 ;;
+esac
+
+if [ -f "$CLARITY_JAR" ] && [ "$REBUILD" != "1" ]; then
+    echo "Using the existing JAR: $CLARITY_JAR"
+    echo "(REBUILD=1 builds it from tools/clarity-analyzer/ instead; see the note at the top of this script.)"
+
+elif [ -d "$CLARITY_SRC" ] && [ -f "$CLARITY_SRC/build.gradle" ]; then
     echo "Found clarity-analyzer source at: $CLARITY_SRC"
 
     if [ ! -x "${JAVA_HOME_DIR}/bin/javac" ]; then
@@ -127,7 +152,9 @@ if [ -d "$CLARITY_SRC" ] && [ -f "$CLARITY_SRC/build.gradle" ]; then
 
     BUILT_JAR="${CLARITY_SRC}/build/libs/clarity-analyzer.jar"
     if [ "$BUILD_OK" = "1" ] && [ -f "$BUILT_JAR" ]; then
-        cp "$BUILT_JAR" "$CLARITY_JAR"
+        # Replace atomically: a running backend may be starting a parse from the old JAR.
+        cp "$BUILT_JAR" "${CLARITY_JAR}.new"
+        mv -f "${CLARITY_JAR}.new" "$CLARITY_JAR"
         echo ""
         echo "Built and copied JAR to: $CLARITY_JAR"
     elif [ -f "$CLARITY_JAR" ]; then
@@ -140,7 +167,7 @@ if [ -d "$CLARITY_SRC" ] && [ -f "$CLARITY_SRC/build.gradle" ]; then
     fi
 
 elif [ -f "$CLARITY_JAR" ]; then
-    echo "clarity-analyzer.jar already exists at: $CLARITY_JAR"
+    echo "No source to rebuild from; keeping the existing JAR: $CLARITY_JAR"
 
 else
     echo "No clarity-analyzer source or JAR found."
@@ -151,20 +178,24 @@ fi
 # --- Verify the JAR starts (no arguments -> usage, exit code 64) --------------
 
 set +e
-"$JAVA_CMD" -jar "$CLARITY_JAR" > /dev/null 2>&1
+USAGE="$("$JAVA_CMD" -jar "$CLARITY_JAR" 2>&1)"
 STATUS=$?
 set -e
 if [ "$STATUS" != "64" ]; then
     echo "WARNING: the parser JAR did not start as expected (exit code ${STATUS})."
 fi
+# First line of the usage text: "clarity-analyzer <version>" (since 1.4.0).
+JAR_VERSION="$(printf '%s\n' "$USAGE" | sed -n '1s/^clarity-analyzer \([0-9][0-9.]*\)$/\1/p')"
 
 echo ""
 echo "=== Setup Complete ==="
-echo "  Parser JAR: ${CLARITY_JAR}"
+echo "  Parser JAR: ${CLARITY_JAR} (analyzer ${JAR_VERSION:-version unknown})"
 echo "  Java:       ${JAVA_CMD} (${JAVA_VERSION})"
 echo ""
 echo "To test, run:"
-echo "  \"${JAVA_CMD}\" -jar \"${CLARITY_JAR}\" <path-to-replay.dem>"
+echo "  \"${JAVA_CMD}\" -jar \"${CLARITY_JAR}\" <path-to-replay.dem> > raw.json"
+echo "To check a parse against OpenDota's data for the same match:"
+echo "  python3 \"${TOOLS_DIR}/compare_with_opendota.py\" raw.json <opendota-match.json>"
 echo ""
 echo "Backend knobs: CLARITY_JVM_XMX (JVM heap, default 1536m), CLARITY_TIMEOUT_S (default 300),"
 echo "CLARITY_MAX_CONCURRENCY (parallel parses, default 1)."
