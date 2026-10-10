@@ -18,8 +18,10 @@ trustworthiness:
    team: Radiant's safe lane is the bottom, Dire's is the top.
 2. **Farm ranking within a lane** — the safe lane holds pos 1 + pos 5, the
    off lane pos 3 + pos 4; the higher net-worth player is the core.
-3. **Hero archetype** from the knowledge base — tiebreaker for players that
-   could not be placed by lane (roamers / unknown lane).
+3. **Hero archetype** from the knowledge base — for players that could not
+   be placed by lane (roamers / unknown lane, or a match without lane data):
+   the open core positions go to the heroes that are usually cores, richest
+   first, and the rest are supports.
 
 Every position 1-5 is assigned at most once per team.
 """
@@ -72,7 +74,7 @@ class Position:
     label_zh: str
     label_en: str
     confidence: str       # "high", "medium", "low"
-    method: str           # "lane+nw", "archetype+nw", "nw_only", "unknown"
+    method: str           # "lane_nw", "archetype_nw", "nw_only", "unknown"
 
     def label(self, lang: str = "zh") -> str:
         return self.label_en if lang == "en" else self.label_zh
@@ -119,10 +121,6 @@ def hero_typical_position(hero_name: str) -> int:
         return position_for_role(info.get("role", ""))
     except Exception:
         return 0
-
-
-# Backward-compatible private alias.
-_hero_typical_position = hero_typical_position
 
 
 def lane_role_of(player: PlayerData) -> int:
@@ -176,7 +174,7 @@ def derive_team_positions(team_players: list[PlayerData]) -> dict[int, Position]
             key=lambda p: (hero_typical_position(p.hero_name) == 2, _farm_key(p)),
             reverse=True,
         )
-        _take(mid_candidates[0], 2, "high", "lane+nw")
+        _take(mid_candidates[0], 2, "high", "lane_nw")
 
     # --- Step 2: safe lane -> core 1 + support 5, off lane -> core 3 + support 4.
     def _assign_lane(lane_role: int, core_pos: int, support_pos: int) -> None:
@@ -189,31 +187,46 @@ def derive_team_positions(team_players: list[PlayerData]) -> dict[int, Position]
         group.sort(key=_farm_key, reverse=True)
         if len(group) == 1:
             # Lone player on a lane: most likely the core.
-            _take(group[0], core_pos, "medium", "lane+nw")
+            _take(group[0], core_pos, "medium", "lane_nw")
             return
-        _take(group[0], core_pos, "high", "lane+nw")
+        _take(group[0], core_pos, "high", "lane_nw")
         # Poorest player of the lane is the hard-laning support; anyone in
         # between (3 players in one lane) is decided in step 3.
-        _take(group[-1], support_pos, "high" if len(group) == 2 else "medium", "lane+nw")
+        _take(group[-1], support_pos, "high" if len(group) == 2 else "medium", "lane_nw")
 
     _assign_lane(LANE_ROLE_SAFE, core_pos=1, support_pos=5)
     _assign_lane(LANE_ROLE_OFF, core_pos=3, support_pos=4)
 
-    # --- Step 3: leftovers (roamers, unknown lane, 3rd player in a lane).
-    # Prefer the hero archetype when its position is still open, else the
-    # lowest open support slot for the poorest players.
+    # --- Step 3: leftovers (roamers, unknown lane, 3rd player in a lane; the
+    # whole team when the match has no lane data). Split them into cores and
+    # supports first: the open core positions go to the players ranked by
+    # "usually played as a core", then farm. A plain farm ranking would turn
+    # a support that out-farmed a losing core into the core, and assigning
+    # the poorest first would push a rich core into position 5.
     rest = [p for p in team_players if p.player_slot not in positions]
-    for p in sorted(rest, key=_farm_key):
-        if not available:
-            break
-        archetype = hero_typical_position(p.hero_name)
-        if archetype in available:
-            _take(p, archetype, "medium", "archetype+nw")
-            continue
-        for candidate in (5, 4, 3, 1, 2):
-            if candidate in available:
-                _take(p, candidate, "low", "nw_only")
-                break
+    archetypes = {p.player_slot: hero_typical_position(p.hero_name) for p in rest}
+    open_cores = [n for n in available if n <= 3]
+    open_supports = [n for n in available if n >= 4]
+    ranked = sorted(rest, key=lambda p: (archetypes[p.player_slot] in (1, 2, 3), _farm_key(p)), reverse=True)
+    core_archetypes = sum(1 for p in rest if archetypes[p.player_slot] in (1, 2, 3))
+    n_cores = min(len(open_cores), max(len(rest) - len(open_supports), core_archetypes))
+    cores, supports = ranked[:n_cores], ranked[n_cores:]
+
+    def _place(group: list[PlayerData], order: tuple[int, ...]) -> None:
+        for p in sorted(group, key=_farm_key, reverse=True):
+            archetype = archetypes[p.player_slot]
+            if archetype in order and archetype in available:
+                _take(p, archetype, "medium", "archetype_nw")
+                continue
+            for candidate in order:
+                if candidate in available:
+                    _take(p, candidate, "low", "nw_only")
+                    break
+
+    _place(cores, (1, 2, 3))
+    _place(supports, (4, 5))
+    # More supports than open support positions (incomplete teams only).
+    _place([p for p in supports if p.player_slot not in positions], (3, 1, 2))
 
     return positions
 
@@ -231,6 +244,12 @@ def derive_match_positions(players: list[PlayerData]) -> dict[int, Position]:
 def player_position(match: MatchData, player_slot: int) -> Position | None:
     """Derived position of one player of ``match`` (None when not found)."""
     return derive_match_positions(match.players).get(player_slot)
+
+
+def position_number_label(number: object, lang: str = "zh") -> str:
+    """Localized label of a position number (1-5); "" for anything else."""
+    labels = _POSITION_LABELS_EN if lang == "en" else _POSITION_LABELS_ZH
+    return labels.get(number, "") if isinstance(number, int) else ""
 
 
 def position_label(position: Position | None, lang: str = "zh", fallback: str = "") -> str:

@@ -32,10 +32,12 @@ from backend.app.ai.models import (
     DecisionPoint,
     normalize_grade,
 )
+from backend.app.ai.rag.types import SOURCE_TYPES
 from test_ai_pipeline_helpers import (
     CJK_RE,
     default_players,
     item,
+    knowledge_refs,
     make_match,
     make_player,
     observer,
@@ -47,6 +49,7 @@ _ARCHETYPES = {
     "Juggernaut": 1, "Phantom Assassin": 1, "Puck": 2, "Lina": 2, "Axe": 3,
     "Rubick": 4, "Lion": 4, "Crystal Maiden": 5, "Witch Doctor": 5,
 }
+_REAL_HERO_TYPICAL_POSITION = positions.hero_typical_position  # before the fixture below replaces it
 
 
 @pytest.fixture(autouse=True)
@@ -56,6 +59,7 @@ def _isolate_knowledge(monkeypatch):
     monkeypatch.setattr(positions, "hero_typical_position", lambda hero: _ARCHETYPES.get(hero, 0))
     from backend.app.ai import knowledge_base
     monkeypatch.setattr(knowledge_base, "get_knowledge_for_context", lambda ctx, lang="zh": "")
+    monkeypatch.setattr(knowledge_base, "related_refs", lambda ctx, lang="zh", k=3: knowledge_refs(k))
 
 
 def _walk_strings(obj, path=""):
@@ -77,7 +81,7 @@ def test_game_phase_boundaries_are_shared():
     assert [phases.game_phase(t) for t in (0, 29, 30, 599, 600, 1499, 1500)] == [
         "pregame", "pregame", "laning", "laning", "mid_game", "mid_game", "late_game",
     ]
-    assert decision_detector._game_phase(600) == context_builder._get_game_phase(600) == "mid_game"
+    assert decision_detector.game_phase is phases.game_phase  # one definition, no local copy
 
 
 def test_short_trailing_phase_is_merged():
@@ -131,7 +135,7 @@ def test_resolve_role_never_crashes_for_heroes_outside_the_fallback(monkeypatch)
         raise RuntimeError("knowledge layer broken")
 
     monkeypatch.setattr(knowledge_base, "get_hero_info", boom)
-    monkeypatch.setattr(positions, "hero_typical_position", positions.__dict__["_hero_typical_position"])
+    monkeypatch.setattr(positions, "hero_typical_position", _REAL_HERO_TYPICAL_POSITION)
     assert pro_patterns.resolve_role(None, "Tinker") == "offlane"
     assert pro_patterns.resolve_role(None, "Tinker", position=2) == "mid"
     match = make_match()
@@ -141,19 +145,58 @@ def test_resolve_role_never_crashes_for_heroes_outside_the_fallback(monkeypatch)
     assert "Benchmark" in text and not CJK_RE.search(text)
 
 
+def test_learned_overlay_rates_a_player_against_his_side_of_the_team(monkeypatch):
+    """First full learning run (2026-10-11), real replay 9037980041: the position 5
+    Techies had 382 GPM and was rated "below average", because the hero's percentiles
+    over all its games (median 418) are pulled up by mid-lane Techies. The numbers
+    below are OpenDota's answers of that day for role=core / role=support."""
+    learned = {"techies": {
+        "gold_per_min": {"p10": 304, "p50": 418, "p90": 559},                      # all games: not used
+        "roles": {"core": {"gold_per_min": {"p10": 365, "p50": 499, "p90": 642}},
+                  "support": {"gold_per_min": {"p10": 288, "p50": 392, "p90": 484}}},
+    }}
+    monkeypatch.setattr(pro_patterns, "_load_learned_benchmarks", lambda: learned)
+    bench = pro_patterns._metric_bench("Techies", "gold_per_min", pro_patterns.GPM_BENCHMARKS, "support_5")
+    assert (bench["good"], bench["average"], bench["poor"], bench["scope"], bench["side"]) == (484, 392, 288, "hero", "support")
+    assert pro_patterns._rate_higher_is_better(382, bench["good"], bench["average"], bench["poor"]) == "below_average"
+    assert pro_patterns._rate_higher_is_better(400, bench["good"], bench["average"], bench["poor"]) == "average"
+    core = pro_patterns._metric_bench("Techies", "gold_per_min", pro_patterns.GPM_BENCHMARKS, "mid")
+    assert (core["average"], core["side"]) == (499, "core")
+    for lang, text in (("en", "Techies as a support (positions 4-5): OpenDota median (all ranks) 392"),
+                       ("zh", "Techies打4/5号位时在OpenDota全分段中位数392")):
+        assert pro_patterns._population_ref(bench, "Techies", "x", lang) == text
+    assert pro_patterns._population_ref(core, "Techies", "x", "zh") == "Techies打1/2/3号位时在OpenDota全分段中位数499"
+    context = pro_patterns.get_benchmark_context("Techies", "support_5", 900, lang="zh")
+    assert "- Techies打4/5号位时在OpenDota全分段的GPM中位数（非职业数据）: 392" in context
+
+    # A file of an earlier run has the mixed percentiles only: the role table is used, not the mix
+    del learned["techies"]["roles"]
+    fallback = pro_patterns._metric_bench("Techies", "gold_per_min", pro_patterns.GPM_BENCHMARKS, "support_5")
+    assert (fallback["average"], fallback["scope"]) == (pro_patterns.GPM_BENCHMARKS["support_5"]["average"], "role")
+    # ... and one half missing falls back for that side alone
+    learned["techies"]["roles"] = {"core": {"gold_per_min": {"p10": 365, "p50": 499, "p90": 642}}}
+    assert pro_patterns._metric_bench("Techies", "gold_per_min", pro_patterns.GPM_BENCHMARKS, "support_4")["scope"] == "role"
+    assert pro_patterns._metric_bench("Techies", "gold_per_min", pro_patterns.GPM_BENCHMARKS, "carry")["scope"] == "hero"
+
+
 def test_learned_overlay_is_labelled_as_population_data(monkeypatch):
     monkeypatch.setattr(pro_patterns, "_load_learned_benchmarks", lambda: {
-        "tinker": {"gold_per_min": {"p10": 300, "p50": 450, "p90": 600}},
+        "tinker": {"roles": {"core": {"gold_per_min": {"p10": 300, "p50": 450, "p90": 600}}}},
     })
     match = make_match()
     tinker = next(p for p in match.players if p.hero_name == "Tinker")
     report = pro_patterns.format_pro_comparison(pro_patterns.compare_player(tinker, match, lang="en", position=2))
     gpm = next(c for c in report["comparisons"] if c["metric"] == "gpm")
     assert gpm["benchmark_source"] == pro_patterns.SOURCE_POPULATION
-    assert "OpenDota" in gpm["description"]
+    assert "Tinker as a core (positions 1-3): OpenDota median (all ranks) 450" in gpm["description"]
+    # Without learned percentiles the role table is used: all-rank data as well, never "pro".
     dmg = next(c for c in report["comparisons"] if c["metric"] == "damage_per_min")
-    assert dmg["benchmark_source"] == pro_patterns.SOURCE_PRO
-    assert "not pro" in pro_patterns.get_benchmark_context("Tinker", "mid", 900, lang="en")
+    assert dmg["benchmark_source"] == pro_patterns.SOURCE_POPULATION
+    assert "OpenDota median of Mid (Pos 2) heroes (all ranks) 660" in dmg["description"]
+    assert "pro" not in dmg["description"].lower()
+    context = pro_patterns.get_benchmark_context("Tinker", "mid", 900, lang="en")
+    assert "Tinker as a core (positions 1-3): median GPM on OpenDota (all ranks, not pro): 450" in context
+    assert "Median hero damage per minute of typical Mid (Pos 2) heroes on OpenDota (all ranks, not pro): 660" in context
 
 
 def test_patch_version_is_resolved_lazily():
@@ -325,11 +368,16 @@ def test_match_situation_is_from_the_players_team_perspective():
 
 
 def test_inventory_skips_consumables():
+    # Blink Dagger and Battle Fury share no component, so the result does not
+    # depend on whether the game data on disk has item recipes.
     player = make_player(0, "Juggernaut", items=[
-        item("Tango", "tango", -80), item("Quelling Blade", "quelling_blade", -70),
+        item("Tango", "tango", -80), item("Blink Dagger", "blink", -70),
         item("Observer Ward", "ward_observer", 100), item("Battle Fury", "bfury", 800),
+        # 7.41 consumables (the Forager's Kit yields).
+        item("Forager's Health", "foragers_health", 300), item("Forager's Mana", "foragers_mana", 310),
+        item("Forager's Stats", "foragers_stats", 320),
     ])
-    assert context_builder._items_at_time(player, 900) == ["Quelling Blade", "Battle Fury"]
+    assert context_builder._items_at_time(player, 900) == ["Blink Dagger", "Battle Fury"]
 
 
 # ---------------------------------------------------------------------------
@@ -435,17 +483,46 @@ def test_english_rules_report_has_no_cjk(slot):
 
 
 def test_rules_report_contract_fields():
-    report = _rules_report(make_match(), 1, "zh")
+    from backend.app.models import KillEvent
+
+    players = default_players()
+    players[1].multi_kills = {"2": 1}        # a good play the kill log cannot date (it shows no double kill)
+    match = make_match(players, kills_log=[
+        KillEvent(time=400.5, victim_slot=1, killer_slot=129, x=2500.0, y=3800.0),
+        KillEvent(time=900.0, victim_slot=129, killer_slot=1),
+    ])
+    report = _rules_report(match, 1, "zh")
     data = report.to_dict()
-    assert coach.REPORT_SCHEMA_VERSION == REPORT_SCHEMA_VERSION == 2
-    assert data["report_version"] == 2
+    assert coach.REPORT_SCHEMA_VERSION == REPORT_SCHEMA_VERSION == 4
+    assert data["report_version"] == 4
     assert data["llm_used"] is False and data["degraded"] is False
+    # Schema 4: how the knowledge sources of the report were retrieved.
+    assert set(data["knowledge"]) == {"mode", "embedder", "chunks", "vectors"}
+    assert data["knowledge"]["mode"] == "lexical"       # the test session ranks without vectors
+    assert data["knowledge"]["embedder"] is None and data["knowledge"]["vectors"] == 0
+    assert isinstance(data["knowledge"]["chunks"], int)  # 0 here: the knowledge layer is stubbed out
     assert data["overall_grade"] in ("S", "A", "B", "C", "D")
+    assert [d["time"] for d in data["death_analyses"]] == [400]
+    assert [(m["point_type"], m["time"]) for m in data["key_moments"]] == [("good_play", None)]  # unknown time
     for item_ in data["death_analyses"] + data["key_moments"]:
         assert item_["score"] in ("S", "A", "B", "C", "D")
-        assert item_["llm_used"] is False
+        assert item_["llm_used"] is False and item_["degraded"] is False
+        assert "agent_trace" not in item_  # not shown by the frontend, not shipped
+        # A rule evaluation read no knowledge: it lists the three best related entries, none cited.
+        assert [s["id"] for s in item_["sources"]] == ["test:entry_1", "test:entry_2", "test:entry_3"]
+        assert "cited_refs" not in item_
+        for source in item_["sources"]:
+            assert set(source) == {"id", "title", "source_type", "patch", "cited"}
+            assert source["cited"] is False and source["title"] and source["id"]
+            assert source["source_type"] in SOURCE_TYPES
+    assert data["phase_reviews"]
     for review in data["phase_reviews"]:
         assert review["score"] in ("S", "A", "B", "C", "D")
+        assert review["llm_used"] is False and review["degraded"] is False
+        assert "used_llm" not in review
+        assert isinstance(review["start_min"], int)
+        assert review["end_min"] is None or review["end_min"] > review["start_min"]
+        assert review["time_range"].endswith("分钟")  # localized
 
 
 def test_laning_review_uses_relative_lane_role_for_dire():

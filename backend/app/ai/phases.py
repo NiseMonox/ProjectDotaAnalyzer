@@ -20,6 +20,11 @@ extracts the player's KDA in the window, gold/xp per minute in that window,
 deaths, teamfights the player took part in, and the team-level state at the
 end of the window (gold/xp lead, towers).
 
+Kills, deaths and assists come from ``MatchData.kills_log``
+(:func:`counted_kills`), so the phases add up to the scoreboard. Only a
+source without a kill log falls back to teamfight records and is flagged
+``kda_estimated``.
+
 This module is pure data extraction — no LLM calls, no rendering.
 """
 from __future__ import annotations
@@ -28,7 +33,8 @@ import bisect
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from ..models import MatchData, PlayerData
+from ..game_constants import MAX_HERO_LEVEL, XP_FOR_LEVEL
+from ..models import KillEvent, MatchData, PlayerData
 
 # ---------------------------------------------------------------------------
 # Moment classification (shared by detector, context builder, prompts)
@@ -57,20 +63,66 @@ def is_laning(time_s: int) -> bool:
     return time_s < LANING_END
 
 
-# Cumulative XP needed per level (Dota 2, 7.3x). Index i = XP for level i+1.
-_XP_TABLE: tuple[int, ...] = (
-    0, 240, 640, 1160, 1760, 2440, 3200, 4000, 4900, 5900,          # 1-10
-    7000, 8200, 9500, 10900, 12400, 14000, 15700, 17500, 19400,     # 11-19
-    21400, 23600, 26000, 28600, 31400, 34400, 38400, 43400,         # 20-27
-    49400, 56400, 63900,                                            # 28-30
-)
-
-
 def level_from_xp(xp: int) -> int:
-    """Estimate the hero level from total XP (1..30)."""
+    """Hero level for a total XP (1..30), from ``game_constants.XP_FOR_LEVEL``."""
     if xp <= 0:
         return 1
-    return max(1, min(30, bisect.bisect_right(_XP_TABLE, xp)))
+    return max(1, min(MAX_HERO_LEVEL, bisect.bisect_right(XP_FOR_LEVEL, xp)))
+
+
+# ---------------------------------------------------------------------------
+# Kill log
+# ---------------------------------------------------------------------------
+
+# An unconfirmed entry followed by another death of the same hero within this
+# many seconds is the reincarnation before that death (same value and rule as
+# analyzer.REINCARNATION_WINDOW_S, so the coach and the kill feed agree).
+REINCARNATION_WINDOW_S = 10
+
+
+def counted_kills(match: MatchData) -> list[KillEvent]:
+    """Kill-log entries that count as real hero deaths, in time order.
+
+    Confirmed entries always count (also a deny or a death to a tower or
+    creep). An unconfirmed one (OpenDota cannot tell a reincarnation from a
+    death) only counts while the scoreboard still shows an unexplained death
+    for its victim and, when a hero made the kill, an unexplained kill for
+    that hero. Among the unconfirmed entries, one followed by another death
+    of the same hero within ``REINCARNATION_WINDOW_S`` is considered last and
+    the rest earliest first. A player therefore never gets more deaths than
+    the scoreboard shows, unless the confirmed entries alone exceed it.
+    """
+    log = sorted(match.kills_log, key=lambda k: k.time)
+    if all(k.confirmed for k in log):
+        return log
+    players = {p.player_slot: p for p in match.players}
+    kills_left = {slot: p.kills for slot, p in players.items()}
+    deaths_left = {slot: p.deaths for slot, p in players.items()}
+    death_times: dict[int, list[float]] = {}
+    for k in log:
+        death_times.setdefault(k.victim_slot, []).append(k.time)
+        if not k.confirmed:
+            continue
+        if k.victim_slot in deaths_left:
+            deaths_left[k.victim_slot] -= 1
+        if k.killer_slot in kills_left and not k.deny:
+            kills_left[k.killer_slot] -= 1
+
+    def died_again(k: KillEvent) -> bool:
+        return any(0 < t - k.time <= REINCARNATION_WINDOW_S for t in death_times[k.victim_slot])
+
+    counted = {id(k) for k in log if k.confirmed}
+    for k in sorted((k for k in log if not k.confirmed), key=lambda k: (died_again(k), k.time)):
+        if deaths_left.get(k.victim_slot, 0) <= 0:
+            continue
+        by_hero = k.killer_slot in kills_left and not k.deny
+        if by_hero and kills_left[k.killer_slot] <= 0:
+            continue
+        deaths_left[k.victim_slot] -= 1
+        if by_hero:
+            kills_left[k.killer_slot] -= 1
+        counted.add(id(k))
+    return [k for k in log if id(k) in counted]
 
 
 # ---------------------------------------------------------------------------
@@ -96,22 +148,28 @@ class PhaseStats:
     """Aggregated stats for one player in one phase window."""
 
     phase: str
-    time_range: str           # e.g. "0-10 min" or "40+ min"
+    time_range: str           # localized, e.g. "0-10 min" / "0-10 分钟" or "40+ min"
     start_sec: int
     end_sec: int              # exclusive upper bound (clamped to match duration)
     duration_sec: int
+    start_min: int = 0
+    end_min: int | None = None  # None = open-ended (until the game ended)
 
-    # Per-player numbers in this window.
+    # Per-player numbers in this window. With a kill log they add up to the
+    # scoreboard over all phases (deaths before the horn count as laning).
     kills: int = 0
     deaths: int = 0
-    assists: int = 0          # rough proxy from teamfights the player took part in
+    assists: int | None = 0   # None = the source has no assist data (never guessed)
+    # True = no kill log: kills are the ones in recorded teamfights (an
+    # undercount) and deaths the ones the detector could locate.
+    kda_estimated: bool = False
     last_hits_delta: int = 0
     gold_delta: int = 0
     xp_delta: int = 0
     gpm_in_phase: int = 0
     xpm_in_phase: int = 0
     level_at_end: int = 0
-    net_worth_at_end: int = 0
+    net_worth_at_end: int | None = None  # only known for the last window (the scoreboard value)
 
     # Key events in this window.
     death_times: list[int] = field(default_factory=list)
@@ -132,9 +190,12 @@ class PhaseStats:
             "start_sec": self.start_sec,
             "end_sec": self.end_sec,
             "duration_sec": self.duration_sec,
+            "start_min": self.start_min,
+            "end_min": self.end_min,
             "kills": self.kills,
             "deaths": self.deaths,
             "assists": self.assists,
+            "kda_estimated": self.kda_estimated,
             "last_hits_delta": self.last_hits_delta,
             "gold_delta": self.gold_delta,
             "xp_delta": self.xp_delta,
@@ -166,10 +227,10 @@ def series_at(series: list[int] | None, minute: int) -> int:
     return series[min(minute, len(series) - 1)]
 
 
-def _format_range(start_sec: int, end_sec: int, open_ended: bool) -> str:
-    start_min = start_sec // 60
-    end_min = end_sec // 60
-    return f"{start_min}+ min" if open_ended else f"{start_min}-{end_min} min"
+def format_time_range(start_min: int, end_min: int | None, lang: str = "zh") -> str:
+    """Localized label of a review window ("10-20 min" / "10-20 分钟", "40+ min")."""
+    unit = "min" if lang == "en" else "分钟"
+    return f"{start_min}+ {unit}" if end_min is None else f"{start_min}-{end_min} {unit}"
 
 
 def applicable_phases(match_duration_sec: int) -> list[tuple[str, int, int | None]]:
@@ -221,20 +282,23 @@ def slice_player_phases(
     match: MatchData,
     player: PlayerData,
     death_times: Iterable[int] | None = None,
+    lang: str = "zh",
 ) -> list[PhaseStats]:
     """Build a PhaseStats per applicable phase for one player.
 
-    Uses per-minute timeline series (gold_t / xp_t / lh_t) for delta math, and
-    raw event lists (objectives, teamfights, smokes) for situational counts.
+    Uses per-minute timeline series (gold_t / xp_t / lh_t) for delta math, the
+    kill log for kills / deaths / assists, and raw event lists (objectives,
+    teamfights, smokes) for situational counts.
 
     Parameters
     ----------
     death_times : Iterable[int] | None
-        Optional precise death timestamps (seconds) for this player, e.g. from
-        the decision detector's DeathEvents. When provided they are used for
-        per-phase death counting; otherwise falls back to scanning
-        ``match.objectives`` (whose format varies by dump and often lacks
-        ``target_slot``).
+        Death timestamps (seconds) located by the decision detector. Only
+        used when the match has no kill log; without either, deaths are
+        scanned from ``match.objectives`` (whose format varies by dump and
+        often lacks ``target_slot``).
+    lang : str
+        Language of ``time_range``.
     """
     duration = match.duration or 0
     out: list[PhaseStats] = []
@@ -246,13 +310,22 @@ def slice_player_phases(
     teamfights = match.teamfights or []
     smokes = match.smokes or []
     is_radiant = player.team == "radiant"
+    slot = player.player_slot
 
-    for key, start, end_or_none in applicable_phases(duration):
+    kill_log = counted_kills(match)
+    has_kill_log = bool(kill_log)
+    # OpenDota's log has no assists at all: report none rather than zero.
+    has_assists = any(k.assist_slots for k in kill_log)
+
+    windows = applicable_phases(duration)
+    first_key = windows[0][0] if windows else ""
+    for key, start, end_or_none in windows:
         open_ended = end_or_none is None
         end = duration if open_ended else min(end_or_none, duration)
         if end <= start:
             continue
         last_window = open_ended or end >= duration
+        first_window = key == first_key
 
         start_min = start // 60
         end_min = end // 60
@@ -269,11 +342,21 @@ def slice_player_phases(
         else:
             level_at_end = 0
 
-        def _in_window(t: int) -> bool:
-            return start <= t < end or (last_window and t == end)
+        def _in_window(t: float) -> bool:
+            # Deaths before the horn belong to the first window and anything
+            # at or after the final second to the last one, so no kill is lost.
+            return (first_window or t >= start) and (last_window or t < end)
 
         deaths_here: list[int] = []
-        if known_death_times is not None:
+        kills_here = 0
+        assists_here: int | None = None
+        if has_kill_log:
+            in_window = [k for k in kill_log if _in_window(k.time)]
+            deaths_here = [int(k.time) for k in in_window if k.victim_slot == slot]
+            kills_here = sum(1 for k in in_window if k.killer_slot == slot and not k.deny)
+            if has_assists:
+                assists_here = sum(1 for k in in_window if slot in k.assist_slots)
+        elif known_death_times is not None:
             deaths_here = [dt for dt in known_death_times if _in_window(dt)]
         else:
             for obj in obj_events:
@@ -284,9 +367,7 @@ def slice_player_phases(
                     if obj.get("target_slot") == player.player_slot:
                         deaths_here.append(t)
 
-        # Kills / teamfights the player took part in (most reliable structured data).
-        kills_here = 0
-        assists_here = 0
+        # Teamfights the player took part in.
         teamfight_count = 0
         teamfight_wins = 0
         for tf in teamfights:
@@ -299,19 +380,11 @@ def slice_player_phases(
             if tf_player is None or not _participated(tf_player):
                 continue
             teamfight_count += 1
-            kills_here += tf_player.kills
+            if not has_kill_log:
+                kills_here += tf_player.kills  # kills outside recorded fights are unknown
             radiant_won = _radiant_won_fight(tf)
             if radiant_won is not None and radiant_won == is_radiant:
                 teamfight_wins += 1
-            # Crude assist proxy: teammates got kills while the player took
-            # part without a kill or death of their own.
-            if tf_player.kills == 0 and tf_player.deaths == 0:
-                ally_kills = sum(
-                    tp.kills for tp in tf.players
-                    if tp.player_slot != player.player_slot
-                    and (tp.player_slot < 128) == is_radiant
-                )
-                assists_here += min(ally_kills, 2)  # cap to avoid runaway
 
         # Towers taken in window (per side). "building_kill" also covers
         # barracks/fort, so only count units that are towers.
@@ -334,22 +407,26 @@ def slice_player_phases(
             if start <= s.time < end and s.team == player.team
         )
 
+        phase_end_min = None if open_ended else end_min
         out.append(PhaseStats(
             phase=key,
-            time_range=_format_range(start, end, open_ended),
+            time_range=format_time_range(start_min, phase_end_min, lang),
             start_sec=start,
             end_sec=end,
             duration_sec=end - start,
+            start_min=start_min,
+            end_min=phase_end_min,
             kills=kills_here,
             deaths=len(deaths_here),
             assists=assists_here,
+            kda_estimated=not has_kill_log,
             last_hits_delta=lh_delta,
             gold_delta=gold_delta,
             xp_delta=xp_delta,
             gpm_in_phase=int(gold_delta / minutes),
             xpm_in_phase=int(xp_delta / minutes),
             level_at_end=level_at_end,
-            net_worth_at_end=player.net_worth if last_window else 0,
+            net_worth_at_end=player.net_worth if last_window else None,
             death_times=deaths_here,
             teamfight_count=teamfight_count,
             teamfight_wins=teamfight_wins,

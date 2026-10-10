@@ -3,7 +3,8 @@
 Pipeline:
 1. Derive positions, detect decision points (deaths + key moments)
 2. Build death causal chains and a context for each decision point
-3. Retrieve knowledge for each context
+3. Retrieve knowledge for each context: the full block for the points an LLM
+   will judge, the best entries as ``sources`` for the others
 4. Evaluate decisions (agent / single-prompt LLM, else rules) and the
    per-phase reviews concurrently, under one deadline
 5. Compile the coaching report
@@ -36,10 +37,12 @@ from .models import (
     DecisionContext,
     DecisionPoint,
     DeathEvent,
+    RULE_SOURCES,
     Evaluation,
     PhaseReview,
     is_time_unknown,
     normalize_grade,
+    sources_payload,
 )
 
 try:
@@ -55,7 +58,26 @@ ProgressCallback = Callable[[dict], Awaitable[None]]
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["REPORT_SCHEMA_VERSION", "generate_coaching_report"]
+__all__ = ["REPORT_SCHEMA_VERSION", "MIN_PARTIAL_GAME_SECONDS", "NoGameError", "generate_coaching_report",
+           "has_no_game"]
+
+
+class NoGameError(ValueError):
+    """The match data holds no game to review (a replay cut before or just after the horn)."""
+
+
+# A replay that ends this early in the game holds nothing to review: no lane
+# has played out and the benchmarks have nothing to compare (a recording cut
+# 4 s and one cut 133 s after the horn both got "KDA 0/0/0 after 0 minutes,
+# overall grade B: ... so the grade is only a default"). routes.py refuses the
+# same matches before a job is started.
+MIN_PARTIAL_GAME_SECONDS = 300
+
+
+def has_no_game(match: MatchData) -> bool:
+    """Whether a truncated replay ends too early for a coaching report."""
+    return bool(match.partial) and match.duration < MIN_PARTIAL_GAME_SECONDS
+
 
 # Max decision points sent to the LLM per report (deaths first).
 MAX_LLM_EVALS = 8
@@ -121,11 +143,6 @@ _LANE_NAMES: dict[str, dict[int, str]] = {
     "en": {1: "Safe Lane", 2: "Mid Lane", 3: "Off Lane", 4: "Roaming"},
 }
 
-_LANE_RESULT_LABELS: dict[str, dict[str, str]] = {
-    "zh": {"won": "优势", "even": "均势", "lost": "劣势"},
-    "en": {"won": "Won", "even": "Even", "lost": "Lost"},
-}
-
 _CS_EFFICIENCY_LABELS: dict[str, dict[str, str]] = {
     "zh": {"excellent": "优秀", "good": "良好", "average": "一般", "poor": "需要提高"},
     "en": {"excellent": "Excellent", "good": "Good", "average": "Average", "poor": "Needs Improvement"},
@@ -155,14 +172,16 @@ _CATEGORY_LABELS: dict[str, dict[str, str]] = {
 _IMPROVEMENT_SUGGESTIONS: dict[str, dict[str, str]] = {
     "zh": {
         "map_awareness": "多看小地图，养成每5秒看一次的习惯。注意敌方英雄消失的信号。",
-        "laning": "练习补刀，特别是塔下补刀。注意换血时机和消耗品使用。",
+        "laning": "注意换血时机和消耗品使用。",
+        "laning_cs": "练习补刀，特别是塔下补刀。",
         "teamfight": "注意开团时机和站位。优先集火关键目标，注意保护己方核心。",
         "resources": "提高打野效率，减少游走等待时间。确保每分钟都有金币收入。",
         "vision": "养成买眼插眼的习惯，特别是团战前和烟雾时。",
     },
     "en": {
         "map_awareness": "Check the minimap more frequently — aim for every 5 seconds. Watch for missing enemy heroes.",
-        "laning": "Practice last-hitting, especially under tower. Mind your trade timing and consumable usage.",
+        "laning": "Mind your trade timing and consumable usage.",
+        "laning_cs": "Practice last-hitting, especially under tower.",
         "teamfight": "Pay attention to engagement timing and positioning. Focus fire key targets and protect your cores.",
         "resources": "Improve jungle efficiency and reduce idle time. Ensure consistent gold income every minute.",
         "vision": "Make warding a habit, especially before teamfights and smoke ganks.",
@@ -191,35 +210,96 @@ _GRADE_COMMENTS: dict[str, dict[str, str]] = {
     },
 }
 
-_STRENGTH_DEFAULT: dict[str, str] = {
-    "zh": "整体表现稳定",
-    "en": "Consistent overall performance",
+# Used instead of the grade comment when no decision could be analysed.
+_NO_DECISIONS_COMMENT: dict[str, str] = {
+    "zh": "比赛数据中没有可供分析的具体决策点，评分仅为默认值。",
+    "en": "No individual decision points were found in the match data, so the grade is only a default.",
 }
 
 _POSITION_FALLBACK_LABEL: dict[str, str] = {"zh": "未知位置", "en": "Unknown position"}
+
+
+def _hero_text(name: str, lang: str) -> str:
+    """A hero name as written in text (never a raw code such as "hero_150")."""
+    try:
+        from .data_manager import hero_display_name
+        return hero_display_name(name, lang) or name
+    except Exception:  # pragma: no cover - the helper never raises
+        return name
+
+
+def _clock(seconds: int) -> str:
+    """Game time as m:ss ("-0:10" before the horn)."""
+    sign = "-" if seconds < 0 else ""
+    seconds = abs(int(seconds))
+    return f"{sign}{seconds // 60}:{seconds % 60:02d}"
 
 
 # ---------------------------------------------------------------------------
 # Laning review
 # ---------------------------------------------------------------------------
 
-_MIRROR_POSITION = {1: 3, 3: 1, 2: 2, 4: 5, 5: 4}
 # Lane opponents found from snapshot positions must stand this close (world units).
 _LANE_OPPONENT_RADIUS = 3000.0
+_TEN_MIN = 10
+# The lane is won / lost when its heroes together lead / trail the enemy
+# heroes of the same lane by this share of gold + XP at 10:00.
+_LANE_LEAD_SHARE = 0.10
+# Lane creeps a core can practically last-hit in the first 10 minutes.
+_LANE_CREEPS_10MIN = 82
+_LANE_CREEP_TYPES = ("melee", "ranged", "siege", "unknown")  # "unknown" is a lane creep the parser could not type
 
 
-def _lane_cs_10(p: PlayerData) -> int:
-    """Lane-creep last hits in the first 10 minutes (best available source)."""
-    cs = sum(1 for ck in p.laning_creep_kills if ck.creep_type in ("melee", "ranged", "siege"))
-    if cs:
-        return cs
-    if p.lh_t and len(p.lh_t) > 10:
-        return p.lh_t[10]
-    if p.laning_snapshots:
-        return p.laning_snapshots[-1].last_hits
-    if p.lh_t:
-        return p.lh_t[-1]
-    return 0
+def _at_ten(series: list[int]) -> int | None:
+    """Value of a per-minute series at 10:00 (None when the series ends earlier)."""
+    return series[_TEN_MIN] if len(series) > _TEN_MIN else None
+
+
+def _snapshot_at_ten(p: PlayerData):
+    """The laning snapshot at 10:00 (within 10 s), None when there is none."""
+    if not p.laning_snapshots:
+        return None
+    snap = min(p.laning_snapshots, key=lambda s: abs(s.time - _TEN_MIN * 60))
+    return snap if abs(snap.time - _TEN_MIN * 60) <= 10 else None
+
+
+def _cs_10(p: PlayerData) -> int | None:
+    """Last hits at 10:00 (all creeps): the definition the benchmark comparison uses."""
+    value = _at_ten(p.lh_t)
+    if value is None:
+        snap = _snapshot_at_ten(p)
+        value = snap.last_hits if snap is not None else None
+    return value
+
+
+def _denies_10(p: PlayerData) -> int | None:
+    value = _at_ten(p.dn_t)
+    if value is None:
+        snap = _snapshot_at_ten(p)
+        value = snap.denies if snap is not None else None
+    return value
+
+
+def _lane_creep_cs_10(p: PlayerData) -> int | None:
+    """Lane creeps last-hit before 10:00 (None when the source has no creep log)."""
+    if not p.laning_creep_kills:
+        return None
+    return sum(
+        1 for ck in p.laning_creep_kills
+        if ck.creep_type in _LANE_CREEP_TYPES and ck.time < _TEN_MIN * 60
+    )
+
+
+def _lane_resources_10(players: list[PlayerData]) -> tuple[int, int] | None:
+    """(gold, XP) the heroes had earned together by 10:00, None when unknown."""
+    gold = xp = 0
+    for p in players:
+        g, x = _at_ten(p.gold_t), _at_ten(p.xp_t)
+        if g is None or x is None:
+            return None
+        gold += g
+        xp += x
+    return gold, xp
 
 
 def _lane_opponents(match: MatchData, player: PlayerData) -> list[PlayerData]:
@@ -258,135 +338,183 @@ def _lane_opponents(match: MatchData, player: PlayerData) -> list[PlayerData]:
     return [p for _d, p in found[:3]]
 
 
+def _lane_outcome(match: MatchData, player: PlayerData) -> tuple[str | None, int, int]:
+    """(result, gold lead, XP lead) of the player's lane at 10:00.
+
+    The lane is every hero with the player's absolute lane number; the two
+    sides are compared on the gold and XP they earned together, so lane
+    partners always get the same result. ``result`` is "won" / "even" /
+    "lost", or None when it cannot be judged: the player had no lane
+    (roaming, unknown), the two sides had different numbers of heroes in the
+    lane (their totals are not comparable), or the 10-minute values are
+    missing.
+    """
+    if player.lane not in (1, 2, 3):
+        return None, 0, 0
+    ours = [p for p in match.players if p.team == player.team and p.lane == player.lane]
+    theirs = [p for p in match.players if p.team != player.team and p.lane == player.lane]
+    if len(ours) != len(theirs):
+        return None, 0, 0
+    mine, enemy = _lane_resources_10(ours), _lane_resources_10(theirs)
+    if mine is None or enemy is None or sum(enemy) <= 0:
+        return None, 0, 0
+    gold_lead, xp_lead = mine[0] - enemy[0], mine[1] - enemy[1]
+    share = (gold_lead + xp_lead) / sum(enemy)
+    if share >= _LANE_LEAD_SHARE:
+        return "won", gold_lead, xp_lead
+    if share <= -_LANE_LEAD_SHARE:
+        return "lost", gold_lead, xp_lead
+    return "even", gold_lead, xp_lead
+
+
 def _generate_laning_review(
     match: MatchData, player: PlayerData, evaluations: list[Evaluation],
     lang: str = "zh", positions: dict | None = None,
 ) -> dict[str, Any]:
-    """Laning phase review for the player.
+    """Laning phase review for the player, from 10-minute data only.
 
-    Returns a dict with cs_10min, denies_10min, lane_matchup, lane_result
-    ("won"/"even"/"lost"), key_trades, cs_efficiency, and summary.
+    Returns a dict with cs_10min (last hits at 10:00, the same number the
+    benchmark comparison shows), denies_10min, lane_cs_10min, lane_matchup,
+    lane_result ("won" / "even" / "lost" / None), lane_gold_diff,
+    lane_xp_diff, key_trades, cs_efficiency and summary. A value the source
+    does not have is None, never 0; without any 10-minute value (also a
+    game that ended before 10:00) the review is empty ({}). A position 4 / 5
+    is not judged on last hits.
     """
     from .positions import lane_role_of
+    from .pro_patterns import benchmarks_apply
 
     positions = positions or {}
-    lane_creep_cs = sum(
-        1 for ck in player.laning_creep_kills if ck.creep_type in ("melee", "ranged", "siege")
-    )
-    cs_10min = _lane_cs_10(player)
-    denies_10min = player.laning_snapshots[-1].denies if player.laning_snapshots else player.denies
+    en = lang == "en"
+    cs_10min = _cs_10(player)
+    denies_10min = _denies_10(player)
+    if cs_10min is None or match.duration < _TEN_MIN * 60:
+        return {}
 
     lane_map = _LANE_NAMES.get(lang, _LANE_NAMES["zh"])
     player_lane_name = lane_map.get(lane_role_of(player), _UNKNOWN_LANE.get(lang, _UNKNOWN_LANE["zh"]))
 
+    hero = _hero_text(player.hero_name, lang)
     opponents = _lane_opponents(match, player)
     unknown_opp = _UNKNOWN_OPPONENT.get(lang, _UNKNOWN_OPPONENT["zh"])
-    separator = ", " if lang == "en" else "、"
-    lane_matchup = (
-        f"{player.hero_name} ({player_lane_name}) vs "
-        + (separator.join(p.hero_name for p in opponents) if opponents else unknown_opp)
-    )
+    separator = ", " if en else "、"
+    opponent_names = (separator.join(_hero_text(p.hero_name, lang) for p in opponents)
+                      if opponents else unknown_opp)
+    lane_matchup = f"{hero} ({player_lane_name}) vs {opponent_names}"
 
-    # Compare against the direct counterpart (pos 1 vs 3, 2 vs 2, 4 vs 5).
-    lane_result = "even"
-    opp_player: PlayerData | None = None
+    lane_result, gold_lead, xp_lead = _lane_outcome(match, player)
+
     my_pos = positions.get(player.player_slot)
-    if opponents:
-        if my_pos is not None:
-            mirror = _MIRROR_POSITION.get(my_pos.number)
-            opp_player = next(
-                (p for p in opponents
-                 if positions.get(p.player_slot) is not None and positions[p.player_slot].number == mirror),
-                None,
-            )
-        if opp_player is None:
-            opp_player = opponents[0]
-    if opp_player is not None:
-        opp_cs = _lane_cs_10(opp_player)
-        my_snap = player.laning_snapshots[-1] if player.laning_snapshots else None
-        opp_snap = opp_player.laning_snapshots[-1] if opp_player.laning_snapshots else None
-        advantage = 0
-        cs_diff = cs_10min - opp_cs
-        if abs(cs_diff) > 5:
-            advantage += 1 if cs_diff > 0 else -1
-        if my_snap is not None and opp_snap is not None:
-            nw_diff = my_snap.net_worth - opp_snap.net_worth
-            if abs(nw_diff) > 300:
-                advantage += 1 if nw_diff > 0 else -1
-            lvl_diff = my_snap.level - opp_snap.level
-            if abs(lvl_diff) >= 1:
-                advantage += 1 if lvl_diff > 0 else -1
-        if advantage >= 2:
-            lane_result = "won"
-        elif advantage <= -2:
-            lane_result = "lost"
+    position_number = my_pos.number if my_pos is not None else 0
+    is_support = position_number in (4, 5)
 
     key_trades: list[str] = []
     if player.laning_damage_events:
         total_dmg_dealt = sum(e.damage for e in player.laning_damage_events)
         key_trades.append(
-            f"Dealt {total_dmg_dealt} hero damage during the laning phase" if lang == "en"
+            f"Dealt {total_dmg_dealt} hero damage during the laning phase" if en
             else f"对线阶段造成 {total_dmg_dealt} 点英雄伤害"
         )
-    score_label = "Score" if lang == "en" else "评分"
+    score_label = "Score" if en else "评分"
     laning_evals = [
         e for e in evaluations
-        if 0 <= e.decision_point.time < 600 and not is_time_unknown(e.decision_point)
+        if e.decision_point.time < _TEN_MIN * 60 and not is_time_unknown(e.decision_point)
     ]
     for ev in sorted(laning_evals, key=lambda e: e.decision_point.time)[:3]:
-        t = ev.decision_point.time
-        key_trades.append(f"[{t // 60}:{t % 60:02d}] {ev.decision_point.brief} ({score_label}: {ev.score})")
+        key_trades.append(
+            f"[{_clock(ev.decision_point.time)}] {ev.decision_point.brief} ({score_label}: {ev.score})")
 
-    # CS efficiency: lane creeps killed / ~82 practically killable lane creeps
-    # in the first 10 minutes.
-    theoretical_lane_creeps = 82
-    lane_cs_for_efficiency = lane_creep_cs if lane_creep_cs > 0 else cs_10min
-    efficiency_pct = lane_cs_for_efficiency / theoretical_lane_creeps * 100
-    eff_labels = _CS_EFFICIENCY_LABELS.get(lang, _CS_EFFICIENCY_LABELS["zh"])
-    if efficiency_pct >= 80:
-        eff_key = "excellent"
-    elif efficiency_pct >= 60:
-        eff_key = "good"
-    elif efficiency_pct >= 40:
-        eff_key = "average"
-    else:
-        eff_key = "poor"
-    cs_efficiency = f"{eff_labels[eff_key]} ({efficiency_pct:.0f}%)"
-
-    result_labels = _LANE_RESULT_LABELS.get(lang, _LANE_RESULT_LABELS["zh"])
-    lane_result_label = result_labels.get(lane_result, result_labels["even"])
-
-    if lang == "en":
-        summary_parts = [
-            f"{player.hero_name} had a {lane_result_label.lower()} laning phase ({player_lane_name}). ",
-            f"{cs_10min} last hits at 10 min ({efficiency_pct:.0f}% efficiency), {denies_10min} denies. ",
-        ]
-        if lane_result == "lost":
-            summary_parts.append("CS efficiency and trading need improvement.")
-        elif lane_result == "won":
-            summary_parts.append("Strong laning performance — keep it up.")
+    # CS efficiency: lane creeps last-hit / lane creeps a core can get. Only
+    # for cores, only when the source logged which creeps were killed, and
+    # only in a game mode the 10-minute creep count describes (not Turbo).
+    lane_cs = _lane_creep_cs_10(player)
+    cs_efficiency = ""
+    efficiency_pct: float | None = None
+    if lane_cs is not None and not is_support and benchmarks_apply(match.game_mode):
+        efficiency_pct = lane_cs / _LANE_CREEPS_10MIN * 100
+        eff_labels = _CS_EFFICIENCY_LABELS.get(lang, _CS_EFFICIENCY_LABELS["zh"])
+        if efficiency_pct >= 80:
+            eff_key = "excellent"
+        elif efficiency_pct >= 60:
+            eff_key = "good"
+        elif efficiency_pct >= 40:
+            eff_key = "average"
         else:
-            summary_parts.append("Decent laning phase with some room for improvement.")
-    else:
-        summary_parts = [
-            f"{player.hero_name}在{player_lane_name}的对线表现为{lane_result_label}。",
-            f"10分钟补刀{cs_10min}个（效率{efficiency_pct:.0f}%），反补{denies_10min}个。",
-        ]
-        if lane_result == "lost":
-            summary_parts.append("需要改进补刀效率和对线换血。")
-        elif lane_result == "won":
-            summary_parts.append("对线阶段表现优秀，继续保持。")
+            eff_key = "poor"
+        cs_efficiency = f"{eff_labels[eff_key]} ({efficiency_pct:.0f}%)"
+
+    # The direct counterpart of a core (pos 1 vs 3, 2 vs 2), for the CS line.
+    counterpart: PlayerData | None = None
+    if not is_support and position_number:
+        mirror = {1: 3, 3: 1, 2: 2}.get(position_number)
+        counterpart = next(
+            (p for p in opponents
+             if positions.get(p.player_slot) is not None and positions[p.player_slot].number == mirror),
+            None,
+        )
+    counterpart_cs = _cs_10(counterpart) if counterpart is not None else None
+
+    if en:
+        parts: list[str] = []
+        lead = f"{gold_lead:+,} gold and {xp_lead:+,} XP for the lane as a whole"
+        if lane_result == "won":
+            parts.append(f"{hero}'s lane ({player_lane_name}, against {opponent_names}) "
+                         f"was ahead at 10:00: {lead}.")
+        elif lane_result == "lost":
+            parts.append(f"{hero}'s lane ({player_lane_name}, against {opponent_names}) "
+                         f"was behind at 10:00: {lead}.")
+        elif lane_result == "even":
+            parts.append(f"{hero}'s lane ({player_lane_name}, against {opponent_names}) "
+                         f"was about even at 10:00: {lead}.")
         else:
-            summary_parts.append("对线表现中规中矩，有一定的提升空间。")
+            parts.append(f"{hero} ({player_lane_name}): the lane result cannot be judged (no fixed lane, "
+                         f"uneven numbers in the lane, or no 10-minute data).")
+        numbers = f"{cs_10min} last hit{'' if cs_10min == 1 else 's'}"
+        if denies_10min is not None:
+            numbers += f" and {denies_10min} den{'y' if denies_10min == 1 else 'ies'}"
+        numbers += " at 10:00"
+        if counterpart is not None and counterpart_cs is not None:
+            numbers += f" ({_hero_text(counterpart.hero_name, lang)}: {counterpart_cs})"
+        if efficiency_pct is not None:
+            numbers += f"; {lane_cs} of about {_LANE_CREEPS_10MIN} lane creeps ({efficiency_pct:.0f}%)"
+        parts.append(numbers + ".")
+        if is_support:
+            parts.append(f"A position {position_number} is not measured by last hits.")
+        summary = " ".join(parts)
+    else:
+        parts = []
+        lead = f"全路合计经济{gold_lead:+,}、经验{xp_lead:+,}"
+        if lane_result == "won":
+            parts.append(f"{hero}所在的{player_lane_name}（对手：{opponent_names}）在10分钟时领先：{lead}。")
+        elif lane_result == "lost":
+            parts.append(f"{hero}所在的{player_lane_name}（对手：{opponent_names}）在10分钟时落后：{lead}。")
+        elif lane_result == "even":
+            parts.append(f"{hero}所在的{player_lane_name}（对手：{opponent_names}）在10分钟时基本持平：{lead}。")
+        else:
+            parts.append(f"{hero}（{player_lane_name}）：无法判断对线结果（没有固定对线、线上人数不对等或缺少10分钟数据）。")
+        numbers = f"10分钟补刀{cs_10min}个"
+        if denies_10min is not None:
+            numbers += f"，反补{denies_10min}个"
+        if counterpart is not None and counterpart_cs is not None:
+            numbers += f"（{_hero_text(counterpart.hero_name, lang)}补刀{counterpart_cs}个）"
+        if efficiency_pct is not None:
+            numbers += f"；线上小兵约{_LANE_CREEPS_10MIN}个中补到{lane_cs}个（{efficiency_pct:.0f}%）"
+        parts.append(numbers + "。")
+        if is_support:
+            parts.append(f"{position_number}号位不以补刀数衡量。")
+        summary = "".join(parts)
 
     return {
         "cs_10min": cs_10min,
         "denies_10min": denies_10min,
+        "lane_cs_10min": lane_cs,
         "lane_matchup": lane_matchup,
         "lane_result": lane_result,
+        "lane_gold_diff": gold_lead if lane_result is not None else None,
+        "lane_xp_diff": xp_lead if lane_result is not None else None,
         "key_trades": key_trades,
         "cs_efficiency": cs_efficiency,
-        "summary": "".join(summary_parts),
+        "summary": summary,
     }
 
 
@@ -402,78 +530,142 @@ _CATEGORY_MAP: dict[str, str] = {
     "fight_engage": "teamfight",
     "good_play": "teamfight",
 }
-_NO_MISTAKE = {"", "无", "None", "none", "N/A"}
+_MAX_EXAMPLES = 3
+_MIN_OCCURRENCES = 2  # one decision is not a recurring strength or weakness
 
 
-def _detect_improvement_areas(evaluations: list[Evaluation], lang: str = "zh") -> list[dict[str, Any]]:
-    """Recurring weaknesses: categories averaging below B."""
-    category_scores: dict[str, list[str]] = {}
-    category_details: dict[str, list[str]] = {}
+def _category_of(ev: Evaluation) -> str:
+    dp = ev.decision_point
+    if dp.point_type == "death" and dp.related_death is not None and dp.related_death.is_teamfight:
+        return "teamfight"  # a teamfight death is not a map-awareness problem
+    return _CATEGORY_MAP.get(dp.point_type, "resources")
+
+
+def _example(ev: Evaluation) -> str:
+    """One decision as "[m:ss] brief" (no time when it is unknown)."""
+    dp = ev.decision_point
+    brief = (dp.brief or "").strip().rstrip(".。")
+    return brief if is_time_unknown(dp) else f"[{_clock(dp.time)}] {brief}"
+
+
+# What an evaluation writes into ``mistake`` when there is none.
+_NO_MISTAKE = ("none", "n/a", "无", "没有")
+
+
+def _names_mistake(ev: Evaluation) -> bool:
+    """Whether the evaluation says what went wrong.
+
+    The rules leave ``mistake`` empty when the data shows none (e.g. a death
+    in a match without positions); such a decision supports no diagnosis.
+    """
+    text = (ev.mistake or "").strip().rstrip(".。").lower()
+    return bool(text) and text not in _NO_MISTAKE
+
+
+def _area_description(count: int, grade: str, examples: list[str], closing: str, lang: str) -> str:
+    """Full sentences for one area: how many decisions, examples, advice.
+
+    Built from the decision briefs (short, rule-made, in the report
+    language), never from the free text of the evaluations.
+    """
+    if lang == "en":
+        noun = "decision" if count == 1 else "decisions"
+        text = f"{count} {noun} in this area, average grade {grade}."
+        if examples:
+            text += f" Examples: {'; '.join(examples)}."
+        return f"{text} {closing}".strip()
+    text = f"该方面共有{count}个决策点，平均评分{grade}。"
+    if examples:
+        text += f"例如：{'；'.join(examples)}。"
+    return text + closing
+
+
+def _detect_improvement_areas(
+    evaluations: list[Evaluation], lang: str = "zh", lane_result: str | None = None,
+) -> list[dict[str, Any]]:
+    """Recurring weaknesses: categories averaging below B.
+
+    A weakness needs at least ``_MIN_OCCURRENCES`` decisions graded below B
+    whose evaluation names a mistake: deaths nothing is known about (a match
+    without positions) do not make "map awareness" a problem. Laning is not
+    listed for a player whose lane was won: a few lost trades are part of
+    every lane. Its advice follows what was observed: last-hitting only with
+    missed-CS points (which positions 4 and 5 never get), trading only with
+    lost trades.
+    """
+    by_category: dict[str, list[Evaluation]] = {}
     for ev in evaluations:
-        cat = _CATEGORY_MAP.get(ev.decision_point.point_type, "resources")
-        category_scores.setdefault(cat, []).append(ev.score)
-        if ev.mistake and ev.mistake.strip() not in _NO_MISTAKE:
-            category_details.setdefault(cat, []).append(ev.mistake.strip())
+        by_category.setdefault(_category_of(ev), []).append(ev)
 
     cat_labels = _CATEGORY_LABELS.get(lang, _CATEGORY_LABELS["zh"])
     suggestions = _IMPROVEMENT_SUGGESTIONS.get(lang, _IMPROVEMENT_SUGGESTIONS["zh"])
     default_suggestion = _DEFAULT_IMPROVEMENT.get(lang, _DEFAULT_IMPROVEMENT["zh"])
-    detail_sep = "; " if lang == "en" else "；"
 
     areas: list[dict[str, Any]] = []
-    for cat, scores in category_scores.items():
-        avg = sum(_SCORE_TO_NUM.get(s, 2.0) for s in scores) / len(scores)
+    for cat, evs in by_category.items():
+        found = [
+            e for e in evs
+            if _SCORE_TO_NUM.get(normalize_grade(e.score), 2.0) < 3.0 and _names_mistake(e)
+        ]
+        if len(found) < _MIN_OCCURRENCES or (cat == "laning" and lane_result == "won"):
+            continue
+        avg = sum(_SCORE_TO_NUM.get(normalize_grade(e.score), 2.0) for e in evs) / len(evs)
         if avg >= 3.0:
             continue
-        unique_details = list(dict.fromkeys(category_details.get(cat, [])))[:3]
-        suggestion = suggestions.get(cat, default_suggestion)
-        detail_text = detail_sep.join(d.rstrip(".。") for d in unique_details)
-        if not detail_text:
-            description = suggestion
-        elif lang == "en":
-            description = f"{detail_text}. {suggestion}"
-        else:
-            description = f"{detail_text}。{suggestion}"
+        weakest = sorted(
+            found,
+            key=lambda e: (_SCORE_TO_NUM.get(normalize_grade(e.score), 2.0), _chronological(e)),
+        )[:_MAX_EXAMPLES]
+        examples = [_example(e) for e in sorted(weakest, key=_chronological)]
+        grade = _letter_grade(avg)
+        advice = suggestions.get(cat, default_suggestion)
+        if cat == "laning":
+            # Advice only for what was actually observed in this lane.
+            kinds = {e.decision_point.point_type for e in evs}
+            advice = (" " if lang == "en" else "").join(
+                suggestions[key] for key, kind in (("laning_cs", "missed_cs"), ("laning", "bad_trade"))
+                if kind in kinds
+            )
         areas.append({
             "category": cat_labels.get(cat, cat),
             "category_code": cat,
-            "avg_score": _letter_grade(avg),
-            "occurrences": len(scores),
-            "description": description,
+            "avg_score": grade,
+            "occurrences": len(evs),
+            "examples": examples,
+            "description": _area_description(len(evs), grade, examples, advice, lang),
         })
-    areas.sort(key=lambda a: _SCORE_TO_NUM.get(a["avg_score"], 2.0))
+    # Worst grade first; among equal grades the area with more decisions.
+    areas.sort(key=lambda a: (_SCORE_TO_NUM.get(a["avg_score"], 2.0), -a["occurrences"]))
     return areas
 
 
 def _detect_strengths(evaluations: list[Evaluation], lang: str = "zh") -> list[dict[str, Any]]:
     """Recurring strengths: categories averaging A or better."""
-    category_scores: dict[str, list[str]] = {}
-    category_details: dict[str, list[str]] = {}
+    by_category: dict[str, list[Evaluation]] = {}
     for ev in evaluations:
-        cat = _CATEGORY_MAP.get(ev.decision_point.point_type, "resources")
-        category_scores.setdefault(cat, []).append(ev.score)
-        if ev.score in ("S", "A"):
-            desc = ev.decision_point.brief or ev.analysis[:50]
-            category_details.setdefault(cat, []).append(desc)
+        by_category.setdefault(_category_of(ev), []).append(ev)
 
     cat_labels = _CATEGORY_LABELS.get(lang, _CATEGORY_LABELS["zh"])
-    default_highlight = _STRENGTH_DEFAULT.get(lang, _STRENGTH_DEFAULT["zh"])
-    detail_sep = "; " if lang == "en" else "；"
 
     strengths: list[dict[str, Any]] = []
-    for cat, scores in category_scores.items():
-        avg = sum(_SCORE_TO_NUM.get(s, 2.0) for s in scores) / len(scores)
+    for cat, evs in by_category.items():
+        if len(evs) < _MIN_OCCURRENCES:
+            continue
+        avg = sum(_SCORE_TO_NUM.get(normalize_grade(e.score), 2.0) for e in evs) / len(evs)
         if avg < 3.5:
             continue
-        unique_details = list(dict.fromkeys(category_details.get(cat, [])))[:3]
+        best = [e for e in evs if normalize_grade(e.score) in ("S", "A")]
+        examples = [_example(e) for e in sorted(best, key=_chronological)[:_MAX_EXAMPLES]]
+        grade = _letter_grade(avg)
         strengths.append({
             "category": cat_labels.get(cat, cat),
             "category_code": cat,
-            "avg_score": _letter_grade(avg),
-            "occurrences": len(scores),
-            "description": detail_sep.join(unique_details) if unique_details else default_highlight,
+            "avg_score": grade,
+            "occurrences": len(evs),
+            "examples": examples,
+            "description": _area_description(len(evs), grade, examples, "", lang),
         })
-    strengths.sort(key=lambda s: _SCORE_TO_NUM.get(s["avg_score"], 2.0), reverse=True)
+    strengths.sort(key=lambda s: (-_SCORE_TO_NUM.get(s["avg_score"], 2.0), -s["occurrences"]))
     return strengths
 
 
@@ -489,18 +681,33 @@ def _generate_summary(
     strengths: list[dict],
     match: MatchData,
     lang: str = "zh",
+    note: str = "",
 ) -> str:
-    """Text summary of the coaching report."""
-    won = (player.team == "radiant") == bool(match.radiant_win)
+    """Text summary of the coaching report.
+
+    The result of the match is only stated when the source knows the winner
+    (a truncated replay does not). ``note`` is an extra sentence in the
+    report language (e.g. why a Turbo match has no benchmark comparison).
+    """
     kda = f"{player.kills}/{player.deaths}/{player.assists}"
+    hero = _hero_text(player.hero_name, lang)
     duration_min = match.duration // 60
     grade_comments = _GRADE_COMMENTS.get(lang, _GRADE_COMMENTS["zh"])
+    if not evaluations:
+        grade_comments = {overall_grade: _NO_DECISIONS_COMMENT.get(lang, _NO_DECISIONS_COMMENT["zh"])}
     death_count = sum(1 for e in evaluations if e.decision_point.point_type == "death")
+    unlocated = max(0, player.deaths - death_count)
+    won = (player.team == "radiant") == bool(match.radiant_win)
 
     if lang == "en":
+        if match.winner_known:
+            opening = (f"{hero} {'won' if won else 'lost'} this match with a KDA of {kda} "
+                       f"in {duration_min} minutes. ")
+        else:
+            opening = (f"{hero} finished with a KDA of {kda} after {duration_min} minutes "
+                       f"(the replay does not contain the result of the match). ")
         parts = [
-            f"{player.hero_name} {'won' if won else 'lost'} this match with a KDA of {kda} "
-            f"in {duration_min} minutes. ",
+            opening,
             f"Overall grade {overall_grade}: {grade_comments.get(overall_grade, '')} ",
         ]
         if strengths:
@@ -508,25 +715,41 @@ def _generate_summary(
         if improvement_areas:
             parts.append(
                 f"Top area to improve: {improvement_areas[0]['category']} "
-                f"({improvement_areas[0]['occurrences']} occurrences). "
+                f"({improvement_areas[0]['occurrences']} decisions reviewed). "
             )
         if death_count:
-            parts.append(f"{death_count} death(s) analyzed — review the cause of each death carefully.")
+            parts.append(f"{death_count} death{'' if death_count == 1 else 's'} analyzed — "
+                         f"review the cause of each death carefully. ")
+        if unlocated:
+            parts.append(
+                f"{unlocated} more death{' is' if unlocated == 1 else 's are'} on the scoreboard "
+                f"but not in the match data, so {'it is' if unlocated == 1 else 'they are'} not analyzed. "
+            )
+        if note:
+            parts.append(note)
     else:
+        if match.winner_known:
+            opening = f"本场比赛{hero}{'获胜' if won else '失败'}，KDA为{kda}，比赛时长{duration_min}分钟。"
+        else:
+            opening = f"本场比赛{hero}的KDA为{kda}，比赛时长{duration_min}分钟（录像未记录胜负）。"
         parts = [
-            f"本场比赛{player.hero_name}{'获胜' if won else '失败'}，KDA为{kda}，比赛时长{duration_min}分钟。",
+            opening,
             f"综合评分{overall_grade}：{grade_comments.get(overall_grade, '')}",
         ]
         if strengths:
             parts.append(f"主要优势是{strengths[0]['category']}方面的表现。")
         if improvement_areas:
             parts.append(
-                f"最需要改进的是{improvement_areas[0]['category']}，"
-                f"相关问题出现了{improvement_areas[0]['occurrences']}次。"
+                f"最需要改进的是{improvement_areas[0]['category']}"
+                f"（涉及{improvement_areas[0]['occurrences']}个决策点）。"
             )
         if death_count:
             parts.append(f"本场共分析了{death_count}次死亡，请重点关注每次死亡的原因。")
-    return "".join(parts)
+        if unlocated:
+            parts.append(f"另有{unlocated}次死亡只出现在计分板上、比赛数据中没有记录，因此未作分析。")
+        if note:
+            parts.append(note)
+    return "".join(parts).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +793,22 @@ def _causal_step(
     return chains
 
 
+def _positions_by_team(match: MatchData, positions: dict | None) -> dict[str, list[list]]:
+    """``{"radiant": [[hero name, position number], ...], "dire": [...]}`` for the prompts.
+
+    Only heroes whose position (1-5) could be derived, in position order.
+    """
+    out: dict[str, list[list]] = {"radiant": [], "dire": []}
+    for p in match.players:
+        pos = (positions or {}).get(p.player_slot)
+        number = getattr(pos, "number", 0)
+        if p.team in out and number in (1, 2, 3, 4, 5):
+            out[p.team].append([p.hero_name, number])
+    for team in out:
+        out[team].sort(key=lambda entry: entry[1])
+    return out
+
+
 def _context_step(
     match: MatchData,
     decisions: list[DecisionPoint],
@@ -577,25 +816,37 @@ def _context_step(
     position: int | None,
     lang: str,
     knowledge_for: set[int] | None = None,
+    positions: dict | None = None,
 ) -> list[tuple[DecisionContext, str, Evaluation]]:
     """Build (context, knowledge, rule-based evaluation) per decision point.
 
-    Knowledge is only retrieved for the decision indices in
-    ``knowledge_for`` (the ones going to the LLM); rules do not use it.
+    ``positions`` (slot -> derived Position of every hero) lets a prompt name
+    the role each hero really played instead of the one a hero note calls
+    usual. The knowledge block is only assembled for the decision indices in
+    ``knowledge_for`` (the ones going to the LLM); rules do not read it.
+    Every rule evaluation still gets ``sources``: the best entries of that
+    block, or for the other points the best entries the knowledge base has
+    on the situation. They are what the report lists when no LLM verdict
+    replaces the rule evaluation.
+
+    The result is a list with one more attribute, ``knowledge_info``: the
+    report-level ``knowledge`` object (:func:`_knowledge_info`), taken here,
+    in the thread and at the moment the sources were retrieved.
     """
+    out = _Prepared()
     try:
         from .context_builder import build_context
     except Exception as exc:
         logger.error("Context builder unavailable: %s", exc)
-        return []
-    get_knowledge_for_context = None
-    if knowledge_for:
-        try:
-            from .knowledge_base import get_knowledge_for_context
-        except Exception as exc:
-            logger.warning("Knowledge base unavailable: %s", exc)
+        return out
+    get_knowledge_for_context = related_refs = None
+    try:
+        from .knowledge_base import get_knowledge_for_context, related_refs
+    except Exception as exc:
+        logger.warning("Knowledge base unavailable: %s", exc)
+    match_positions = _positions_by_team(match, positions)
 
-    out: list[tuple[DecisionContext, str, Evaluation]] = []
+    retrieved: list = []    # what carries a ``retrieval`` record: blocks and related-entry lists
     for i, dp in enumerate(decisions):
         try:
             chain = None
@@ -605,22 +856,81 @@ def _context_step(
             if position:
                 # Position 1-5 lets knowledge retrieval add a role tag.
                 ctx.match_context["player_position"] = position
+            if match_positions["radiant"] or match_positions["dire"]:
+                ctx.match_context["positions"] = match_positions
         except Exception as exc:
             logger.error("Context build failed (t=%s): %s", dp.time, exc, exc_info=True)
             continue
         knowledge = ""
-        if get_knowledge_for_context is not None and knowledge_for and i in knowledge_for:
-            try:
+        refs: list = []
+        try:
+            if knowledge_for and i in knowledge_for and get_knowledge_for_context is not None:
+                # The game mode travels in ctx.match_context (a Turbo block has no benchmarks).
                 knowledge = get_knowledge_for_context(ctx, lang=lang) or ""
-            except Exception as exc:
-                logger.warning("Knowledge retrieval failed (t=%s): %s", dp.time, exc)
+                # Read before anything turns the block into a plain str.
+                refs = list(getattr(knowledge, "refs", None) or ())
+                retrieved.append(knowledge)
+            elif related_refs is not None:
+                related = related_refs(ctx, lang=lang, k=RULE_SOURCES)
+                refs = list(related or ())
+                retrieved.append(related)
+        except Exception as exc:
+            logger.warning("Knowledge retrieval failed (t=%s): %s", dp.time, exc)
         try:
             rules = evaluate_decision_fallback(ctx, lang=lang)
         except Exception as exc:
             logger.error("Rule evaluation failed (t=%s): %s", dp.time, exc, exc_info=True)
             rules = _error_evaluation(ctx, lang)
+        try:
+            rules.sources = sources_payload(refs, limit=RULE_SOURCES)
+        except Exception as exc:  # a test double without refs semantics
+            logger.debug("Knowledge sources unavailable (t=%s): %s", dp.time, exc)
         out.append((ctx, knowledge, rules))
+    out.knowledge_info = _knowledge_info(retrieved)
     return out
+
+
+class _Prepared(list):
+    """Result of :func:`_context_step`: the prepared decisions plus ``knowledge_info``."""
+
+    knowledge_info: dict | None = None
+
+
+def _knowledge_info(blocks: list) -> dict:
+    """The report-level ``knowledge`` object: how the sources were retrieved.
+
+    ``mode`` is what the sources of this report were ranked with ("hybrid" =
+    tags, keywords and embedding vectors; "lexical" = tags and keywords
+    only), read from the ``retrieval`` records of *blocks* (knowledge blocks
+    and related-entry lists); a report without any says what the retrieval
+    stack would use right now. ``embedder`` and ``vectors`` describe the
+    vector space and are None / 0 when it was not used; ``chunks`` is the
+    size of the knowledge base.
+
+    The numbers describe the store this thread holds (built here when no
+    retrieval has built it yet): the cached stores are reset after every
+    learning run and game-data update, and a report read at that moment —
+    or one without decisions in a fresh process — said "lexical, 0 chunks"
+    under sources that had been ranked with vectors.
+    """
+    info: dict[str, Any] = {"mode": "lexical", "embedder": None, "chunks": 0, "vectors": 0}
+    try:
+        from . import knowledge_base, rag
+        stores = knowledge_base.warm_stores()
+        store = stores.get("en") or next((s for s in stores.values() if s is not None), None)
+        status = rag.status(store)
+        info["mode"] = "hybrid" if status.get("mode") == "hybrid" else "lexical"
+        info["embedder"] = status.get("embedder") or None
+        info["chunks"] = int(status.get("chunks") or 0)
+        info["vectors"] = int(status.get("vectors") or 0)
+    except Exception as exc:
+        logger.debug("Retrieval status unavailable: %s", exc)
+    modes = {(getattr(block, "retrieval", None) or {}).get("mode") for block in blocks} - {None}
+    if modes:
+        info["mode"] = "hybrid" if "hybrid" in modes else "lexical"
+    if info["mode"] != "hybrid":
+        info["embedder"], info["vectors"] = None, 0
+    return info
 
 
 def _compare_step(match: MatchData, player: PlayerData, lang: str, position: int | None) -> dict:
@@ -632,10 +942,10 @@ def _compare_step(match: MatchData, player: PlayerData, lang: str, position: int
         return {}
 
 
-def _phase_stats_step(match: MatchData, player: PlayerData, deaths: list[DeathEvent]) -> list:
+def _phase_stats_step(match: MatchData, player: PlayerData, deaths: list[DeathEvent], lang: str) -> list:
     try:
         from .phases import slice_player_phases
-        return slice_player_phases(match, player, death_times=[d.time for d in deaths])
+        return slice_player_phases(match, player, death_times=[d.time for d in deaths], lang=lang)
     except Exception as exc:
         logger.error("Phase slicing failed: %s", exc, exc_info=True)
         return []
@@ -660,6 +970,22 @@ def _llm_priority(dp: DecisionPoint) -> tuple:
     )
 
 
+def _llm_slots(points: list[DecisionPoint]) -> list[int]:
+    """Indices of the decision points that go to the LLM (at most MAX_LLM_EVALS).
+
+    Deaths come first, then the other points by severity. A player who died
+    more often than there are slots gets them spread evenly over his deaths
+    (first and last included) instead of the earliest ones, so the late game
+    is covered as well.
+    """
+    order = sorted(range(len(points)), key=lambda i: _llm_priority(points[i]))
+    deaths = [i for i in order if points[i].point_type == "death"]
+    if len(deaths) > MAX_LLM_EVALS > 1:
+        step = (len(deaths) - 1) / (MAX_LLM_EVALS - 1)
+        return [deaths[round(k * step)] for k in range(MAX_LLM_EVALS)]
+    return order[:MAX_LLM_EVALS]
+
+
 def _error_evaluation(context: DecisionContext, lang: str) -> Evaluation:
     return Evaluation(
         decision_point=context.decision_point,
@@ -677,23 +1003,28 @@ def _rules_copy(rules: Evaluation, degraded: bool) -> Evaluation:
         mistake=rules.mistake,
         better_play=rules.better_play,
         lesson=rules.lesson,
+        sources=list(rules.sources),
     )
     ev.degraded = degraded
     return ev
 
 
-def _fill_missing_fields(ev: Evaluation, rules: Evaluation) -> Evaluation:
-    """Backfill empty structured fields of an LLM verdict from the rules."""
-    if not ev.mistake and rules.mistake:
-        ev.mistake = rules.mistake
-    if not ev.better_play and rules.better_play:
-        ev.better_play = rules.better_play
-    if not ev.lesson and rules.lesson:
-        ev.lesson = rules.lesson
+def _llm_verdict(ev: Evaluation) -> Evaluation:
+    """Mark an evaluation as an LLM verdict.
+
+    Fields the model left empty stay empty: the rule evaluation was written
+    independently and can contradict the LLM's analysis (the frontend hides
+    empty fields).
+    """
     ev.score = normalize_grade(ev.score)
     ev.used_llm = True
     ev.degraded = False
     return ev
+
+
+def _error_text(exc: BaseException) -> str:
+    """Log text for an exception (a timeout has an empty message)."""
+    return str(exc) or type(exc).__name__
 
 
 async def _safe_evaluate(
@@ -718,33 +1049,43 @@ async def _safe_evaluate(
     if _HAS_AGENT and match is not None and is_agent_enabled():
         try:
             ev = await run_decision_agent(match, context, knowledge, lang=lang)
-            return _fill_missing_fields(ev, rules)
+            return _llm_verdict(ev)
         except asyncio.CancelledError:
             raise
-        except AgentUnsupportedError:
-            logger.info("Agent unsupported by the endpoint; using single-prompt evaluation (t=%s)", t)
+        except AgentUnsupportedError as exc:
+            # Also raised when too little time is left for an investigation.
+            logger.info("Agent not used (%s); using single-prompt evaluation (t=%s)", _error_text(exc), t)
         except Exception as exc:
-            logger.warning("Decision agent failed (t=%s), using rules: %s", t, exc)
+            logger.warning("Decision agent failed (t=%s), using rules: %s", t, _error_text(exc))
             return _rules_copy(rules, degraded=True)
 
     try:
         ev = await evaluate_decision(context, knowledge, lang=lang)
-        return _fill_missing_fields(ev, rules)
+        return _llm_verdict(ev)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        logger.warning("Single-prompt evaluation failed (t=%s), using rules: %s", t, exc)
+        logger.warning("Single-prompt evaluation failed (t=%s), using rules: %s", t, _error_text(exc))
         return _rules_copy(rules, degraded=True)
 
 
-def _calculate_overall_grade(evaluations: list[Evaluation]) -> str:
-    """Weighted overall grade (deaths count 1.5x); always a valid grade."""
-    if not evaluations:
+_DEATH_WEIGHT = 1.5
+
+
+def _calculate_overall_grade(evaluations: list[Evaluation], unlocated_deaths: int = 0) -> str:
+    """Weighted overall grade (deaths count 1.5x); always a valid grade.
+
+    ``unlocated_deaths`` are deaths on the scoreboard that the match data
+    does not contain. Each counts like an analysed death graded C, so a
+    report with missing deaths is not graded as if they had not happened.
+    """
+    unlocated_deaths = max(0, unlocated_deaths)
+    if not evaluations and not unlocated_deaths:
         return "B"
-    total_weight = 0.0
-    weighted_sum = 0.0
+    total_weight = _DEATH_WEIGHT * unlocated_deaths
+    weighted_sum = _SCORE_TO_NUM["C"] * total_weight
     for ev in evaluations:
-        weight = 1.5 if ev.decision_point.point_type == "death" else 1.0
+        weight = _DEATH_WEIGHT if ev.decision_point.point_type == "death" else 1.0
         weighted_sum += _SCORE_TO_NUM.get(normalize_grade(ev.score), 2.0) * weight
         total_weight += weight
     return _letter_grade(weighted_sum / total_weight if total_weight > 0 else 3.0)
@@ -779,11 +1120,18 @@ async def generate_coaching_report(
     ------
     ValueError
         When ``player_slot`` is not a player of ``match``.
+    NoGameError
+        (a ``ValueError``) when the replay was cut before the game started
+        or within its first minutes (:func:`has_no_game`).
     """
     lang = lang if lang in ("zh", "en") else "zh"
     player = _find_player(match, player_slot)
     if player is None:
         raise ValueError(f"player_slot {player_slot} is not a player of match {match.match_id}")
+    if has_no_game(match):
+        # A replay cut before or just after the horn: a report on it would
+        # grade a game that was never played ("KDA 0/0/0 in 0 minutes, grade B").
+        raise NoGameError(f"match {match.match_id} ends {max(0, match.duration)} s into the game; nothing to review")
 
     started = time.monotonic()
     timeout = _coach_timeout()
@@ -825,22 +1173,18 @@ async def generate_coaching_report(
 
     # Step 2-3: contexts, knowledge (LLM-bound points only) and rule baselines.
     llm_on = is_api_available()
-    order = sorted(range(len(decisions)), key=lambda i: _llm_priority(decisions[i]))
-    llm_decisions = set(order[:MAX_LLM_EVALS]) if llm_on else set()
+    llm_decisions = set(_llm_slots(decisions)) if llm_on else set()
     await _emit("context", 0, max(1, len(decisions)))
     prepared = await asyncio.to_thread(
-        _context_step, match, decisions, causal_chains, position_number, lang, llm_decisions,
+        _context_step, match, decisions, causal_chains, position_number, lang, llm_decisions, positions_map,
     )
     # Contexts whose build failed are skipped, so re-derive the LLM indices.
-    llm_indices = (
-        sorted(range(len(prepared)), key=lambda i: _llm_priority(prepared[i][0].decision_point))[:MAX_LLM_EVALS]
-        if llm_on else []
-    )
+    llm_indices = _llm_slots([item[0].decision_point for item in prepared]) if llm_on else []
     evaluations_by_index: dict[int, Evaluation] = {
         i: _rules_copy(prepared[i][2], degraded=False) for i in range(len(prepared))
     }
 
-    phase_stats_list = await asyncio.to_thread(_phase_stats_step, match, player, deaths)
+    phase_stats_list = await asyncio.to_thread(_phase_stats_step, match, player, deaths, lang)
     phase_reviews: list[PhaseReview | None] = [None] * len(phase_stats_list)
 
     # Step 4: LLM evaluations + phase reviews, concurrently, under the deadline.
@@ -886,6 +1230,8 @@ async def generate_coaching_report(
         review = phase_reviews[j]
         if review is None:
             review = _phase_fallback(ps, lang, degraded=llm_on)
+        # The window is known here, whatever built the review.
+        review.time_range, review.start_min, review.end_min = ps.time_range, ps.start_min, ps.end_min
         final_phases.append(review)
 
     try:
@@ -916,14 +1262,23 @@ async def generate_coaching_report(
     await _emit("summary", 0, 1)
     death_analyses = sorted((e for e in evaluations if e.decision_point.point_type == "death"), key=_chronological)
     key_moments = sorted((e for e in evaluations if e.decision_point.point_type != "death"), key=_chronological)
-    overall_grade = _calculate_overall_grade(evaluations)
+    overall_grade = _calculate_overall_grade(evaluations, unlocated_deaths=player.deaths - len(death_analyses))
     laning_review = _generate_laning_review(match, player, evaluations, lang=lang, positions=positions_map)
-    improvement_areas = _detect_improvement_areas(evaluations, lang=lang)
+    improvement_areas = _detect_improvement_areas(
+        evaluations, lang=lang, lane_result=laning_review.get("lane_result"))
     strengths = _detect_strengths(evaluations, lang=lang)
-    summary = _generate_summary(player, overall_grade, evaluations, improvement_areas, strengths, match, lang=lang)
+    # A game mode without benchmarks has no comparison card, a replay that
+    # ends early only part of one; say so here.
+    limited = pro_comparison_data.get("applicable") is False or pro_comparison_data.get("partial") is True
+    mode_note = pro_comparison_data.get("summary", "") if limited else ""
+    summary = _generate_summary(
+        player, overall_grade, evaluations, improvement_areas, strengths, match, lang=lang, note=mode_note)
 
     llm_used = any(e.used_llm for e in evaluations) or any(p.used_llm for p in final_phases)
     degraded = llm_on and (any(e.degraded for e in evaluations) or any(p.degraded for p in final_phases))
+    knowledge_info = getattr(prepared, "knowledge_info", None)
+    if knowledge_info is None:      # a test double of the context step
+        knowledge_info = await asyncio.to_thread(_knowledge_info, [item[1] for item in prepared])
 
     report = CoachingReport(
         match_id=match.match_id,
@@ -941,11 +1296,15 @@ async def generate_coaching_report(
         position=position_payload,
         llm_used=llm_used,
         degraded=degraded,
+        knowledge=knowledge_info,
         report_version=REPORT_SCHEMA_VERSION,
     )
     logger.info(
-        "AI coach report ready: match=%s slot=%s decisions=%d llm_evals=%d llm_used=%s degraded=%s (%.1fs)",
+        "AI coach report ready: match=%s slot=%s decisions=%d llm_evals=%d llm_used=%s degraded=%s "
+        "knowledge=%s sources=%d cited=%d (%.1fs)",
         match.match_id, player_slot, len(evaluations), len(llm_indices), llm_used, degraded,
+        knowledge_info["mode"], sum(len(e.sources) for e in evaluations),
+        sum(1 for e in evaluations for src in e.sources if src.get("cited")),
         time.monotonic() - started,
     )
     await _emit("done", 1, 1)
