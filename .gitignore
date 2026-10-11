@@ -52,3 +52,4 @@ backend/data/learned/
 # Browser-exported cookies (Bilibili subtitles for the learning pipeline) — secrets
 backend/data/bilibili_cookies.txt
 *.cookies.txt
+cookies.txt

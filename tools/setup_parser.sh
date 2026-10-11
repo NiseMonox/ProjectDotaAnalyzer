@@ -61,7 +61,15 @@ fi
 
 if [ -z "$JAVA_HOME_DIR" ] && command -v java > /dev/null 2>&1; then
     if [ "$(uname -s)" = "Darwin" ] && [ -x /usr/libexec/java_home ]; then
-        JAVA_HOME_DIR="$(/usr/libexec/java_home -v 17+ 2> /dev/null || true)"
+        # java_home answers with the newest registered JDK even when none
+        # satisfies "17+", so check what it returned before trusting it.
+        CANDIDATE="$(/usr/libexec/java_home -v 17+ 2> /dev/null || true)"
+        if [ -n "$CANDIDATE" ] && [ -x "${CANDIDATE}/bin/java" ]; then
+            CANDIDATE_MAJOR="$("${CANDIDATE}/bin/java" -version 2>&1 | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+            if [ "${CANDIDATE_MAJOR:-0}" -ge 17 ] 2> /dev/null; then
+                JAVA_HOME_DIR="$CANDIDATE"
+            fi
+        fi
     fi
     if [ -z "$JAVA_HOME_DIR" ]; then
         JAVA_BIN="$(command -v java)"

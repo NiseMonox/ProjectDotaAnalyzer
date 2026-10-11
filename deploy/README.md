@@ -421,6 +421,10 @@ sudo systemctl restart dota-analyzer
 
 ## Redeploy after a `git push`
 
+A clone made before the history rewrite of 2026-10 cannot `git pull` once:
+follow section 9 of [`docs/WINDOWS.md`](../docs/WINDOWS.md) (fetch, then
+`git reset --hard origin/master`) the first time.
+
 ```bash
 cd /opt/dota-analyzer
 git pull
