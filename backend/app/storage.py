@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Callable, Iterator
 
+from . import osutil
 from .models import MatchData
 
 logger = logging.getLogger(__name__)
@@ -79,15 +80,19 @@ def safe_key(key: str, max_len: int = 80) -> str:
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Write ``data`` to ``path`` atomically (temp file + os.replace)."""
+    """Write ``data`` to ``path`` atomically (temp file + os.replace).
+
+    On Windows the replace waits a moment while a reader has ``path`` open
+    (see :func:`osutil.atomic_replace`).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         with open(tmp, "wb") as fh:
             fh.write(data)
-        os.replace(tmp, path)
+        osutil.atomic_replace(tmp, path)
     except BaseException:
-        tmp.unlink(missing_ok=True)
+        delete_file(tmp)  # never raises: the error on its way out is the one that counts
         raise
 
 
@@ -301,13 +306,16 @@ def store_upload(src: BinaryIO, replay_dir: Path, max_bytes: int) -> StoredRepla
         final = replay_dir / f"{digest}.dem"
         existed = final.exists()
         if existed:
-            tmp.unlink(missing_ok=True)
+            delete_file(tmp)
             touch(final)
         else:
-            os.replace(tmp, final)
+            osutil.atomic_replace(tmp, final)
         return StoredReplay(path=final, digest=digest, size=size, existed=existed)
     except BaseException:
-        tmp.unlink(missing_ok=True)
+        # Never raises: an upload that was refused (too large, not a replay)
+        # must be answered with that refusal, also when the partial file
+        # cannot be removed right now (on Windows: while something has it open).
+        delete_file(tmp)
         raise
 
 
@@ -344,8 +352,13 @@ def prune_replays(replay_dir: Path, max_files: int, keep: set[Path] | None = Non
 
 
 def delete_file(path: Path) -> None:
+    """Delete ``path`` if it is there; a failure is logged, never raised.
+
+    On Windows a file that is still open somewhere is given a moment to be
+    closed first (see :func:`osutil.remove_file`).
+    """
     try:
-        path.unlink(missing_ok=True)
+        osutil.remove_file(path)
     except OSError as exc:
         logger.warning("Failed to delete %s: %s", path, exc)
 
@@ -424,9 +437,13 @@ class MatchStore:
         # Splice pydantic's fast JSON for the (large) match into the envelope.
         payload = header[:-1] + ',"match":' + match.model_dump_json() + "}"
         data = gzip.compress(payload.encode("utf-8"), compresslevel=6)
+        path = self.path_for(key)
         with self._write_lock:
-            atomic_write_bytes(self.path_for(key), data)
-        self.prune()
+            atomic_write_bytes(path, data)
+        # Never the file just written: its time can tie with older files (file
+        # times advance in steps of up to 15.6 ms on Windows), and a tie is
+        # broken by the order the directory lists them in.
+        self.prune(keep={path})
 
     def update_meta(self, key: str, changes: dict) -> bool:
         """Merge ``changes`` into the stored metadata of ``key``.
@@ -437,7 +454,7 @@ class MatchStore:
         path = self.path_for(key)
         with self._write_lock:
             try:
-                data = json.loads(gzip.decompress(path.read_bytes()))
+                data = json.loads(gzip.decompress(osutil.read_bytes(path)))
             except FileNotFoundError:
                 return False
             except (OSError, EOFError, ValueError, zlib.error) as exc:  # unreadable: load() discards it
@@ -454,7 +471,9 @@ class MatchStore:
     def load(self, key: str) -> tuple[MatchData, dict] | None:
         path = self.path_for(key)
         try:
-            raw = path.read_bytes()
+            # Not path.read_bytes(): on Windows a save of the same match that
+            # is replacing the file right now can shut a reader out for an instant.
+            raw = osutil.read_bytes(path)
         except FileNotFoundError:
             return None
         except OSError as exc:
@@ -481,12 +500,13 @@ class MatchStore:
     def delete(self, key: str) -> None:
         delete_file(self.path_for(key))
 
-    def prune(self) -> list[Path]:
+    def prune(self, keep: set[Path] | None = None) -> list[Path]:
+        """Delete the least recently used files beyond the limit, never one of ``keep``."""
         try:
             files = [p for p in self.directory.glob(f"*{self.SUFFIX}") if p.is_file()]
         except OSError:
             return []
-        return prune_files(files, self._max_files())
+        return prune_files(files, self._max_files(), keep)
 
 
 # ---------------------------------------------------------------------------
@@ -500,8 +520,7 @@ def coach_cache_path(cache_dir: Path, coach_id: str, schema_version: int) -> Pat
 
 def load_json(path: Path) -> dict | None:
     try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
+        data = json.loads(osutil.read_bytes(path).decode("utf-8"))
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as exc:

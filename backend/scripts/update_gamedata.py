@@ -32,8 +32,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.app import osutil  # noqa: E402  (imports nothing from the project)
+
 
 def main() -> None:
+    # Output redirected to a file or pipe on Windows is encoded with the system code page:
+    # a character it lacks is escaped instead of ending the command.
+    osutil.harden_stdio()
     parser = argparse.ArgumentParser(description="Update Dota 2 game data (dotaconstants master, mirrors, OpenDota API)")
     parser.add_argument("--force", action="store_true", help="Download even if the local data is current")
     parser.add_argument("--allow-shrink", action="store_true",

@@ -16,10 +16,12 @@ File ``<model slug>.npz`` (numpy, no pickle):
 Two files exist per model: the committed one for the static corpus and the
 situation queries (``backend/data/rag/``) and a runtime cache for everything
 else (``cache/rag/``). :class:`VectorIndex` reads both lazily, merges them
-and reloads when a file's mtime or size changes (another process — the CLI
-or a learning run — rebuilt it). Files are written through a temporary file
-and ``os.replace``; :func:`build_lock` keeps two processes from embedding
-the same missing texts into one file at the same time.
+and reloads when a file's mtime, size or identity changes (another process —
+the CLI or a learning run — rebuilt it). Files are written through a temporary file
+and an atomic replace; :func:`build_lock` keeps two processes from embedding
+the same missing texts into one file at the same time. A file is read into
+memory as a whole and closed again (no memory map): on Windows an open file
+can be neither replaced nor removed.
 
 numpy is imported inside the functions; without it :func:`numpy_or_none`
 returns None and the callers stay lexical.
@@ -39,10 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Sequence
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - not available on Windows
-    fcntl = None  # type: ignore[assignment]
+from ... import osutil
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +160,7 @@ def write_vector_file(path: Path, model_id: str, keys: Sequence[str], matrix, pa
             f.flush()
             os.fsync(f.fileno())   # the rename below must not outlive the data after a power loss
         os.chmod(tmp, 0o644)   # mkstemp creates 0600; a CLI run under another user must stay readable
-        os.replace(tmp, path)
+        osutil.atomic_replace(tmp, path)   # Windows: waits while a reader has the old file open
     except BaseException:
         try:
             os.unlink(tmp)
@@ -181,60 +180,88 @@ def build_lock(path: Path, should_stop: Callable[[], bool] | None = None) -> Ite
     A server's warm-up and a ``rag build`` / learning run started next to it
     would otherwise both embed every text the file lacks (two model loads,
     the work done twice, the slower one overwriting the other's file). The
-    lock is ``flock`` on ``<file name>.lock`` beside the file; the OS
-    releases it when the holder dies, so it cannot go stale. A second
-    process waits — when it gets the lock the first one's vectors are in
-    the file and :func:`sync_vector_file` keeps them.
+    lock is :class:`osutil.FileLock` on ``<file name>.lock`` beside the file
+    (``flock`` on POSIX, a byte-range lock on Windows); the OS releases it
+    when the holder dies, so it cannot go stale. A second process waits —
+    when it gets the lock the first one's vectors are in the file and
+    :func:`sync_vector_file` keeps them.
 
     Yields True with the lock held, False when *should_stop* became true
     while waiting (nothing may be built then). Where no lock is possible
-    (no ``fcntl``, a directory that cannot be written) it yields True
-    unguarded: the build itself is still atomic per file.
+    (a directory that cannot be written, a file system without locks) it
+    yields True unguarded: the build itself is still atomic per file.
     """
     path = Path(path)
-    fd = None
-    if fcntl is not None:
-        lock_path = path.with_name(path.name + ".lock")
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                # flock needs no write access: a lock file created by another
-                # user (a cron run as root next to the service) can be locked.
-                fd = os.open(lock_path, os.O_RDONLY | os.O_CREAT, 0o644)
-            except PermissionError:
-                fd = os.open(lock_path, os.O_RDONLY)
-        except OSError as exc:
-            logger.warning("Cannot take the vector build lock %s: %s", lock_path, exc)
+    lock_path = path.with_name(path.name + ".lock")
+    lock: osutil.FileLock | None = None
     try:
-        if fd is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock = osutil.FileLock(lock_path)
+    except OSError as exc:
+        logger.warning("Cannot take the vector build lock %s: %s", lock_path, exc)
+    try:
+        if lock is not None:
             waiting = False
             while True:
                 try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if should_stop is not None and should_stop():
-                        yield False
-                        return
-                    if not waiting:
-                        waiting = True
-                        logger.info("Another process is building %s; waiting for it", path.name)
-                    time.sleep(LOCK_POLL_S)
-                except OSError as exc:  # a file system without flock: unguarded
+                    if lock.acquire(blocking=False):
+                        break
+                except OSError as exc:  # no lock file, or a file system without locks: unguarded
                     logger.warning("Vector build lock unavailable for %s: %s", path.name, exc)
                     break
+                if should_stop is not None and should_stop():
+                    yield False
+                    return
+                if not waiting:
+                    waiting = True
+                    logger.info("Another process is building %s; waiting for it", path.name)
+                time.sleep(LOCK_POLL_S)
         yield True
     finally:
-        if fd is not None:
-            os.close(fd)  # closing releases the flock
+        if lock is not None:
+            lock.release()
+
+
+# How long (seconds) remove_file() keeps trying on Windows, and how often.
+_REMOVE_WAIT_S = 1.0
+_REMOVE_POLL_S = 0.05
+
+
+def remove_file(path: Path) -> None:
+    """Remove *path* (no error when it is not there).
+
+    On Windows a file cannot be removed while it is open, and another
+    thread or process may be reading the vector file at this moment (a
+    read takes milliseconds): a ``PermissionError`` is retried for up to
+    :data:`_REMOVE_WAIT_S` seconds before it is raised. On POSIX this is
+    ``Path.unlink(missing_ok=True)``.
+    """
+    path = Path(path)
+    deadline = time.monotonic() + _REMOVE_WAIT_S
+    while True:
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if not osutil.IS_WINDOWS or time.monotonic() >= deadline:
+                raise
+            time.sleep(_REMOVE_POLL_S)
 
 
 def _signature(path: Path | None) -> tuple:
+    """What tells one state of a vector file from the next.
+
+    The file identity (inode / Windows file index) is part of it: a rebuild
+    that replaces one text keeps the number of vectors and with it the size,
+    and the modification time alone does not tell two writes within one
+    clock tick apart (about 16 ms on NTFS, 2 s on FAT). Every write goes
+    through a new temporary file, so the identity always changes.
+    """
     if path is None:
         return ()
     try:
         stat = path.stat()
-        return (stat.st_mtime_ns, stat.st_size)
+        return (stat.st_mtime_ns, stat.st_size, stat.st_ino)
     except OSError:
         return ()
 
@@ -434,7 +461,7 @@ def sync_vector_file(
 
     def save() -> None:
         if not keep:   # no file is better than an empty one (its dimension would be unknown)
-            path.unlink(missing_ok=True)
+            remove_file(path)
             return
         ordered = sorted(keep)
         write_vector_file(path, model_id, ordered,
@@ -502,7 +529,7 @@ def discard_unusable(path: Path, model_id: str, expected_dim: int = 0,
             return False   # unreadable only because numpy is missing
         logger.warning("Removing unusable vector cache file: %s", exc)
         try:
-            Path(path).unlink(missing_ok=True)
+            remove_file(Path(path))
         except OSError as unlink_error:
             logger.warning("Could not remove %s: %s", path, unlink_error)
             return False
@@ -522,5 +549,5 @@ def coverage(index: VectorIndex | None, model_id: str, texts: Iterable[str], kin
 __all__ = [
     "CHECK_INTERVAL_S", "DOC", "FORMAT_VERSION", "LOCK_POLL_S", "QUERY", "VectorFileError", "VectorIndex",
     "build_lock", "coverage", "discard_unusable", "file_slug", "numpy_or_none", "read_vector_file",
-    "sync_vector_file", "vector_key", "write_vector_file",
+    "remove_file", "sync_vector_file", "vector_key", "write_vector_file",
 ]

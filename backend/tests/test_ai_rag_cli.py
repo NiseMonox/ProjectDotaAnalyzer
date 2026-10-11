@@ -70,6 +70,48 @@ def test_status_and_build(rag_env, monkeypatch, capsys):
     assert code == 0 and "mode:              hybrid" in out and "error" not in out
 
 
+def test_peak_memory_is_reported_on_windows_too(monkeypatch):
+    """``resource`` is Unix only; Windows tells the peak working set through GetProcessMemoryInfo."""
+    import ctypes
+    from types import SimpleNamespace
+
+    asked = []
+
+    def get_info(process, counters, size):
+        asked.append((process, size))
+        counters._obj.PeakWorkingSetSize = 150 * 1024 * 1024 + 524288      # filled in by the system
+        return 1
+
+    kernel32 = SimpleNamespace(GetCurrentProcess=lambda: -1, K32GetProcessMemoryInfo=get_info)
+    with monkeypatch.context() as patch:
+        patch.setattr(ctypes, "WinDLL", lambda name: kernel32, raising=False)
+        patch.setattr(sys, "platform", "win32")
+        assert cli._peak_rss_mb() == 150.5
+        (process, size), = asked
+        assert process == -1 and size >= 9 * ctypes.sizeof(ctypes.c_size_t)   # this process, the whole structure
+        # The call fails, or the library is not there: no number, never an error
+        kernel32.K32GetProcessMemoryInfo = lambda process, counters, size: 0
+        assert cli._peak_rss_mb() == 0.0
+        patch.setattr(ctypes, "WinDLL", lambda name: (_ for _ in ()).throw(OSError("no such library")), raising=False)
+        assert cli._peak_rss_mb() == 0.0
+    assert cli._peak_rss_mb() > 0                                           # this system
+
+
+def test_output_survives_a_code_page_without_the_characters(rag_env, monkeypatch):
+    """Output redirected to a file or pipe on Windows is encoded with the system code page
+    (cp1252, cp932, cp936); Chinese text it lacks is escaped instead of ending the command."""
+    import io
+
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252", newline="\n"))
+    monkeypatch.setattr(sys, "argv", ["rag", "query", "怎么打莱恩", "--hero", "Axe", "--lang", "zh",
+                                      "--match-heroes", "Axe,Lion", "--top-k", "2"])
+    assert cli.main() == 0
+    sys.stdout.flush()
+    out = raw.getvalue().decode("cp1252")
+    assert "[K1] " in out and "\\u" in out and "-- mode=" in out
+
+
 def test_static_build_uses_the_committed_game_data(rag_env, monkeypatch, capsys):
     # Fetched game data on this machine must not leak into the committed file
     fetched = rag_env / "gamedata"

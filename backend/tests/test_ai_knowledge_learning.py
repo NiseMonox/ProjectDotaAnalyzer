@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.app import osutil
 from backend.app.ai import data_manager
 from backend.app.ai.learning import base, llm_distiller, match_miner, pipeline, stats_learner, video_learner
 
@@ -145,9 +146,9 @@ def test_successful_level_recorded_and_not_due(learn_env, monkeypatch):
 
 def test_legacy_manifest_is_understood(learn_env):
     pipeline.LAST_LEARN_FILE.write_text(json.dumps({
-        "timestamp": pipeline._now().strftime(pipeline._TIME_FMT), "patch": ""}))
+        "timestamp": pipeline._now().strftime(pipeline._TIME_FMT), "patch": ""}), encoding="utf-8")
     assert pipeline.due_levels() == ()
-    pipeline.LAST_LEARN_FILE.write_text("{broken")
+    pipeline.LAST_LEARN_FILE.write_text("{broken", encoding="utf-8")
     assert pipeline.due_levels() == pipeline.ALL_LEVELS
 
 
@@ -157,12 +158,12 @@ def test_legacy_manifest_is_understood(learn_env):
 
 def test_quick_run_does_not_clobber_full_outputs(learn_env, monkeypatch):
     full_file = learn_env.learned / "stats_opendota.json"
-    full_file.write_text(json.dumps({"meta": {"full": True}, "chunks": []}))
+    full_file.write_text(json.dumps({"meta": {"full": True}, "chunks": []}), encoding="utf-8")
     raw_file = learn_env.learned / "_benchmarks_raw.json"
-    raw_file.write_text(json.dumps({"heroes": {"keep": {}}}))
+    raw_file.write_text(json.dumps({"heroes": {"keep": {}}}), encoding="utf-8")
     manifest = json.dumps({"timestamp": "2026-01-01T00:00:00Z", "levels": {}})
-    pipeline.LAST_LEARN_FILE.write_text(manifest)
-    before = (full_file.read_text(), raw_file.read_text())
+    pipeline.LAST_LEARN_FILE.write_text(manifest, encoding="utf-8")
+    before = (full_file.read_text(encoding="utf-8"), raw_file.read_text(encoding="utf-8"))
 
     monkeypatch.setattr(stats_learner, "opendota_get", _fake_opendota())
     reset_calls = []
@@ -171,8 +172,8 @@ def test_quick_run_does_not_clobber_full_outputs(learn_env, monkeypatch):
     summary = pipeline.run_learning(levels=(1,), quick=True)
 
     assert summary["quick"] is True and summary["levels"]["1"]["chunks_written"] > 0
-    assert (full_file.read_text(), raw_file.read_text()) == before
-    assert pipeline.LAST_LEARN_FILE.read_text() == manifest
+    assert (full_file.read_text(encoding="utf-8"), raw_file.read_text(encoding="utf-8")) == before
+    assert pipeline.LAST_LEARN_FILE.read_text(encoding="utf-8") == manifest
     assert (learn_env.smoke / "stats_opendota.json").exists()
     assert reset_calls == []
     # Smoke output is never loaded as knowledge
@@ -367,7 +368,7 @@ def test_load_learned_chunks_drops_injection(learn_env):
         {"chunk_id": "learned:video:youtube:aaaaaaaaaaa:02", "lang": "en",
          "content": "Long " + "tip " * 1000, "tags": [], "source": "video:youtube"},
     ]}), encoding="utf-8")
-    (learn_env.learned / "_last_learn.json").write_text("{}")
+    (learn_env.learned / "_last_learn.json").write_text("{}", encoding="utf-8")
     loaded = {c["chunk_id"]: c for c in base.load_learned_chunks("en")}
     assert "learned:video:youtube:aaaaaaaaaaa:00" in loaded
     assert "learned:video:youtube:aaaaaaaaaaa:01" not in loaded
@@ -401,6 +402,64 @@ def test_yt_dlp_commands_use_end_of_options_separator(learn_env, monkeypatch):
         assert cmd[-1].endswith("--exec=evil")
 
 
+def test_yt_dlp_runs_by_its_full_path_and_talks_utf8(learn_env, monkeypatch):
+    """Windows: a bare program name only starts an .exe, and yt-dlp writes to a pipe in the
+    ANSI code page (cp936, cp932 ...) unless it is told otherwise."""
+    seen = []
+
+    def fake_run(cmd, **kwargs):
+        seen.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    program = r"C:\Tools\yt-dlp.exe"
+    monkeypatch.setattr(video_learner.subprocess, "run", fake_run)
+    monkeypatch.setattr(base.shutil, "which", lambda name: program if name == "yt-dlp" else None)
+    video_learner._search_youtube("dota 2 教学")
+    video_learner._download_subtitles("https://www.youtube.com/watch?v=abcdefghijk", str(learn_env.learned))
+    assert len(seen) == 2
+    for cmd, kwargs in seen:
+        assert cmd[0] == program                                   # what the lookup found is what runs
+        at = cmd.index("--encoding")
+        assert cmd[at + 1] == "utf-8" and at < cmd.index("--")     # an option, not part of the query / URL
+        assert kwargs["encoding"] == "utf-8" and kwargs["errors"] == "replace"
+        assert isinstance(cmd, list) and not kwargs.get("shell")
+    # Not on the PATH: the commands still name the program (and fail like any missing program)
+    monkeypatch.setattr(base.shutil, "which", lambda name: None)
+    assert base.yt_dlp_path() is None and video_learner._yt_dlp() == "yt-dlp"
+
+
+def test_a_batch_file_shim_of_yt_dlp_does_not_count_on_windows(learn_env, monkeypatch, caplog):
+    """Windows runs a .cmd / .bat through cmd.exe, which interprets characters of a query or URL."""
+    shim = r"C:\Users\me\AppData\Roaming\npm\yt-dlp.CMD"
+    monkeypatch.setattr(base.shutil, "which", lambda name: shim)
+    monkeypatch.setattr(pipeline, "llm_available", lambda: True)
+    monkeypatch.setattr(osutil, "IS_WINDOWS", False)
+    assert base.yt_dlp_path() == shim and pipeline._prerequisites_met(4) is True     # POSIX: any executable
+    monkeypatch.setattr(osutil, "IS_WINDOWS", True)
+    monkeypatch.setattr(base, "_refused_shims", set())
+    with caplog.at_level("WARNING", logger="backend.app.ai.learning.base"):
+        assert base.yt_dlp_path() is None and base.yt_dlp_path() is None
+    assert sum("batch file" in record.getMessage() for record in caplog.records) == 1    # said once
+    # ... with a command that installs it: plain "winget install yt-dlp" matches several packages
+    assert "winget install --id yt-dlp.yt-dlp -e" in caplog.text
+    assert pipeline._prerequisites_met(4) is False
+    assert video_learner.learn_from_videos(output_dir=learn_env.learned)["skipped"] == "no_yt_dlp"
+    monkeypatch.setattr(base.shutil, "which", lambda name: r"C:\Tools\yt-dlp.EXE")
+    assert base.yt_dlp_path() == r"C:\Tools\yt-dlp.EXE" and pipeline._prerequisites_met(4) is True
+
+
+def test_video_sources_saved_with_a_byte_order_mark_are_read(learn_env, tmp_path, monkeypatch):
+    """The file is edited by hand; Windows editors and PowerShell 5 write UTF-8 with a BOM,
+    which must not silently swap the operator's searches for the defaults."""
+    sources = tmp_path / "learning_sources.json"
+    monkeypatch.setattr(video_learner, "VIDEO_SOURCES_FILE", sources)
+    mine = {"bilibili": {"queries": ["刀塔 教学"], "videos": []}, "youtube": {"queries": [], "videos": []}}
+    sources.write_bytes(b"\xef\xbb\xbf" + json.dumps(mine, ensure_ascii=False, indent=2).encode("utf-8"))
+    assert video_learner._load_sources() == mine
+    sources.write_text(json.dumps(mine, ensure_ascii=False), encoding="utf-8")      # and without one
+    assert video_learner._load_sources() == mine
+
+
 def test_pinned_urls_are_validated(learn_env, monkeypatch):
     monkeypatch.setattr(video_learner, "_search_bilibili", lambda q: [])
     monkeypatch.setattr(video_learner, "_search_youtube", lambda q: [])
@@ -415,12 +474,91 @@ def test_pinned_urls_are_validated(learn_env, monkeypatch):
 def test_bilibili_cookies_default_under_learned_dir(learn_env, monkeypatch):
     assert video_learner._user_bilibili_cookies() is None
     cookies = learn_env.learned / "bilibili_cookies.txt"
-    cookies.write_text("# Netscape HTTP Cookie File\n")
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
     assert video_learner._user_bilibili_cookies() == cookies
     other = learn_env.learned / "other.txt"
-    other.write_text("")
+    other.write_text("", encoding="utf-8")
     monkeypatch.setenv("BILIBILI_COOKIES_FILE", str(other))
     assert video_learner._user_bilibili_cookies() == other
+
+
+_COOKIES_TXT = (
+    "# Netscape HTTP Cookie File\n"
+    "# 从浏览器导出\n"
+    "\n"
+    ".bilibili.com\tTRUE\t/\tFALSE\t1893456000\tSESSDATA\tabc%2C123\n"
+    "#HttpOnly_.bilibili.com\tTRUE\t/\tTRUE\t1893456000\tbili_jct\tdef456\n"
+    "www.bilibili.com\tFALSE\t/video\tFALSE\t\tnickname\t斧王\n"
+)
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+def test_bilibili_cookie_files_are_read_and_written_as_utf8(tmp_path, monkeypatch, encoding):
+    """The standard library's cookie jar opens cookies.txt in the system's encoding (cp936 or
+    cp932 on Windows): a file saved as "UTF-8 with BOM" failed its header check and was ignored,
+    and the session's cookies were handed to yt-dlp, which reads UTF-8, in the code page.
+    Under -X warn_default_encoding its load() and save() also raise the warning this suite
+    treats as an error on Windows."""
+    import http.cookiejar
+    import warnings
+
+    source = tmp_path / "cookies.txt"
+    source.write_text(_COOKIES_TXT, encoding=encoding, newline="")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")                      # EncodingWarning included
+        loaded = list(video_learner._load_cookie_file(source))
+        assert [(c.domain, c.path, c.secure, c.expires, c.name, c.value) for c in loaded] == [
+            (".bilibili.com", "/", False, 1893456000, "SESSDATA", "abc%2C123"),
+            (".bilibili.com", "/", True, 1893456000, "bili_jct", "def456"),
+            ("www.bilibili.com", "/video", False, None, "nickname", "斧王"),
+        ]
+        assert [c.has_nonstandard_attr("HTTPOnly") for c in loaded] == [False, True, False]
+
+        # The user's cookies reach the search session ...
+        monkeypatch.setattr(video_learner, "_bili_opener", None)
+        monkeypatch.setattr(video_learner, "_bili_jar", None)
+        monkeypatch.setattr(video_learner, "_user_bilibili_cookies", lambda: source)
+        opened = []
+        monkeypatch.setattr(video_learner.urllib.request.OpenerDirector, "open",
+                            lambda self, url, *a, **k: opened.append(url) or io.BytesIO(b"<html>"))
+        video_learner._get_bilibili_opener()
+        assert opened == ["https://www.bilibili.com"]
+        assert sorted(c.name for c in video_learner._bili_jar) == ["SESSDATA", "bili_jct", "nickname"]
+
+        # ... and without a file of the user, the session's own are written for yt-dlp.
+        monkeypatch.setattr(video_learner, "_user_bilibili_cookies", lambda: None)
+        written = video_learner._bili_cookies_file(str(tmp_path))
+    assert written == tmp_path / "bili_cookies.txt"
+    raw = written.read_bytes()
+    assert raw.startswith(b"# Netscape HTTP Cookie File\n") and b"\r" not in raw
+    assert "\tnickname\t斧王\n".encode("utf-8") in raw                # UTF-8 whatever the system's encoding
+    assert b"#HttpOnly_.bilibili.com\tTRUE\t/\tTRUE\t1893456000\tbili_jct\tdef456\n" in raw
+    # The same cookies come back, through this module's reader and (the ASCII ones: its
+    # encoding is the system's) through the standard library's.
+    again = sorted((c.domain, c.path, c.secure, c.expires, c.name, c.value)
+                   for c in video_learner._load_cookie_file(written))
+    assert again == sorted((c.domain, c.path, c.secure, c.expires, c.name, c.value) for c in loaded)
+    ascii_only = tmp_path / "ascii.txt"
+    video_learner._save_cookie_file(ascii_only, loaded[:2])
+    stdlib = http.cookiejar.MozillaCookieJar(str(ascii_only))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", EncodingWarning)    # the standard library's own open()
+        stdlib.load(ignore_discard=True, ignore_expires=True)
+    assert sorted(c.name for c in stdlib) == ["SESSDATA", "bili_jct"]
+
+
+def test_a_cookie_file_in_another_format_is_reported_not_used(tmp_path, monkeypatch, caplog):
+    source = tmp_path / "cookies.json"
+    source.write_text('[{"name": "SESSDATA"}]', encoding="utf-8")
+    monkeypatch.setattr(video_learner, "_bili_opener", None)
+    monkeypatch.setattr(video_learner, "_bili_jar", None)
+    monkeypatch.setattr(video_learner, "_user_bilibili_cookies", lambda: source)
+    monkeypatch.setattr(video_learner.urllib.request.OpenerDirector, "open",
+                        lambda self, url, *a, **k: io.BytesIO(b"<html>"))
+    with caplog.at_level("WARNING", logger=video_learner.logger.name):
+        video_learner._get_bilibili_opener()
+    assert "Could not load user Bilibili cookies" in caplog.text
+    assert list(video_learner._bili_jar) == []
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +601,7 @@ def test_distiller_uses_dedicated_client_per_loop(learn_env, monkeypatch):
     monkeypatch.setattr(openai, "AsyncOpenAI", _FakeClient)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
     monkeypatch.setenv("AI_COACH_MODEL", "test-model")
-    (learn_env.learned / base.MINING_AGGREGATES).write_text(json.dumps(_aggregates(60, 12, 9)))
+    (learn_env.learned / base.MINING_AGGREGATES).write_text(json.dumps(_aggregates(60, 12, 9)), encoding="utf-8")
 
     results = []
     for _ in range(2):  # like the pipeline: asyncio.run inside a worker thread
@@ -989,7 +1127,7 @@ def test_distiller_refuses_thin_or_stale_aggregates(learn_env, monkeypatch):
     # A smoke run may distil them (plumbing check)
     assert distill(thin, require_sufficient=False)["chunks_written"] == 1
 
-    (learn_env.gamedata / "meta.json").write_text(json.dumps({"patch_version": "7.41"}))
+    (learn_env.gamedata / "meta.json").write_text(json.dumps({"patch_version": "7.41"}), encoding="utf-8")
     data_manager.invalidate_all_caches()
     assert distill({**_aggregates(60, 12, 9), "patch": "7.38", "sufficient": True})["error"] == "stale_aggregates"
 
@@ -1123,7 +1261,7 @@ def test_level_three_due_again_after_a_later_level_two(learn_env, monkeypatch):
             "1": {**ok, "finished_at": now.strftime(pipeline._TIME_FMT)},
             "2": {**ok, "finished_at": mined_at.strftime(pipeline._TIME_FMT)},
             "3": {**ok, "finished_at": distilled_at.strftime(pipeline._TIME_FMT)},
-            "4": {**ok, "finished_at": now.strftime(pipeline._TIME_FMT)}}}))
+            "4": {**ok, "finished_at": now.strftime(pipeline._TIME_FMT)}}}), encoding="utf-8")
 
     from datetime import timedelta
     manifest(now, now)                                  # one run did both: nothing due
@@ -1137,10 +1275,10 @@ def test_level_three_due_again_after_a_later_level_two(learn_env, monkeypatch):
 def test_legacy_quick_manifest_does_not_count_as_learned(learn_env):
     stamp = pipeline._now().strftime(pipeline._TIME_FMT)
     pipeline.LAST_LEARN_FILE.write_text(json.dumps({"timestamp": stamp, "patch": "",
-                                                    "summary": {"quick": True}}))
+                                                    "summary": {"quick": True}}), encoding="utf-8")
     assert pipeline.due_levels() == pipeline.ALL_LEVELS
     pipeline.LAST_LEARN_FILE.write_text(json.dumps({"timestamp": stamp, "patch": "",
-                                                    "summary": {"quick": False}}))
+                                                    "summary": {"quick": False}}), encoding="utf-8")
     assert pipeline.due_levels() == ()
 
 
@@ -1157,7 +1295,7 @@ def test_learning_status_summarises_the_manifest(learn_env, monkeypatch):
                    "2": {"status": "failed", "error": "offline"},
                    "3": {"status": "skipped", "reason": "no_api_key", "finished_at": "2026-10-01T00:00:00Z"},
                    "4": {"status": "ok", "finished_at": "2026-10-01T00:00:00Z"}},
-        "summary": {"big": "x" * 1000}}))
+        "summary": {"big": "x" * 1000}}), encoding="utf-8")
     status = pipeline.learning_status()
     assert (status["last_run"], status["patch"], status["due_levels"]) == ("2026-10-01T00:00:00Z", "7.40", [2, 4])
     assert status["levels"]["2"] == {"status": "failed", "error": "offline"} and "summary" not in status
@@ -1166,9 +1304,9 @@ def test_learning_status_summarises_the_manifest(learn_env, monkeypatch):
     assert status["next_due"] == {"1": "2026-10-08T00:00:00Z", "2": None, "3": None, "4": None}
 
     # legacy manifest (no per-level records) and an unreadable one: never an exception
-    pipeline.LAST_LEARN_FILE.write_text(json.dumps({"timestamp": "2026-09-01T00:00:00Z", "levels": "all"}))
+    pipeline.LAST_LEARN_FILE.write_text(json.dumps({"timestamp": "2026-09-01T00:00:00Z", "levels": "all"}), encoding="utf-8")
     assert pipeline.learning_status()["levels"] == {}
-    pipeline.LAST_LEARN_FILE.write_text("{broken")
+    pipeline.LAST_LEARN_FILE.write_text("{broken", encoding="utf-8")
     assert pipeline.learning_status() == nothing
 
 
@@ -1192,28 +1330,51 @@ def test_overlapping_runs_are_refused(learn_env, monkeypatch):
         assert pipeline.run_learning(levels=(1,), quick=True)["success"] is True
     assert not pipeline.LAST_LEARN_FILE.exists()
 
-    # Another process holds the lock file
-    fcntl = pytest.importorskip("fcntl")
+    # Another process holds the lock file (the lock belongs to the open file, so a second
+    # lock object in this process is refused exactly like another process's)
     calls.clear()
     lock_file = learn_env.learned / pipeline.LOCK_FILE_NAME
-    assert stat.S_IMODE(lock_file.stat().st_mode) == 0o644     # readable for a run under another user
-    with open(lock_file, "a+") as other:
-        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        assert pipeline.run_learning(levels=(1,))["error"] == "already_running"
-        assert calls == []
-    # ... also when the file belongs to another user (root cron next to the
-    # service): it can be read but not written, which is all a lock needs
-    lock_file.chmod(0o444)
-    other_fd = os.open(lock_file, os.O_RDONLY)
+    other = osutil.FileLock(lock_file)
+    assert other.acquire(blocking=False)
     try:
-        fcntl.flock(other_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         assert pipeline.run_learning(levels=(1,))["error"] == "already_running"
         assert calls == []
     finally:
-        os.close(other_fd)
+        other.release()
+    if not osutil.IS_WINDOWS:   # file modes and flock itself: POSIX only
+        import fcntl
+        assert stat.S_IMODE(lock_file.stat().st_mode) == 0o644     # readable for a run under another user
+        # ... also when the file belongs to another user (root cron next to the
+        # service): it can be read but not written, which is all a lock needs
+        lock_file.chmod(0o444)
+        other_fd = os.open(lock_file, os.O_RDONLY)
+        try:
+            fcntl.flock(other_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            assert pipeline.run_learning(levels=(1,))["error"] == "already_running"
+            assert calls == []
+        finally:
+            os.close(other_fd)
     # Released: the run goes through (and the lock file is never loaded as knowledge)
     assert pipeline.run_learning(levels=(1,))["levels"]["1"]["status"] == "ok"
     assert base.load_learned_chunks("en") and lock_file.exists()
+
+
+def test_run_goes_on_when_no_lock_file_is_possible(learn_env, monkeypatch, caplog):
+    """A file system without locks (or, on Windows, a lock file someone made read-only):
+    the lock inside this process still applies, and the run is not refused."""
+    class NoLocks(osutil.FileLock):
+        def acquire(self, blocking=True):
+            raise OSError("file locks are not available on this system")
+
+    monkeypatch.setattr(osutil, "FileLock", NoLocks)
+    with caplog.at_level("WARNING", logger="backend.app.ai.learning.pipeline"):
+        with pipeline._exclusive_run(learn_env.learned) as acquired:
+            assert acquired is True
+            with pipeline._exclusive_run(learn_env.learned) as second:
+                assert second is False
+    assert sum("Cannot take the learning lock file" in r.getMessage() for r in caplog.records) == 1
+    with pipeline._exclusive_run(learn_env.learned) as again:                 # released
+        assert again is True
 
 
 def test_stop_request_cancels_the_run_in_progress_only(learn_env, monkeypatch):
@@ -1500,7 +1661,7 @@ def test_refused_subtitle_download_is_not_a_video_without_subtitles(learn_env, m
 
     # Through the whole level: nothing is registered, and the level stays due
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-    monkeypatch.setattr(video_learner.shutil, "which", lambda name: "/usr/bin/yt-dlp")
+    monkeypatch.setattr(base.shutil, "which", lambda name: "/usr/bin/yt-dlp")
     monkeypatch.setattr(video_learner, "_load_sources", lambda: {"youtube": {"videos": [url]}})
     monkeypatch.setattr(video_learner, "_search_bilibili", lambda q, skip=frozenset(): [])
     monkeypatch.setattr(video_learner, "_search_youtube", lambda q, skip=frozenset(): [])
@@ -1595,7 +1756,7 @@ def test_chinese_video_tips_name_the_position_not_fuzhu(learn_env):
 
 def _video_env(monkeypatch, candidates, subtitles, distill):
     """Stub discovery / download / LLM of learn_from_videos."""
-    monkeypatch.setattr(video_learner.shutil, "which", lambda name: "/usr/bin/yt-dlp")
+    monkeypatch.setattr(base.shutil, "which", lambda name: "/usr/bin/yt-dlp")
     monkeypatch.setattr(video_learner, "llm_available", lambda: True)
     monkeypatch.setattr(video_learner, "_load_sources", lambda: {})
     monkeypatch.setattr(video_learner, "_discover", lambda sources, skip=frozenset():
@@ -1739,7 +1900,7 @@ def test_bilibili_videos_without_subtitles_are_retried_once_cookies_exist(learn_
     assert learn()["error"] == "no_candidates" and downloads == []
 
     # The operator adds cookies: the Bilibili videos are offered again, and now the answer is final
-    (learn_env.learned / "bilibili_cookies.txt").write_text("# Netscape HTTP Cookie File\n")
+    (learn_env.learned / "bilibili_cookies.txt").write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
     env(lambda url: "ok" if url.endswith("A") else "no_subtitles")
     result = learn()
     assert downloads == ["A", "B", "C"] and result["videos_processed"] == 1 and result["videos_skipped"] == 2
@@ -1750,11 +1911,37 @@ def test_bilibili_videos_without_subtitles_are_retried_once_cookies_exist(learn_
 
 
 def test_learned_files_are_readable_for_other_users(learn_env):
+    # mkstemp alone would leave 0600. (Windows has no such modes: a file that is not
+    # read-only reports 0666 there, and read access follows the directory.)
+    public = 0o666 if osutil.IS_WINDOWS else 0o644
     path = learn_env.learned / "sub" / "x.json"
     base.write_json_atomic(path, {"x": 1})
-    assert stat.S_IMODE(path.stat().st_mode) == 0o644     # mkstemp alone would leave 0600
+    assert stat.S_IMODE(path.stat().st_mode) == public
     saved = base.save_learned_file("mode_check", [], output_dir=learn_env.learned)
-    assert stat.S_IMODE(saved.stat().st_mode) == 0o644
+    assert stat.S_IMODE(saved.stat().st_mode) == public
+
+
+def test_learned_files_are_the_same_bytes_on_every_system(learn_env, monkeypatch):
+    """UTF-8 and ``\\n``, also where the default is a code page and ``\\r\\n`` (Windows); and a
+    file the server is reading at that moment is replaced a moment later instead of failing the run."""
+    path = learn_env.learned / "stats_opendota.json"
+    payload = {"meta": {"note": "第一行\n第二行"}, "chunks": [{"chunk_id": "learned:x", "content": "4号位要买眼。"}]}
+    base.write_json_atomic(path, payload)
+    assert path.read_bytes() == json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
+
+    real_replace, busy = os.replace, [2]
+
+    def replace(src, dst):
+        if busy[0]:
+            busy[0] -= 1
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(osutil, "IS_WINDOWS", True)
+    base.write_json_atomic(path, {"x": 2})
+    assert busy == [0] and json.loads(path.read_text(encoding="utf-8")) == {"x": 2}
+    assert [p.name for p in learn_env.learned.iterdir()] == ["stats_opendota.json"]      # no temporary file left
 
 
 def test_bilibili_cookies_relative_path_is_project_relative(learn_env, monkeypatch, tmp_path):
@@ -1762,7 +1949,7 @@ def test_bilibili_cookies_relative_path_is_project_relative(learn_env, monkeypat
 
     monkeypatch.setattr(config, "BASE_DIR", tmp_path)
     (tmp_path / "secrets").mkdir()
-    (tmp_path / "secrets" / "bili.txt").write_text("# Netscape HTTP Cookie File\n")
+    (tmp_path / "secrets" / "bili.txt").write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
     monkeypatch.setenv("BILIBILI_COOKIES_FILE", "secrets/bili.txt")
     monkeypatch.chdir(learn_env.learned)        # not the working directory
     assert video_learner._user_bilibili_cookies() == tmp_path / "secrets" / "bili.txt"
@@ -1780,6 +1967,41 @@ def test_learn_cli_levels_argument():
     for bad in ("", " ", ",", "5", "1,x"):
         with pytest.raises(ValueError):
             learn._parse_levels(bad)
+
+
+def test_learn_cli_status_survives_a_code_page_without_the_characters(learn_env, monkeypatch):
+    """Output redirected to a file or pipe on Windows is encoded with the system code page
+    (cp1252, cp932, cp936); text it lacks is escaped instead of ending the command."""
+    from backend.scripts import learn
+
+    pipeline.LAST_LEARN_FILE.write_text(json.dumps(
+        {"timestamp": "2026-10-11T00:00:00Z", "patch": "7.41",
+         "levels": {"1": {"status": "failed", "error": "网络错误"}}}, ensure_ascii=False), encoding="utf-8")
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252", newline="\n"))
+    monkeypatch.setattr(sys, "argv", ["learn", "--status"])
+    learn.main()
+    sys.stdout.flush()
+    out = raw.getvalue().decode("cp1252")
+    assert '"error": "\\u7f51\\u7edc\\u9519\\u8bef"' in out and "Levels due:" in out
+
+
+def test_learn_cli_leaves_the_env_file_to_the_configuration(learn_env, monkeypatch, capsys):
+    """.env is read by backend.app.config alone, in the encoding the file has. The command used
+    to read it once more with a plain load_dotenv(): on a UTF-16 .env (what `>` and Out-File of
+    Windows PowerShell 5.1 write) that ended every run, --status included, with
+    UnicodeDecodeError."""
+    import dotenv
+
+    from backend.scripts import learn
+
+    def read_again(*args, **kwargs):
+        raise AssertionError("the learn command read .env by itself")
+
+    monkeypatch.setattr(dotenv, "load_dotenv", read_again)
+    monkeypatch.setattr(sys, "argv", ["learn", "--status"])
+    learn.main()
+    assert "Levels due:" in capsys.readouterr().out
 
 
 def test_learning_calls_use_the_coachs_model_and_refuse_a_cut_off_answer(monkeypatch):
@@ -1880,13 +2102,10 @@ def test_learn_cli_gives_new_chunks_their_retrieval_vectors(monkeypatch, capsys)
     """A one-shot run has no warmed-up retrieval stack: it syncs the vector cache itself."""
     import sys
 
-    import dotenv
-
     from backend.app.ai.learning import pipeline
     from backend.app.ai.rag import runtime
     from backend.scripts import learn
 
-    monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: False)   # never a developer's .env
     monkeypatch.setattr(pipeline, "due_levels", lambda: (1,))
     synced: list[str] = []
 
@@ -2081,14 +2300,14 @@ def test_files_of_quick_runs_are_never_loaded(learn_env):
                 {"videos_total": 2})
     assert len(_loaded_ids()) == 2                                 # no manifest: nothing says quick
     pipeline.LAST_LEARN_FILE.write_text(json.dumps(
-        {"timestamp": "2026-07-13T12:36:52Z", "patch": "7.41", "summary": {"quick": True}}))
+        {"timestamp": "2026-07-13T12:36:52Z", "patch": "7.41", "summary": {"quick": True}}), encoding="utf-8")
     assert _loaded_ids() == []
     # ... while a flagged file of a later full run beside it is used
     _write_file(learn_env.learned, "mining_patterns",
                 [_stored("learned:pro_pattern:position_1", "match_mining", {"sample": 200})], {"quick": False})
     assert _loaded_ids() == ["learned:pro_pattern:position_1"]
     for content in ("{broken", "[]", json.dumps({"summary": "quick"})):   # an unreadable manifest hides nothing
-        pipeline.LAST_LEARN_FILE.write_text(content)
+        pipeline.LAST_LEARN_FILE.write_text(content, encoding="utf-8")
         assert len(_loaded_ids()) == 3
 
 
@@ -2097,10 +2316,10 @@ def test_full_run_moves_the_outputs_of_an_old_quick_run_away(learn_env, monkeypa
               "video_tips": [_stored("learned:video:youtube:abcdefghijk:00", "video:youtube", {"url": "x"})]}
     for name, chunks in legacy.items():
         _write_file(learn_env.learned, name, chunks, {"generated_at": "2026-07-13T12:36:05Z"})
-    (learn_env.learned / "_videos_seen.json").write_text(json.dumps({"abcdefghijk": {"chunk_count": 1}}))
-    (learn_env.learned / base.MINING_AGGREGATES).write_text(json.dumps({"matches_mined": 2}))
+    (learn_env.learned / "_videos_seen.json").write_text(json.dumps({"abcdefghijk": {"chunk_count": 1}}), encoding="utf-8")
+    (learn_env.learned / base.MINING_AGGREGATES).write_text(json.dumps({"matches_mined": 2}), encoding="utf-8")
     pipeline.LAST_LEARN_FILE.write_text(json.dumps(
-        {"timestamp": "2026-07-13T12:36:52Z", "patch": "7.41", "summary": {"quick": True}}))
+        {"timestamp": "2026-07-13T12:36:52Z", "patch": "7.41", "summary": {"quick": True}}), encoding="utf-8")
     assert _loaded_ids() == []
 
     monkeypatch.setattr(stats_learner, "opendota_get", _fake_opendota())
@@ -2121,7 +2340,7 @@ def test_full_run_moves_the_outputs_of_an_old_quick_run_away(learn_env, monkeypa
     assert "levels" in json.loads(pipeline.LAST_LEARN_FILE.read_text(encoding="utf-8"))
 
     # a second full run finds nothing to move (a manifest of the current format)
-    (learn_env.learned / "operator_note.json").write_text(json.dumps({"meta": {}, "chunks": []}))
+    (learn_env.learned / "operator_note.json").write_text(json.dumps({"meta": {}, "chunks": []}), encoding="utf-8")
     pipeline.run_learning(levels=(1,))
     assert (learn_env.learned / "operator_note.json").exists()
 
@@ -2134,12 +2353,12 @@ def test_the_manifest_of_an_old_quick_run_is_moved_last(learn_env, monkeypatch):
                            ("video_tips", "learned:video:youtube:abcdefghijk:00")):
         _write_file(learn_env.learned, name, [_stored(chunk_id, "opendota_stats", {"endpoint": "x"})],
                     {"generated_at": "2026-07-13T12:36:05Z"})
-    (learn_env.learned / "_videos_seen.json").write_text(json.dumps({"abcdefghijk": {"chunk_count": 1}}))
+    (learn_env.learned / "_videos_seen.json").write_text(json.dumps({"abcdefghijk": {"chunk_count": 1}}), encoding="utf-8")
     pipeline.LAST_LEARN_FILE.write_text(json.dumps(
-        {"timestamp": "2026-07-13T12:36:52Z", "patch": "7.41", "summary": {"quick": True}}))
+        {"timestamp": "2026-07-13T12:36:52Z", "patch": "7.41", "summary": {"quick": True}}), encoding="utf-8")
     assert _loaded_ids() == []
 
-    moved, replace = [], pipeline.os.replace
+    moved, replace = [], os.replace          # (osutil.atomic_replace, which the pipeline moves with, calls it)
 
     def failing_at(broken):
         def move(src, dst):
@@ -2149,14 +2368,14 @@ def test_the_manifest_of_an_old_quick_run_is_moved_last(learn_env, monkeypatch):
             replace(src, dst)
         return move
 
-    monkeypatch.setattr(pipeline.os, "replace", failing_at("video_tips.json"))
+    monkeypatch.setattr(os, "replace", failing_at("video_tips.json"))
     pipeline._retire_legacy_quick_outputs(learn_env.learned)       # never raises
     assert moved == ["stats_opendota.json"]
     assert pipeline.LAST_LEARN_FILE.exists() and (learn_env.learned / "video_tips.json").exists()
     assert _loaded_ids() == []                                     # the file left behind is still known as quick
 
     del moved[:]
-    monkeypatch.setattr(pipeline.os, "replace", failing_at(None))  # the next full run finishes the job
+    monkeypatch.setattr(os, "replace", failing_at(None))           # the next full run finishes the job
     pipeline._retire_legacy_quick_outputs(learn_env.learned)
     assert moved == ["video_tips.json", "_videos_seen.json", base.MANIFEST_FILE]
     assert _loaded_ids() == [] and not list(learn_env.learned.glob("*.json"))
@@ -2164,10 +2383,10 @@ def test_the_manifest_of_an_old_quick_run_is_moved_last(learn_env, monkeypatch):
 
 def test_saved_chunks_carry_their_provenance(learn_env):
     (learn_env.gamedata / "meta.json").write_text(json.dumps(
-        {"schema_version": data_manager.GAMEDATA_SCHEMA_VERSION, "patch_version": "7.41"}))
+        {"schema_version": data_manager.GAMEDATA_SCHEMA_VERSION, "patch_version": "7.41"}), encoding="utf-8")
     (learn_env.gamedata / data_manager.PATCHES_FILE).write_text(json.dumps({
         "releases_fetched_at": "2026-10-10T00:00:00Z",
-        "releases": [{"name": "7.41e", "date": "2026-07-30T07:00:00Z"}, {"name": "7.41f", "date": "2026-09-15T07:00:00Z"}]}))
+        "releases": [{"name": "7.41e", "date": "2026-07-30T07:00:00Z"}, {"name": "7.41f", "date": "2026-09-15T07:00:00Z"}]}), encoding="utf-8")
     data_manager.invalidate_all_caches()
     assert (base.current_patch_version(), base.current_patch_label()) == ("7.41", "7.41f")
 
@@ -2239,7 +2458,7 @@ def test_learners_state_the_sample_behind_each_chunk(learn_env, monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
     for sufficient, verdict in ((True, None), (False, "sample")):
         aggregates = {**_aggregates(60, 12, 9), "sufficient": sufficient}
-        (learn_env.learned / base.MINING_AGGREGATES).write_text(json.dumps(aggregates))
+        (learn_env.learned / base.MINING_AGGREGATES).write_text(json.dumps(aggregates), encoding="utf-8")
         result = llm_distiller.distill(langs=("en",), max_chunks=5, output_dir=learn_env.learned,
                                        require_sufficient=False)
         assert result["chunks_written"] > 0
@@ -2268,12 +2487,12 @@ def test_key_items_follow_the_current_game(learn_env, tmp_path, monkeypatch):
     (static / "items.json").write_text(json.dumps({"by_key": {
         "dragon_lance": {"id": 236, "key": "dragon_lance", "name": "Dragon Lance", "cost": 1900},
         "ultimate_orb": {"id": 22, "key": "ultimate_orb", "name": "Ultimate Orb", "cost": 2800, "qual": "secret_shop"},
-        "recipe_bfury": {"id": 144, "key": "recipe_bfury", "name": "Battle Fury Recipe", "cost": 400}}}))
+        "recipe_bfury": {"id": 144, "key": "recipe_bfury", "name": "Battle Fury Recipe", "cost": 400}}}), encoding="utf-8")
     monkeypatch.setattr(data_manager, "STATIC_DATA_DIR", static)
     (learn_env.gamedata / "items.json").write_text(json.dumps({
-        "Dragon Lance": {"key": "dragon_lance", "cost": 2000, "name": "Dragon Lance", "quality": "artifact"}}))
+        "Dragon Lance": {"key": "dragon_lance", "cost": 2000, "name": "Dragon Lance", "quality": "artifact"}}), encoding="utf-8")
     (learn_env.gamedata / "meta.json").write_text(json.dumps(
-        {"schema_version": data_manager.GAMEDATA_SCHEMA_VERSION, "patch_version": "7.41"}))
+        {"schema_version": data_manager.GAMEDATA_SCHEMA_VERSION, "patch_version": "7.41"}), encoding="utf-8")
     data_manager.invalidate_all_caches()
     meta = base.load_item_meta()
     assert meta["dragon_lance"] == {"name": "Dragon Lance", "cost": 2000, "quality": "artifact"}

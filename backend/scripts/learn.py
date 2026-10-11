@@ -27,6 +27,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.app import osutil  # noqa: E402  (imports nothing from the project)
+
 
 def _print_status() -> None:
     """Print the last-learn manifest, per-file chunk counts and due levels."""
@@ -104,6 +106,9 @@ def _parse_levels(value: str | None) -> tuple[int, ...] | None:
 
 
 def main() -> None:
+    # Output redirected to a file or pipe on Windows is encoded with the system code page:
+    # a character it lacks is escaped instead of ending the command.
+    osutil.harden_stdio()
     parser = argparse.ArgumentParser(description="Run the AI coach self-learning pipeline")
     parser.add_argument("--levels", default=None,
                         help='Comma-separated learner levels to run, e.g. "1,2" (default: the due ones)')
@@ -117,12 +122,10 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    # Load DEEPSEEK_API_KEY etc. from the repo-root .env (config does this too).
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(PROJECT_ROOT / ".env")
-    except ImportError:
-        pass
+    # DEEPSEEK_API_KEY etc. come from the repo-root .env, which importing the
+    # configuration loads: in the encoding the file has (Windows tools write
+    # UTF-16 or a byte order mark, which a plain load_dotenv() cannot read).
+    from backend.app import config  # noqa: F401
 
     if args.status:
         _print_status()
@@ -139,7 +142,7 @@ def main() -> None:
     if levels is None and (args.force or args.quick):
         levels = ALL_LEVELS
     if levels is None and not due_levels():
-        print("Learned data is fresh — nothing to do (use --force to run anyway).")
+        print("Learned data is fresh - nothing to do (use --force to run anyway).")
         return
 
     summary = run_learning(levels=levels, quick=args.quick)

@@ -70,7 +70,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from .. import config, game_constants
+from .. import config, game_constants, osutil
 
 logger = logging.getLogger(__name__)
 
@@ -594,16 +594,20 @@ def download_constants_snapshot(names: tuple[str, ...], timeout: int = 30) -> tu
 
 
 def _save_json(path: Path, data: Any) -> None:
-    """Atomically write JSON (temp file + rename) so readers never see a partial file."""
+    """Atomically write JSON (temp file + rename) so readers never see a partial file.
+
+    UTF-8 with ``\\n`` line ends on every system (Windows would write
+    ``\\r\\n`` in text mode: the same data, other bytes and another size).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         # mkstemp creates 0600 files; game data fetched by another user
         # (a root cron job) must stay readable for the service.
         os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
+        osutil.atomic_replace(tmp, path)  # Windows: waits while a reader has the old file open
     except BaseException:
         try:
             os.unlink(tmp)

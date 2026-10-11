@@ -5,7 +5,9 @@ os.environ.setdefault("AI_COACH_AUTO_LEARN", "0")
 os.environ.setdefault("GAMEDATA_AUTO_UPDATE", "0")
 
 import asyncio
+import io
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -16,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
-from backend.app import config, main
+from backend.app import config, main, osutil
 
 
 UPDATED = {"status": "updated", "changed": True, "reason": "new_source_revision", "patch_version": "7.41",
@@ -562,6 +564,56 @@ def test_static_and_api_headers():
         assert "access-control-allow-origin" not in api.headers  # no CORS by default
 
 
+def test_static_files_do_not_leave_the_frontend_directory():
+    """.env is one directory above frontend/. A backslash is a path separator on Windows only,
+    so that form of "..\\" is tried as well; .env.example stands in for .env."""
+    assert (config.BASE_DIR / ".env.example").is_file() and (config.BASE_DIR / "backend" / "requirements.txt").is_file()
+    with TestClient(main.app) as client:
+        for url in ("/..%2F.env.example", "/..%5C.env.example", "/static/..%5C..%5C.env.example",
+                    "/static/..%2F..%2F.env.example", "/static%5C..%5C..%5Cbackend%5Crequirements.txt",
+                    "/..%5Cbackend%5Crequirements.txt", "/static/js/..%5C..%5C..%5C.env.example"):
+            response = client.get(url)
+            assert response.status_code == 404, url
+            assert "DEEPSEEK_API_KEY" not in response.text and "fastapi" not in response.text
+
+
+def test_page_scripts_and_styles_are_served_with_types_a_browser_runs():
+    """With nosniff a browser runs a script only when its content type says JavaScript."""
+    with TestClient(main.app) as client:
+        script = ("text/javascript", "application/javascript")
+        for url, expected in (("/static/js/app.js", script),
+                              ("/static/vendor/vue-3.4.38.global.prod.js", script),
+                              ("/static/css/app.css", ("text/css",)),
+                              ("/static/data/heroes.json", ("application/json",)),
+                              ("/static/assets/favicon.svg", ("image/svg+xml",))):
+            response = client.get(url)
+            assert response.status_code == 200, url
+            assert response.headers["content-type"].split(";")[0] in expected, url
+            assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_static_content_types_do_not_follow_the_windows_registry(monkeypatch):
+    """mimetypes reads the registry on Windows, where .js is text/plain on some machines."""
+    import mimetypes
+
+    before = {suffix: mimetypes.guess_type("x" + suffix)[0] for _type, suffix in main._STATIC_MIME_TYPES}
+    try:
+        for _type, suffix in main._STATIC_MIME_TYPES:
+            mimetypes.add_type("text/plain", suffix)            # what such a registry does
+        monkeypatch.setattr(osutil, "IS_WINDOWS", False)
+        main.register_static_mime_types()                       # Linux / macOS: Python's table is left alone
+        assert mimetypes.guess_type("app.js")[0] == "text/plain"
+        monkeypatch.setattr(osutil, "IS_WINDOWS", True)
+        main.register_static_mime_types()
+        assert {suffix: mimetypes.guess_type("x" + suffix)[0] for _type, suffix in main._STATIC_MIME_TYPES} == {
+            ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
+            ".svg": "image/svg+xml", ".html": "text/html"}
+    finally:
+        for suffix, content_type in before.items():
+            if content_type:
+                mimetypes.add_type(content_type, suffix)
+
+
 def test_configure_logging_sets_backend_level(monkeypatch):
     import logging
 
@@ -571,6 +623,180 @@ def test_configure_logging_sets_backend_level(monkeypatch):
     monkeypatch.setattr(config, "LOG_LEVEL", "nonsense")
     main.configure_logging()
     assert logging.getLogger("backend").level == logging.INFO
+
+
+def test_configure_logging_lets_no_console_code_page_stop_the_server(monkeypatch):
+    """Output redirected to a file on a Japanese Windows is cp932: a Chinese player name in a
+    log line or a print() must come out escaped, not as a UnicodeEncodeError."""
+    import logging
+
+    out = io.TextIOWrapper(io.BytesIO(), encoding="cp932", errors="strict", newline="\n")
+    err = io.TextIOWrapper(io.BytesIO(), encoding="cp932", errors="backslashreplace", newline="\n")
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    main.configure_logging()
+    for stream in (out, err):
+        handler = logging.StreamHandler(stream)
+        handler.emit(logging.LogRecord("backend.test", logging.INFO, __file__, 1,
+                                       "Parsed the replay of %s", ("张三",), None))
+        stream.flush()
+        # 三 exists in cp932, 张 does not
+        assert stream.buffer.getvalue() == b"Parsed the replay of \\u5f20\x8eO\n"
+    assert out.encoding == "cp932"
+
+
+# ---------------------------------------------------------------------------
+# config: what Windows does differently (java.exe, .env files written by its tools)
+# ---------------------------------------------------------------------------
+
+def _fake_java(home, name):
+    path = home / "bin" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.mark.parametrize("exe", ["java", "java.exe"])
+def test_java_is_looked_up_under_the_name_the_system_gives_it(tmp_path, monkeypatch, exe):
+    """bin/java on Linux and macOS, bin\\java.exe on Windows: in tools/jdk17, then in JAVA_HOME, then on PATH."""
+    other = "java.exe" if exe == "java" else "java"
+    local, home, elsewhere = tmp_path / "tools" / "jdk17", tmp_path / "jdk-home", tmp_path / "elsewhere"
+    monkeypatch.setattr(config, "_JAVA_EXE", exe)
+    monkeypatch.setattr(config, "_LOCAL_JDK_CANDIDATES",
+                        (local / "Contents" / "Home" / "bin" / exe, local / "bin" / exe))
+    monkeypatch.setattr(config.shutil, "which", lambda name: str(elsewhere / name))
+    monkeypatch.delenv("JAVA_PATH", raising=False)
+    monkeypatch.setenv("JAVA_HOME", str(home))
+
+    assert config._resolve_java_path() == str(elsewhere / "java")              # nothing local, nothing in JAVA_HOME
+    _fake_java(home, other)                                                    # the other system's launcher: not ours
+    assert config._resolve_java_path() == str(elsewhere / "java")
+    in_home = _fake_java(home, exe)
+    assert config._resolve_java_path() == str(in_home)
+    in_tools = _fake_java(local, exe)                                          # the project's own JDK wins
+    assert config._resolve_java_path() == str(in_tools)
+    monkeypatch.setenv("JAVA_PATH", "java17")                                  # an explicit command name wins over all
+    assert config._resolve_java_path() == "java17"
+    monkeypatch.setenv("JAVA_PATH", str(in_home))
+    assert config._resolve_java_path() == str(in_home)
+    monkeypatch.delenv("JAVA_PATH")
+    monkeypatch.delenv("JAVA_HOME")
+    in_tools.unlink()
+    monkeypatch.setattr(config.shutil, "which", lambda name: None)             # no Java at all: the bare command,
+    assert config._resolve_java_path() == "java"                               # the parser reports it as missing
+
+
+def test_the_java_launcher_name_follows_the_system():
+    assert config._JAVA_EXE == ("java.exe" if osutil.IS_WINDOWS else "java")
+    assert all(path.name == config._JAVA_EXE for path in config._LOCAL_JDK_CANDIDATES)
+    assert config._LOCAL_JDK_CANDIDATES[-1] == config.BASE_DIR / "tools" / "jdk17" / "bin" / config._JAVA_EXE
+
+
+@pytest.mark.parametrize("encoding,expected", [
+    ("utf-8", "utf-8-sig"),           # as .env.example is, and what editors write
+    ("utf-8-sig", "utf-8-sig"),       # Notepad's "UTF-8 with BOM"
+    ("utf-16", "utf-16"),             # Windows PowerShell 5.1: echo ... > .env, Out-File, Set-Content -Encoding Unicode
+    ("utf-16-be", "utf-8-sig"),       # no mark: not guessed
+])
+def test_env_file_written_by_windows_tools_is_read(tmp_path, monkeypatch, encoding, expected):
+    """With a byte order mark python-dotenv's default reading loses the first variable of the
+    file (the mark becomes part of its name) or cannot decode the file at all."""
+    path = tmp_path / ".env"
+    path.write_text("PROBE_ENV_FIRST=one\r\nPROBE_ENV_NAME=张三\r\nPROBE_ENV_KEPT=from-file\r\n",
+                    encoding=encoding, newline="")
+    assert config.dotenv_encoding(path) == expected
+    if encoding == "utf-16-be":
+        return
+    for name in ("PROBE_ENV_FIRST", "PROBE_ENV_NAME"):
+        monkeypatch.setenv(name, "x")
+        monkeypatch.delenv(name)                    # absent now, and put back that way after the test
+    monkeypatch.setenv("PROBE_ENV_KEPT", "from-environment")
+    assert config.load_env_file(path) is True
+    assert os.environ["PROBE_ENV_FIRST"] == "one"
+    assert os.environ["PROBE_ENV_NAME"] == "张三"
+    assert os.environ["PROBE_ENV_KEPT"] == "from-environment"       # the environment wins
+
+
+def test_missing_env_file_is_not_an_error(tmp_path):
+    assert config.dotenv_encoding(tmp_path / "no-such.env") == "utf-8-sig"
+    assert config.load_env_file(tmp_path / "no-such.env") is False
+
+
+_QUOTED_JAVA = r'"C:\Program Files\Eclipse Adoptium\jdk-17\bin\java.exe"'
+_DAMAGED_JAVA = "C:\\Program Files\\Eclipse Adoptium\\jdk-17\x08in\\java.exe"       # \b: a backspace
+_INTENDED_JAVA = r"C:\Program Files\Eclipse Adoptium\jdk-17\bin\java.exe"
+
+
+def test_double_quoted_windows_path_in_the_env_file_is_repaired(tmp_path, monkeypatch, caplog):
+    """python-dotenv reads \\b \\t \\n \\a \\f \\r \\v inside double quotes as control characters,
+    and every JDK path has a \\bin in it: Java was "not found" at a path that looked right."""
+    path = tmp_path / ".env"
+    path.write_text(
+        f"JAVA_PATH={_QUOTED_JAVA}\n"
+        'RAG_MODEL_DIR="D:\\dota\\tools\\new\\app\\venv\\frontend\\replays"\n'      # \t \n \a \v \f \r
+        "CLARITY_JAR_PATH='C:\\tools\\clarity-analyzer.jar'\n"                      # single quotes: as written
+        "RAG_INDEX_DIR=C:\\cache\\rag\n"                                            # no quotes: as written
+        'PROBE_ENV_NOT_A_PATH="a\\tb"\n',
+        encoding="utf-8")
+    names = ("JAVA_PATH", "RAG_MODEL_DIR", "CLARITY_JAR_PATH", "RAG_INDEX_DIR", "PROBE_ENV_NOT_A_PATH",
+             "JAVA_HOME", "BILIBILI_COOKIES_FILE")
+    for name in names:
+        monkeypatch.setenv(name, "x")
+        monkeypatch.delenv(name)
+    assert config.load_env_file(path) is True
+    assert os.environ["JAVA_PATH"] == _DAMAGED_JAVA
+
+    monkeypatch.setattr(osutil, "IS_WINDOWS", False)            # a control character can be part of a name there
+    with caplog.at_level("WARNING", logger="backend.app.config"):
+        assert config.repair_path_settings() == ["JAVA_PATH", "RAG_MODEL_DIR"]
+    assert os.environ["JAVA_PATH"] == _DAMAGED_JAVA
+    assert "JAVA_PATH" in caplog.text and "double quotes" in caplog.text
+
+    caplog.clear()
+    monkeypatch.setattr(osutil, "IS_WINDOWS", True)
+    with caplog.at_level("WARNING", logger="backend.app.config"):
+        assert config.repair_path_settings() == ["JAVA_PATH", "RAG_MODEL_DIR"]
+    assert os.environ["JAVA_PATH"] == _INTENDED_JAVA
+    assert os.environ["RAG_MODEL_DIR"] == r"D:\dota\tools\new\app\venv\frontend\replays"
+    assert os.environ["CLARITY_JAR_PATH"] == r"C:\tools\clarity-analyzer.jar"
+    assert os.environ["RAG_INDEX_DIR"] == r"C:\cache\rag"
+    assert os.environ["PROBE_ENV_NOT_A_PATH"] == "a\tb"         # only settings that name a path
+    assert _INTENDED_JAVA in caplog.text and "double quotes" in caplog.text
+    if os.name == "nt":                                         # an absolute path only there:
+        assert config._resolve_java_path() == _INTENDED_JAVA    # what the parser is started with
+    assert config.repair_path_settings() == []                  # nothing left to repair, nothing said twice
+
+
+_ENV_FILE_PROBE = "import os; from backend.app import config; print(os.environ.get('PROBE_ENV_FROM_FILE', 'not read'))"
+
+
+def test_env_file_is_skipped_on_request_also_by_a_child_process(tmp_path):
+    """The suite must not see a developer's .env. An empty variable keeps load_dotenv from
+    filling it in, but on Windows a variable set to "" does not exist for a child process:
+    conftest.py sets a switch with a value instead, which every process a test starts inherits."""
+    assert os.environ["DOTA_ANALYZER_SKIP_DOTENV"] == "1"       # conftest.py, before any backend import
+    assert os.environ["DEV"] == "0" and config.DEV is False     # ... which also pins the mode
+
+    # A project of its own (config.py finds .env next to the backend directory it is in).
+    app = tmp_path / "backend" / "app"
+    app.mkdir(parents=True)
+    for name in ("__init__.py", "config.py", "osutil.py"):
+        (app / name).write_bytes((config.BASE_DIR / "backend" / "app" / name).read_bytes())
+    (tmp_path / ".env").write_text("PROBE_ENV_FROM_FILE=read\n", encoding="utf-8")
+
+    def probe(**changes):
+        env = {name: value for name, value in os.environ.items()
+               if name not in ("DOTA_ANALYZER_SKIP_DOTENV", "PROBE_ENV_FROM_FILE")}
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(tmp_path), env.get("PYTHONPATH")]))
+        done = subprocess.run([sys.executable, "-c", _ENV_FILE_PROBE], capture_output=True, encoding="utf-8",
+                              errors="replace", cwd=tmp_path, env={**env, **changes}, timeout=120)
+        assert done.returncode == 0, done.stderr
+        return done.stdout.strip()
+
+    assert probe() == "read"
+    assert probe(DOTA_ANALYZER_SKIP_DOTENV="1") == "not read"
+    assert probe(DOTA_ANALYZER_SKIP_DOTENV="0") == "read"
 
 
 # A setting is read through os.environ / os.getenv or through a helper whose
@@ -596,7 +822,10 @@ def test_every_setting_the_backend_reads_is_documented():
 
     example = (config.BASE_DIR / ".env.example").read_text(encoding="utf-8")
     documented = set(re.findall(r"^#? ?([A-Z][A-Z0-9_]+)=", example, flags=re.MULTILINE))
-    standard = {"JAVA_HOME"}   # the JDK's own variable, only a fallback for JAVA_PATH
+    standard = {
+        "JAVA_HOME",                    # the JDK's own variable, only a fallback for JAVA_PATH
+        "DOTA_ANALYZER_SKIP_DOTENV",    # decides whether .env is read: it cannot be set in that file
+    }
     missing = {name: source for name, source in read.items() if name not in documented | standard}
     assert not missing, f"document these settings in .env.example: {missing}"
 

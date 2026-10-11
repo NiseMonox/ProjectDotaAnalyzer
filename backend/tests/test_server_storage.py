@@ -11,12 +11,14 @@ import io
 import json
 import random
 import struct
+import threading
 import time
 import tracemalloc
+from pathlib import Path
 
 import pytest
 
-from backend.app import storage
+from backend.app import osutil, storage
 from backend.app.models import MatchData
 
 DEM = storage.REPLAY_MAGIC
@@ -283,12 +285,15 @@ def test_match_store_roundtrip_prune_and_corruption(tmp_path):
     assert meta == {"parse_source": "opendota", "extra": {"has_parsed_data": True}}
     assert store.load("missing") is None
 
+    # The order of use is set by hand, not by waiting: file times advance in steps of up to
+    # 15.6 ms on Windows, where files written a few milliseconds apart carry the same time.
+    os.utime(store.path_for("opendota_1"), (1000, 1000))
     for i, key in enumerate(("k2", "k3")):
-        time.sleep(0.01)
         store.save(key, tiny_match(i + 2), {})
     # Bounded: saving a third match pruned the least recently used one.
     assert sorted(p.name for p in tmp_path.glob("*.json.gz")) == ["k2.json.gz", "k3.json.gz"]
     os.utime(store.path_for("k2"), (1, 1))
+    os.utime(store.path_for("k3"), (2, 2))
     store.load("k2")  # a read refreshes recency
     store.save("k4", tiny_match(4), {})
     assert sorted(p.name for p in tmp_path.glob("*.json.gz")) == ["k2.json.gz", "k4.json.gz"]
@@ -305,6 +310,32 @@ def test_match_store_roundtrip_prune_and_corruption(tmp_path):
 
     store.delete("k3")
     assert store.load("k3") is None
+
+
+def test_match_store_never_prunes_the_match_it_has_just_saved(tmp_path, monkeypatch):
+    """On Windows a file's time is the system clock's last tick (15.6 ms apart by default): the
+    file just written ties with files used a moment ago, and among equals the directory's own
+    order decides. Here the new file even looks like the oldest one."""
+    store = storage.MatchStore(tmp_path, max_files=lambda: 2)
+    for age, key in enumerate(("a1", "b2")):
+        store.save(key, tiny_match(age + 1), {})
+        os.utime(store.path_for(key), (1000 + age, 1000 + age))
+    real_write = storage.atomic_write_bytes
+
+    def write_with_a_coarse_clock(path, data):
+        real_write(path, data)
+        os.utime(path, (1, 1))
+
+    monkeypatch.setattr(storage, "atomic_write_bytes", write_with_a_coarse_clock)
+    store.save("c3", tiny_match(3), {})
+    assert sorted(p.name for p in tmp_path.glob("*.json.gz")) == ["b2.json.gz", "c3.json.gz"]
+    assert store.load("c3") is not None
+    # Without a file to keep, prune() is what it was: the oldest ones go.
+    monkeypatch.setattr(storage, "atomic_write_bytes", real_write)
+    os.utime(store.path_for("c3"), (1, 1))
+    store._max_files = lambda: 1
+    assert store.prune() == [store.path_for("c3")]
+    assert store.prune(keep={store.path_for("b2")}) == []
 
 
 def test_match_store_drops_entries_written_before_the_current_format(tmp_path):
@@ -363,5 +394,102 @@ def test_coach_cache_helpers(tmp_path):
     os.utime(path, (1, 1))
     storage.save_json(other, {"b": 1}, max_files=1)
     assert not path.exists() and other.exists()
-    other.write_text("[1, 2]")
+    other.write_text("[1, 2]", encoding="utf-8")
     assert storage.load_json(other) is None
+
+
+# ---------------------------------------------------------------------------
+# Files in use: on Windows an open file can be neither replaced nor deleted
+# ---------------------------------------------------------------------------
+
+def _in_use(times: int):
+    """An os.replace that fails ``times`` times the way Windows does for a destination in use."""
+    real_replace, left = os.replace, [times]
+
+    def replace(src, dst):
+        if left[0] > 0:
+            left[0] -= 1
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+        real_replace(src, dst)
+
+    return replace
+
+
+def test_atomic_write_waits_for_a_destination_in_use(tmp_path, monkeypatch):
+    monkeypatch.setattr(osutil, "IS_WINDOWS", True)
+    monkeypatch.setattr(osutil.time, "sleep", lambda _seconds: None)
+    path = tmp_path / "report.json"
+    path.write_bytes(b"old")
+    monkeypatch.setattr(os, "replace", _in_use(3))          # a reader of the same cache file, for a moment
+    storage.atomic_write_bytes(path, b"new")
+    assert path.read_bytes() == b"new"
+    assert [entry.name for entry in tmp_path.iterdir()] == ["report.json"]
+    # In use for good: the error is the caller's, the old content stays and no temp file is left.
+    monkeypatch.setattr(os, "replace", _in_use(10**6))
+    with pytest.raises(PermissionError):
+        storage.atomic_write_bytes(path, b"newer")
+    assert path.read_bytes() == b"new"
+    assert [entry.name for entry in tmp_path.iterdir()] == ["report.json"]
+
+
+def test_a_refused_upload_stays_refused_when_its_partial_file_cannot_be_removed(tmp_path, monkeypatch, caplog):
+    """The clean-up must not replace the answer: "too large" (413) would turn into a server error."""
+    real_unlink = Path.unlink
+
+    def unlink(self, *args, **kwargs):
+        if self.suffix == ".part":
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    monkeypatch.setattr(osutil.time, "sleep", lambda _seconds: None)    # Windows: no waiting for the retries
+    with caplog.at_level("WARNING", logger="backend.app.storage"):
+        with pytest.raises(storage.UploadRejected) as info:
+            storage.store_upload(io.BytesIO(DEM + b"x" * 100), tmp_path, max_bytes=50)
+    assert (info.value.code, info.value.status) == ("upload_too_large", 413)
+    assert "Failed to delete" in caplog.text
+    # ... and the same replay arriving twice is still answered when the second copy cannot be removed
+    first = storage.store_upload(io.BytesIO(DEM + b"x"), tmp_path, max_bytes=50)
+    again = storage.store_upload(io.BytesIO(DEM + b"x"), tmp_path, max_bytes=50)
+    assert again.existed is True and again.path == first.path
+    monkeypatch.undo()
+    for part in (tmp_path / ".incoming").glob("*.part"):    # what prune_replays() removes once it is stale
+        os.utime(part, (1, 1))
+    storage.prune_replays(tmp_path, max_files=5)
+    assert list((tmp_path / ".incoming").iterdir()) == []
+
+
+def test_match_store_is_read_and_written_at_the_same_time(tmp_path):
+    """One request loads a stored match while another one saves it again. On POSIX the replace
+    never notices the readers; on Windows it has to wait for the moments nobody has the file open."""
+    store = storage.MatchStore(tmp_path, max_files=lambda: 5)
+    store.save("k", tiny_match(1), {"round": 0})
+    stop, errors, loaded = threading.Event(), [], ([], [])
+
+    def reader(rounds):
+        try:
+            while not stop.is_set():
+                found = store.load("k")
+                assert found is not None and found[0].match_id == 1
+                rounds.append(found[1]["round"])
+                time.sleep(0.001)
+        except BaseException as exc:
+            errors.append(exc)
+
+    readers = [threading.Thread(target=reader, args=(rounds,)) for rounds in loaded]
+    for thread in readers:
+        thread.start()
+    try:
+        for round_no in range(1, 26):
+            store.save("k", tiny_match(1), {"round": round_no})
+            assert store.update_meta("k", {"marked": round_no}) is True
+    finally:
+        stop.set()
+        for thread in readers:
+            thread.join()
+    assert errors == []
+    for rounds in loaded:
+        assert rounds and rounds == sorted(rounds)          # every read saw a complete file, never an older one
+    match, meta = store.load("k")
+    assert match.match_id == 1 and meta == {"round": 25, "marked": 25}
+    assert [entry.name for entry in tmp_path.iterdir()] == ["k.json.gz"]

@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.app import osutil
 from backend.app.ai import data_manager, knowledge_base, rag
 from backend.app.ai.knowledge_store import KnowledgeChunk, KnowledgeStore, build_query
 from backend.app.ai.models import DeathEvent, DecisionContext, DecisionPoint, HeroState
@@ -509,7 +510,6 @@ def test_warm_up_after_a_shutdown_builds_completely_again(rag_env):
 
 def test_sync_waits_for_another_process_building_the_same_cache(rag_env, monkeypatch):
     """`rag build` or a learning run next to the server's warm-up: one of them embeds, the other waits."""
-    fcntl = pytest.importorskip("fcntl")
     monkeypatch.setattr(vectors, "LOCK_POLL_S", 0.01)
     embedded: list[str] = []
 
@@ -526,11 +526,11 @@ def test_sync_waits_for_another_process_building_the_same_cache(rag_env, monkeyp
     wanted = sorted({text for store in stores.values() for text in runtime._index_texts(store).values()})
     wanted = [(vectors.DOC, text) for text in wanted] + runtime._query_wanted()
 
-    # The "other process": holds the lock of the cache file (flock is per open file, so a
-    # second descriptor in this process is refused exactly like another process's).
+    # The "other process": holds the lock of the cache file (the lock belongs to the open
+    # file, so a second lock object in this process is refused exactly like another process's).
     rag_env.cache.parent.mkdir(parents=True)
-    other = os.open(rag_env.cache.with_name(rag_env.cache.name + ".lock"), os.O_RDONLY | os.O_CREAT, 0o644)
-    fcntl.flock(other, fcntl.LOCK_EX)
+    other = osutil.FileLock(rag_env.cache.with_name(rag_env.cache.name + ".lock"))
+    assert other.acquire(blocking=False)
     results: list[dict] = []
     thread = threading.Thread(target=lambda: results.append(runtime.sync("warm_up")))
     try:
@@ -539,7 +539,7 @@ def test_sync_waits_for_another_process_building_the_same_cache(rag_env, monkeyp
         assert thread.is_alive() and embedded == []               # waiting, nothing embedded, no model work
         vectors.sync_vector_file(rag_env.cache, embedders.HashEmbedder(), wanted)   # the other one finishes
     finally:
-        os.close(other)                                           # ... and releases the lock
+        other.release()                                           # ... and releases the lock
     thread.join(30)
     assert not thread.is_alive()
     stats = results[0]
@@ -547,8 +547,8 @@ def test_sync_waits_for_another_process_building_the_same_cache(rag_env, monkeyp
     assert rag.status()["mode"] == "hybrid"
 
     # shutdown() while waiting: the sync gives up instead of holding the exit back
-    other = os.open(rag_env.cache.with_name(rag_env.cache.name + ".lock"), os.O_RDONLY)
-    fcntl.flock(other, fcntl.LOCK_EX)
+    other = osutil.FileLock(rag_env.cache.with_name(rag_env.cache.name + ".lock"))
+    assert other.acquire(blocking=False)
     try:
         thread = threading.Thread(target=lambda: results.append(runtime.sync("refresh")))
         thread.start()
@@ -558,7 +558,7 @@ def test_sync_waits_for_another_process_building_the_same_cache(rag_env, monkeyp
         thread.join(10)
         assert not thread.is_alive() and results[-1] == {"not_run": "stopped"}
     finally:
-        os.close(other)
+        other.release()
 
 
 def test_a_change_of_the_ranking_mode_is_logged_once(rag_env, caplog):
@@ -836,8 +836,8 @@ def test_package_import_needs_only_the_standard_library():
            "GAMEDATA_AUTO_UPDATE": "0"}
     env.pop("RAG_TOP_K", None)
     env.pop("RAG_AGENT_SEARCH_LIMIT", None)
-    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env,
-                          cwd=str(runtime._project_dirs()[0]), timeout=120)
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", env=env, cwd=str(runtime._project_dirs()[0]), timeout=120)
     assert done.returncode == 0, done.stderr
     assert done.stdout.split() == ["0", "3"]
 
@@ -890,7 +890,7 @@ def test_concurrent_retrieval_while_vectors_and_stores_change(rag_env):
             half = slice(0, len(keys) // 2) if round_ % 2 else slice(None)
             vectors.write_vector_file(rag_env.cache, "hash-256", keys[half], matrix[half])
         else:
-            rag_env.cache.unlink(missing_ok=True)
+            vectors.remove_file(rag_env.cache)       # (waits for a reader on Windows, like any process there)
         time.sleep(0.01)
     vectors.write_vector_file(rag_env.cache, "hash-256", keys, matrix)
     stop.set()

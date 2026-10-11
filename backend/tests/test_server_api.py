@@ -17,6 +17,7 @@ import sys
 import time
 import types
 from types import SimpleNamespace
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1049,13 +1050,13 @@ def test_admin_status_reports_learning_and_maintenance(server, monkeypatch, tmp_
         "timestamp": "2026-10-01T00:00:00Z", "patch": "7.40",
         "levels": {"1": {"status": "ok", "chunks_written": 12}, "2": {"status": "failed", "error": "offline"}},
         "summary": {"big": "x" * 1000},
-    }))
+    }), encoding="utf-8")
     learning = server.client.get("/api/admin/status", headers=hdr).json()["learning"]
     assert learning["last_run"] == "2026-10-01T00:00:00Z" and learning["patch"] == "7.40"
     assert learning["levels"]["2"] == {"status": "failed", "error": "offline"}
     assert "summary" not in learning
 
-    manifest.write_text("{broken")
+    manifest.write_text("{broken", encoding="utf-8")
     assert server.client.get("/api/admin/status", headers=hdr).json()["learning"]["due_levels"] == [2, 4]
 
 
@@ -1087,6 +1088,23 @@ def test_parse_local(server, monkeypatch):
     r = c.get("/api/parse-local/98765.dem", headers=hdr)
     assert r.status_code == 200 and r.json()["parse_source"] == "opendota"
     assert server.od_calls == [98765]
+
+
+def test_parse_local_stays_inside_the_replay_directory_with_windows_paths(server, monkeypatch):
+    """A backslash and a drive letter are path syntax on Windows only: there they must be
+    refused, on Linux they are part of a file name that does not exist. No form reaches a
+    file outside replays/ or in a folder below it."""
+    monkeypatch.setenv("ADMIN_TOKEN", "tok")
+    hdr = {"X-Admin-Token": "tok"}
+    outside = server.tmp / "outside.dem"
+    outside.write_bytes(DEM)
+    (server.replays / "sub").mkdir()
+    (server.replays / "sub" / "inner.dem").write_bytes(DEM)
+    for name in ("..%5Coutside.dem", "..%5C..%5Coutside.dem", "sub%5Cinner.dem", "C:outside.dem",
+                 "C:%5Coutside.dem", "%5C%5Cserver%5Cshare%5Coutside.dem", quote(str(outside), safe="")):
+        r = server.client.get(f"/api/parse-local/{name}", headers=hdr)
+        assert r.status_code in (400, 404), (name, r.status_code)
+    assert server.parse_calls == [] and server.od_calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -1249,7 +1267,8 @@ def test_cached_match_is_analyzed_again_when_the_game_data_changes(server, monke
         assert before[key] != "+Probe Talent"
 
         # the background fetch finishes: new files, caches dropped
-        (gamedata / data_manager.TALENTS_FILE).write_text(json.dumps({key: {"name": "+Probe Talent"}}))
+        (gamedata / data_manager.TALENTS_FILE).write_text(
+            json.dumps({key: {"name": "+Probe Talent"}}), encoding="utf-8")
         data_manager.invalidate_all_caches()
 
         for url, headers in (("/api/match/demo", {"Accept-Encoding": "identity"}),

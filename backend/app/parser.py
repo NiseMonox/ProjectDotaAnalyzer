@@ -39,7 +39,6 @@ import logging
 import math
 import os
 import re
-import signal
 import subprocess
 import threading
 import time
@@ -48,10 +47,11 @@ import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from collections import Counter
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import game_constants, geo
+from . import game_constants, geo, osutil
 from .config import CLARITY_JAR_PATH, JAVA_PATH
 from .models import (
     AbilityCast,
@@ -902,8 +902,11 @@ _JAVA_PROBE_RETRY_S = 300.0
 
 def _run_java_version(java_path: str) -> bool:
     try:
+        # Decoded here, not with the locale's encoding: the text is ASCII but
+        # for what a localized JVM may add, and must never fail to decode.
         result = subprocess.run(
-            [java_path, "-version"], capture_output=True, text=True, timeout=30, check=False,
+            [java_path, "-version"], capture_output=True, encoding="utf-8", errors="replace",
+            timeout=30, check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("Java runtime not usable at %s: %s", java_path, exc)
@@ -983,23 +986,13 @@ async def check_clarity_available(jar_path: Path | None = None, java_path: str |
 
 # PIDs of running analyzer JVMs. Each one leads its own session/process group
 # (so a timeout can kill the whole group), which also means it does not get the
-# terminal's or the service manager's signals when the server goes away.
+# terminal's or the service manager's signals when the server goes away. On
+# Windows each one is in a job object of its own instead (osutil.adopt_child).
 _live_clarity_pids: set[int] = set()
 # ... and those kill_running_parsers() stopped: their parse did not fail
 # because of the replay.
 _stopped_clarity_pids: set[int] = set()
 _live_clarity_pids_lock = threading.Lock()
-
-
-def _signal_kill(pid: int) -> None:
-    """SIGKILL a child process (its whole process group on POSIX)."""
-    try:
-        if os.name == "posix":
-            os.killpg(pid, signal.SIGKILL)
-        else:
-            os.kill(pid, signal.SIGTERM)
-    except OSError:  # already gone, or not ours any more
-        pass
 
 
 def kill_running_parsers() -> int:
@@ -1016,14 +1009,16 @@ def kill_running_parsers() -> int:
     shutdown hook only after the open requests have ended or, once
     ``--timeout-graceful-shutdown`` ran out, were cancelled (that client
     sees a dropped connection or a plain 500). A SIGKILL of the server
-    itself cannot be handled this way.
+    itself cannot be handled this way. On Windows that case (ending the
+    server in the Task Manager) is covered all the same: the system ends a
+    JVM with the server process that held its job object.
     """
     with _live_clarity_pids_lock:
         pids = list(_live_clarity_pids)
         _live_clarity_pids.clear()
         _stopped_clarity_pids.update(pids)
     for pid in pids:
-        _signal_kill(pid)
+        osutil.kill_process_tree(pid)
     return len(pids)
 
 
@@ -1031,64 +1026,166 @@ atexit.register(kill_running_parsers)
 
 
 async def _kill_process(proc: asyncio.subprocess.Process) -> None:
-    """Kill a child process (and its process group on POSIX) and reap it."""
+    """Kill a child process (with its process group / its child processes) and reap it."""
     if proc.returncode is not None:
         return
-    try:
-        if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGKILL)
-        else:
-            proc.kill()
-    except ProcessLookupError:
-        pass
-    except OSError:
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+    if osutil.IS_WINDOWS:
+        # taskkill is a process of its own and takes a moment: off the event loop.
+        await asyncio.to_thread(osutil.kill_process_tree, proc.pid)
+    else:
+        osutil.kill_process_tree(proc.pid)
+    with suppress(OSError):  # gone (ProcessLookupError), or the kill above was enough
+        proc.kill()
     try:
         await asyncio.wait_for(proc.wait(), timeout=10)
     except asyncio.TimeoutError:
         logger.warning("Clarity process %s did not exit after SIGKILL", proc.pid)
 
 
-async def _run_subprocess(cmd: list[str], timeout: float) -> tuple[bytes, bytes, int]:
-    """Run ``cmd`` capturing output; kill it on timeout or task cancellation."""
-    kwargs: dict[str, Any] = {}
-    if os.name == "posix":
-        kwargs["start_new_session"] = True  # own process group -> killpg on timeout
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            **kwargs,
-        )
-    except FileNotFoundError as exc:
-        raise ParserUnavailableError("Java runtime not found; the replay parser is unavailable") from exc
-    except OSError as exc:
-        logger.error("Failed to start the clarity parser: %s", exc)
-        raise ParserUnavailableError("The replay parser could not be started") from exc
+def _communicate_blocking(proc: subprocess.Popen, timeout: float) -> tuple[bytes, bytes, bool]:
+    """Collect the output of ``proc`` until it exits: (stdout, stderr, timed out).
 
-    with _live_clarity_pids_lock:
-        _live_clarity_pids.add(proc.pid)
+    Blocking, for a thread. Kills the process and its children when
+    ``timeout`` is over. Also returns when someone else kills the process
+    (a cancelled request, the server's shutdown): its pipes close then.
+    """
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return stdout, stderr, False
+    except subprocess.TimeoutExpired:
+        osutil.kill_process_tree(proc.pid)
+        with suppress(OSError):
+            proc.kill()
+        try:
+            proc.communicate(timeout=10)  # reaps it
+        except subprocess.TimeoutExpired:
+            logger.warning("Clarity process %s did not exit after it was killed", proc.pid)
+        return b"", b"", True
+
+
+async def _communicate_in_thread(proc: subprocess.Popen, timeout: float) -> tuple[bytes, bytes]:
+    """``proc.communicate()`` for an event loop without subprocess support.
+
+    Same contract as the asyncio branch of :func:`_run_subprocess`: the
+    process and its children are killed on timeout (ReplayParseError) and
+    when the awaiting task is cancelled. The waiting is done by a daemon
+    thread, not by a worker of the default executor: a process that
+    survives its kill must not keep the server from exiting (executor
+    threads are joined at exit).
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future = loop.create_future()
+
+    def deliver(result: Any, error: BaseException | None) -> None:
+        if future.done():  # the awaiting task was cancelled
+            return
+        if error is not None:
+            future.set_exception(error)
+        else:
+            future.set_result(result)
+
+    def waiter() -> None:
+        try:
+            outcome = (_communicate_blocking(proc, timeout), None)
+        except BaseException as exc:  # delivered to the awaiting task
+            outcome = (None, exc)
+        with suppress(RuntimeError):  # event loop already closed (shutdown)
+            loop.call_soon_threadsafe(deliver, *outcome)
+
+    threading.Thread(target=waiter, name=f"clarity-wait-{proc.pid}", daemon=True).start()
+    try:
+        stdout, stderr, timed_out = await future
+    except asyncio.CancelledError:
+        # The thread above returns as soon as the process is dead.
+        await asyncio.to_thread(osutil.kill_process_tree, proc.pid)
+        raise
+    if timed_out:
+        raise ReplayParseError("Replay parsing timed out")
+    return stdout, stderr
+
+
+async def _communicate(proc: asyncio.subprocess.Process, timeout: float) -> tuple[bytes, bytes]:
+    """Output of an asyncio subprocess; it is killed on timeout or task cancellation."""
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         await _kill_process(proc)
         raise ReplayParseError("Replay parsing timed out") from None
     except asyncio.CancelledError:
         await _kill_process(proc)
         raise
+
+
+async def _run_subprocess(cmd: list[str], timeout: float) -> tuple[bytes, bytes, int]:
+    """Run ``cmd`` capturing output; kill it on timeout or task cancellation.
+
+    An asyncio subprocess where the event loop has them. The selector event
+    loop on Windows has none (``NotImplementedError``), and that is the loop
+    uvicorn installs there with ``--reload`` (``DEV=1``) or several workers:
+    the process is then started with ``subprocess`` and a thread waits for it.
+    """
+    kwargs = osutil.popen_group_kwargs()  # own process group -> the whole tree is killed on timeout
+    proc: asyncio.subprocess.Process | None = None
+    popen: subprocess.Popen | None = None
+    try:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                **kwargs,
+            )
+        except NotImplementedError:
+            popen = subprocess.Popen(
+                cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs,
+            )
+    except FileNotFoundError as exc:
+        raise ParserUnavailableError("Java runtime not found; the replay parser is unavailable") from exc
+    except OSError as exc:
+        logger.error("Failed to start the clarity parser: %s", exc)
+        raise ParserUnavailableError("The replay parser could not be started") from exc
+
+    child = proc if proc is not None else popen
+    # Windows: a job object around the JVM, so that a kill ends exactly what it
+    # started, and so that it cannot outlive this process. Nothing on POSIX.
+    osutil.adopt_child(child.pid)
+    with _live_clarity_pids_lock:
+        _live_clarity_pids.add(child.pid)
+    try:
+        if proc is not None:
+            stdout, stderr = await _communicate(proc, timeout)
+        else:
+            stdout, stderr = await _communicate_in_thread(popen, timeout)
     finally:
         with _live_clarity_pids_lock:
-            _live_clarity_pids.discard(proc.pid)
-            stopped = proc.pid in _stopped_clarity_pids
-            _stopped_clarity_pids.discard(proc.pid)
+            _live_clarity_pids.discard(child.pid)
+            stopped = child.pid in _stopped_clarity_pids
+            _stopped_clarity_pids.discard(child.pid)
+        osutil.release_child(child.pid)
     if stopped:
         raise ParserUnavailableError("The replay parser was stopped")
-    return stdout, stderr, proc.returncode if proc.returncode is not None else -1
+    return stdout, stderr, child.returncode if child.returncode is not None else -1
+
+
+def _paths_java_cannot_take(*paths: str) -> list[str]:
+    """Those of ``paths`` that reach a JVM on Windows damaged (always none elsewhere).
+
+    ``java.exe`` reads its command line in the system's ANSI code page
+    ("mbcs"): a character outside of it (a Chinese folder name on a Japanese
+    or Western Windows) arrives as ``?`` and the file is "not found".
+    """
+    if not osutil.IS_WINDOWS:
+        return []
+    damaged = []
+    for path in paths:
+        try:
+            path.encode("mbcs")
+        except UnicodeEncodeError:
+            damaged.append(path)
+        except LookupError:  # no such codec: not a Windows build of Python after all
+            return []
+    return damaged
 
 
 def _tail(text: str, limit: int = _STDERR_LOG_LIMIT) -> str:
@@ -1162,11 +1259,17 @@ class ClarityParser(ReplayParser):
             raise ParserUnavailableError(reason)
 
     def _command(self, file_path: str) -> list[str]:
+        # The analyzer writes its JSON as UTF-8 whatever the JVM is told. Its
+        # messages on stderr follow file.encoding up to Java 18 and
+        # stderr.encoding from Java 19 on, which is the system's code page
+        # for a pipe (cp936, cp932 ... on Windows) unless it is set here.
         return [
             self.java_path,
             f"-Xmx{_jvm_xmx()}",
             "-XX:+ExitOnOutOfMemoryError",
             "-Dfile.encoding=UTF-8",
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-jar",
             str(self.jar_path),
             str(file_path),
@@ -1191,6 +1294,13 @@ class ClarityParser(ReplayParser):
             )
             if returncode == 3:
                 logger.warning("Raise CLARITY_JVM_XMX (currently %s) if replays run out of memory", _jvm_xmx())
+            unreadable = _paths_java_cannot_take(str(self.jar_path), str(file_path))
+            if unreadable:
+                logger.warning(
+                    "The Java launcher on Windows receives its arguments in the system code page, which "
+                    "cannot represent this path: %s. Keep the project (and the replay) in a folder whose "
+                    "name it can represent; plain ASCII always works.", unreadable[0],
+                )
             raise ReplayParseError(_EXIT_MESSAGES.get(returncode, "Replay parsing failed"))
 
         logger.info("Parsed %s with clarity in %.1fs", replay_name, elapsed)

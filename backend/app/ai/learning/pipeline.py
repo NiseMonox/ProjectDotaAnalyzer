@@ -32,12 +32,11 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import os
-import shutil
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from ... import osutil
 from .base import (
     LEARNED_DIR,
     MANIFEST_FILE,
@@ -48,12 +47,8 @@ from .base import (
     request_stop,
     stop_requested,
     write_json_atomic,
+    yt_dlp_path,
 )
-
-try:  # POSIX only; elsewhere the in-process lock still applies
-    import fcntl
-except ImportError:  # pragma: no cover
-    fcntl = None
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +186,7 @@ def _prerequisites_met(level: int) -> bool:
     if level == 3:
         return llm_available()
     if level == 4:
-        return llm_available() and shutil.which("yt-dlp") is not None
+        return llm_available() and yt_dlp_path() is not None
     return True
 
 
@@ -297,28 +292,16 @@ def learning_status() -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
-def _open_lock_file(path: Path) -> int:
-    """Read-only descriptor of the lock file (created 0644 when missing).
-
-    ``flock`` needs no write access, so a lock file that belongs to another
-    user (a cron run as root next to the service) can still be locked.
-    """
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
-    except PermissionError:  # exists, but this user may not create files here
-        return os.open(path, os.O_RDONLY)
-    with contextlib.suppress(OSError):  # someone else's file: left as it is
-        os.fchmod(fd, 0o644)  # ours: readable for the other user whatever the umask
-    return fd
-
-
 @contextlib.contextmanager
 def _exclusive_run(output_dir: Path):
     """Yield True when this is the only learning run writing to *output_dir*.
 
-    A thread lock covers runs in this process, ``flock`` on
-    ``<output_dir>/_learn.lock`` covers other processes (the OS releases it
-    when the process dies). Non-blocking: a second run yields False.
+    A thread lock covers runs in this process, :class:`osutil.FileLock` on
+    ``<output_dir>/_learn.lock`` covers other processes (``flock`` on POSIX,
+    where the lock file is created 0644 and opened read-only, so a run under
+    another user can lock it too; a byte-range lock on Windows; the OS
+    releases either when the process dies). Non-blocking: a second run
+    yields False.
 
     A stop request only concerns the runs in progress: it is withdrawn when
     a run starts while no other one is in progress, and when the last one ends.
@@ -329,18 +312,15 @@ def _exclusive_run(output_dir: Path):
     if not lock.acquire(blocking=False):
         yield False
         return
-    fd = None
+    file_lock = osutil.FileLock(output_dir / LOCK_FILE_NAME)
     counted = False
     try:
-        if fcntl is not None:
-            try:
-                fd = _open_lock_file(output_dir / LOCK_FILE_NAME)
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
+        try:
+            if not file_lock.acquire(blocking=False):
                 yield False
                 return
-            except OSError as exc:  # no lock file possible: in-process lock only
-                logger.warning("Cannot take the learning lock file: %s", exc)
+        except OSError as exc:  # no lock file possible: in-process lock only
+            logger.warning("Cannot take the learning lock file: %s", exc)
         with _run_locks_guard:
             if _active_runs == 0:
                 clear_stop()
@@ -353,8 +333,7 @@ def _exclusive_run(output_dir: Path):
                 _active_runs -= 1
                 if _active_runs == 0:
                     clear_stop()
-        if fd is not None:
-            os.close(fd)  # closing releases the flock
+        file_lock.release()  # does nothing when the lock was not taken
         lock.release()
 
 
@@ -419,7 +398,7 @@ def _retire_legacy_quick_outputs(output_dir: Path) -> None:
         for path in sorted(output_dir.glob("*.json"),
                            key=lambda p: (p.name == MANIFEST_FILE, p.name.startswith("_"), p.name)):
             if path.name.startswith("_"):
-                os.replace(path, smoke_dir / path.name)
+                osutil.atomic_replace(path, smoke_dir / path.name)
                 moved.append(path.name)
                 continue
             try:
@@ -427,7 +406,7 @@ def _retire_legacy_quick_outputs(output_dir: Path) -> None:
             except Exception:
                 meta = {}
             if "quick" not in meta:  # a file that says quick: false was written by a full run
-                os.replace(path, smoke_dir / path.name)
+                osutil.atomic_replace(path, smoke_dir / path.name)
                 moved.append(path.name)
     except OSError as exc:
         logger.warning("Could not move the outputs of an old quick run: %s", exc)

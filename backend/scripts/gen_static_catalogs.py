@@ -107,6 +107,8 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.app import osutil  # noqa: E402
+
 CDN = "https://cdn.akamai.steamstatic.com"
 _IMAGES = "/apps/dota2/images/dota_react"
 
@@ -977,7 +979,7 @@ def _write_text(path: Path, text: str | bytes) -> None:
         with os.fdopen(fd, "wb") as f:
             f.write(text.encode("utf-8") if isinstance(text, str) else text)
         os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
+        osutil.atomic_replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)
@@ -1025,6 +1027,9 @@ def _stamp(identity: dict[str, str], patch: str) -> dict[str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Output redirected to a file or pipe on Windows is encoded with the system code page:
+    # a character it lacks is escaped instead of ending the command.
+    osutil.harden_stdio()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--source", type=Path, default=None,
                         help="directory with dotaconstants build files (offline); default: download")

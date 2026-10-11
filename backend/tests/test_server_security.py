@@ -135,7 +135,7 @@ def test_daily_quota_counts_persists_and_rolls_over(tmp_path):
     assert quota.try_acquire() == 0
     wait = quota.try_acquire()
     assert wait == 3600  # until UTC midnight
-    assert json.loads(path.read_text()) == {"date": "2026-01-01", "count": 2}
+    assert json.loads(path.read_text(encoding="utf-8")) == {"date": "2026-01-01", "count": 2}
 
     # A fresh instance (server restart) keeps today's count.
     again = DailyQuota(path, limit_getter=lambda: 2, clock=clock)
@@ -144,6 +144,29 @@ def test_daily_quota_counts_persists_and_rolls_over(tmp_path):
     clock.now += 3600
     assert again.try_acquire() == 0
     assert again.used() == 1
+
+
+def test_daily_quota_is_persisted_while_the_usage_file_is_in_use(tmp_path, monkeypatch):
+    """Windows refuses to replace a file that is open (a virus scanner looking at it): the write
+    waits a moment instead of losing the count."""
+    from backend.app import osutil
+
+    real_replace, refusals = os.replace, [2]
+
+    def replace(src, dst):
+        if refusals[0] > 0:
+            refusals[0] -= 1
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(osutil, "IS_WINDOWS", True)
+    monkeypatch.setattr(osutil.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(os, "replace", replace)
+    path = tmp_path / "usage.json"
+    clock = FakeClock(datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc).timestamp())
+    assert DailyQuota(path, limit_getter=lambda: 5, clock=clock).try_acquire() == 0
+    assert refusals == [0]
+    assert json.loads(path.read_text(encoding="utf-8")) == {"date": "2026-01-01", "count": 1}
 
 
 def test_daily_quota_zero_means_unlimited(tmp_path):

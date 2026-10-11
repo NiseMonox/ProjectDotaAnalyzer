@@ -974,8 +974,10 @@ class KnowledgeStore:
         ``tags``, ``priority``, ``token_estimate``, ``source``,
         ``patch_version``, ``dedupe_key``, ``title`` and ``index_text`` (the
         English text of a chunk written in another language) are optional.
+        The file is written by hand: UTF-8, with or without the byte order
+        mark Windows editors and PowerShell put in front.
         """
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         count = 0
         for item in data if isinstance(data, list) else []:

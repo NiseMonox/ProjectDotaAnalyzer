@@ -48,7 +48,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 import time
@@ -57,6 +56,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ... import osutil
 from ...config import project_path
 from .base import (
     LEARNED_DIR,
@@ -75,6 +75,7 @@ from .base import (
     scoped_canonical_tags,
     stop_requested,
     write_json_atomic,
+    yt_dlp_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -224,7 +225,8 @@ def _load_sources() -> dict:
             logger.warning("Cannot create video sources config: %s", exc)
             return json.loads(json.dumps(_DEFAULT_SOURCES))
     try:
-        with open(VIDEO_SOURCES_FILE, "r", encoding="utf-8") as f:
+        # Edited by hand: with or without the byte order mark of Windows editors / PowerShell
+        with open(VIDEO_SOURCES_FILE, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         if not isinstance(data, dict):
             raise ValueError("sources config is not an object")
@@ -290,6 +292,50 @@ _bili_opener: urllib.request.OpenerDirector | None = None
 _bili_jar = None
 
 
+def _load_cookie_file(path: Path):
+    """The cookies of a Netscape ``cookies.txt``, expired and session cookies included.
+
+    Read as UTF-8. ``MozillaCookieJar.load()`` opens the file in the
+    system's encoding (cp936, cp932 ... on Windows), where the byte order
+    mark of a file saved as "UTF-8 with BOM" fails its header check; the
+    mark is skipped here. Raises ``OSError`` (``LoadError`` for a file in
+    another format).
+    """
+    import http.cookiejar
+
+    jar = http.cookiejar.MozillaCookieJar(str(path))
+    with open(path, encoding="utf-8-sig", errors="replace") as handle:
+        # What load() does after opening the file.
+        jar._really_load(handle, str(path), True, True)
+    return jar
+
+
+def _save_cookie_file(path: Path, cookies) -> None:
+    """Write ``cookies`` as a Netscape ``cookies.txt`` in UTF-8, the encoding yt-dlp reads it in.
+
+    ``MozillaCookieJar.save()`` writes in the system's encoding and takes
+    none as an argument: its lines, for every cookie given (the session's
+    included), are written here. Only the owner may read the file.
+    """
+    lines = ["# Netscape HTTP Cookie File\n", "\n"]
+    for cookie in cookies:
+        # Mozilla's format has no cookie without a name: "Set-Cookie: foo" is a value.
+        name, value = ("", cookie.name) if cookie.value is None else (cookie.name, cookie.value)
+        domain = cookie.domain
+        lines.append("\t".join([
+            ("#HttpOnly_" + domain) if cookie.has_nonstandard_attr("HTTPOnly") else domain,
+            "TRUE" if domain.startswith(".") else "FALSE",
+            cookie.path,
+            "TRUE" if cookie.secure else "FALSE",
+            "" if cookie.expires is None else str(cookie.expires),
+            name,
+            value,
+        ]) + "\n")
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+        handle.writelines(lines)
+
+
 def _get_bilibili_opener() -> urllib.request.OpenerDirector:
     global _bili_opener, _bili_jar
     if _bili_opener is None:
@@ -301,9 +347,7 @@ def _get_bilibili_opener() -> urllib.request.OpenerDirector:
         user_cookies = _user_bilibili_cookies()
         if user_cookies is not None:
             try:
-                mozilla_jar = http.cookiejar.MozillaCookieJar(str(user_cookies))
-                mozilla_jar.load(ignore_discard=True, ignore_expires=True)
-                for cookie in mozilla_jar:
+                for cookie in _load_cookie_file(user_cookies):
                     jar.set_cookie(cookie)
             except Exception as exc:
                 logger.warning("Could not load user Bilibili cookies: %s", exc)
@@ -354,16 +398,10 @@ def _bili_cookies_file(tmpdir: str) -> Path | None:
     if user_cookies is not None:
         return user_cookies
     try:
-        import http.cookiejar
-
         _get_bilibili_opener()  # ensure the warmup happened
-        mozilla_jar = http.cookiejar.MozillaCookieJar(
-            str(Path(tmpdir) / "bili_cookies.txt")
-        )
-        for cookie in _bili_jar or []:
-            mozilla_jar.set_cookie(cookie)
-        mozilla_jar.save(ignore_discard=True, ignore_expires=True)
-        return Path(mozilla_jar.filename)
+        path = Path(tmpdir) / "bili_cookies.txt"
+        _save_cookie_file(path, _bili_jar or [])
+        return path
     except Exception as exc:
         logger.warning("Could not prepare Bilibili cookies for yt-dlp: %s", exc)
         return None
@@ -420,11 +458,32 @@ def _search_bilibili(query: str, skip: frozenset[str] = frozenset()) -> list[dic
     return candidates[:_CANDIDATES_PER_QUERY]
 
 
+# yt-dlp writes its messages and JSON lines in the encoding of its output
+# stream: the ANSI code page (cp936, cp932 ...) for a pipe on Windows, with
+# the characters that code page lacks dropped. Asked for UTF-8, it writes the
+# same bytes on every system, and they are read as UTF-8 here.
+_YT_DLP_OUTPUT = ("--encoding", "utf-8")
+
+
+def _yt_dlp() -> str:
+    """The program the yt-dlp commands start (see :func:`base.yt_dlp_path`)."""
+    return yt_dlp_path() or "yt-dlp"
+
+
+def _run_yt_dlp(cmd: list[str]) -> subprocess.CompletedProcess:
+    """Run a yt-dlp command (an argument list, never a shell) and capture its output as text."""
+    return subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=_SUBPROCESS_TIMEOUT_S,
+    )
+
+
 def _search_youtube(query: str, skip: frozenset[str] = frozenset()) -> list[dict]:
     """Search YouTube via yt-dlp flat-playlist. Returns candidate dicts
     (ids in *skip* left out, see :func:`_search_bilibili`)."""
     cmd = [
-        "yt-dlp",
+        _yt_dlp(),
+        *_YT_DLP_OUTPUT,
         "--flat-playlist",
         "--dump-json",
         "--no-warnings",
@@ -432,9 +491,7 @@ def _search_youtube(query: str, skip: frozenset[str] = frozenset()) -> list[dict
         f"ytsearch{_YOUTUBE_SEARCH_RESULTS}:{query}",
     ]
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT_S
-        )
+        proc = _run_yt_dlp(cmd)
     except (subprocess.TimeoutExpired, OSError) as exc:
         logger.warning("YouTube search failed for %r: %s", query, exc)
         return []
@@ -579,7 +636,8 @@ def _download_subtitles(url: str, tmpdir: str) -> tuple[Path | None, str]:
     for a timeout or a yt-dlp error (worth retrying on a later run).
     """
     cmd = [
-        "yt-dlp",
+        _yt_dlp(),
+        *_YT_DLP_OUTPUT,
         "--skip-download",
         "--no-playlist",  # a URL inside a playlist means that one video only
         "--write-subs",
@@ -603,9 +661,7 @@ def _download_subtitles(url: str, tmpdir: str) -> tuple[Path | None, str]:
             cmd += ["--cookies", str(cookies)]
     cmd += ["--", url]  # end of options: a URL can never be parsed as a flag
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT_S
-        )
+        proc = _run_yt_dlp(cmd)
     except (subprocess.TimeoutExpired, OSError) as exc:
         logger.warning("Subtitle download failed for %s: %s", url, exc)
         return None, _SUBS_FAILED
@@ -867,7 +923,7 @@ def learn_from_videos(
     summary: dict = {"chunks_written": 0, "videos_processed": 0, "videos_skipped": 0,
                      "download_failed": 0, "llm_failed": 0}
 
-    if shutil.which("yt-dlp") is None:
+    if yt_dlp_path() is None:
         logger.warning("video learner: yt-dlp CLI not found, skipping")
         return {**summary, "skipped": "no_yt_dlp"}
     if not llm_available():
@@ -907,7 +963,10 @@ def learn_from_videos(
             cancelled = True
             break
 
-        with tempfile.TemporaryDirectory(prefix="dota_video_subs_") as tmpdir:
+        # Windows: a virus scanner may still hold a file yt-dlp just wrote;
+        # a leftover in the temp directory must not end the run.
+        with tempfile.TemporaryDirectory(prefix="dota_video_subs_",
+                                         ignore_cleanup_errors=osutil.IS_WINDOWS) as tmpdir:
             sub_file, status = _download_subtitles(video["url"], tmpdir)
             transcript = _subtitle_to_text(sub_file) if sub_file is not None else ""
             video["published"] = _published_date(tmpdir)

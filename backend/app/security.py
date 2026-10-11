@@ -34,7 +34,7 @@ from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from . import config
+from . import config, osutil
 
 logger = logging.getLogger(__name__)
 
@@ -564,7 +564,7 @@ class DailyQuota:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_suffix(".tmp")
             tmp.write_text(json.dumps({"date": self._day, "count": self._count}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            osutil.atomic_replace(tmp, self._path)
         except OSError as exc:
             logger.warning("Failed to persist AI coach usage to %s: %s", self._path, exc)
 

@@ -1109,6 +1109,20 @@ def test_operator_chunks_get_an_english_index_text_only_when_they_have_one(kb_en
         assert store.get("team:zh_with_en").display_title == "Team Roshan plan"
 
 
+def test_operator_file_saved_with_a_byte_order_mark_is_read(kb_env, tmp_path, monkeypatch):
+    """Hand-written on Windows: Notepad's "UTF-8 with BOM" and PowerShell 5's ``Out-File -Encoding utf8``
+    put three bytes in front that a plain UTF-8 read hands to the JSON parser, which refuses them."""
+    from backend.app import config
+
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    (tmp_path / "knowledge").mkdir()
+    (tmp_path / "knowledge" / "team.json").write_bytes(b"\xef\xbb\xbf" + json.dumps([
+        {"chunk_id": "team:zh", "content": "我们队伍在二十分钟必定开雾。", "tags": ["phase:mid_game"]},
+    ], ensure_ascii=False).encode("utf-8"))
+    knowledge_base.reset_knowledge_stores()
+    assert knowledge_base._get_knowledge_store("zh").get("team:zh").content == "我们队伍在二十分钟必定开雾。"
+
+
 # ---------------------------------------------------------------------------
 # Rule values of the current game version in the principle texts
 # ---------------------------------------------------------------------------

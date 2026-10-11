@@ -672,6 +672,27 @@ def test_a_letter_patch_restamps_every_file(tmp_path, data_set, capsys):
     assert {path: path.read_bytes() for path in files} == before
 
 
+def test_line_ends_of_a_windows_checkout_do_not_count_as_a_change(tmp_path, data_set, capsys):
+    """Git for Windows checks text files out with ``\\r\\n`` (core.autocrlf): the committed
+    catalogs are then other bytes with the same content, and --check must say so."""
+    source = _source_dir(tmp_path, data_set, _ITEMS_TXT)
+    out, fallback, fixture = tmp_path / "catalogs", tmp_path / "fallback", tmp_path / "fixture.json.gz"
+    args = ["--source", str(source), "--out", str(out), "--fallback", str(fallback), "--fixture", str(fixture)]
+    assert generator.main(args + ["--patch", "7.41f"]) == 0
+    files = sorted(out.glob("*.json")) + sorted(fallback.glob("*.json"))
+    assert len(files) >= 5
+    for path in files:
+        written = path.read_bytes()
+        assert b"\r" not in written and written.count(b"\n") > 3      # the generator writes \n on every system
+        path.write_bytes(written.replace(b"\n", b"\r\n"))
+    checked_out = {path: path.read_bytes() for path in files}
+    capsys.readouterr()
+    assert generator.main(args + ["--patch", "7.41f", "--check"]) == 0
+    assert "CHANGED" not in capsys.readouterr().out
+    assert generator.main(args + ["--patch", "7.41f"]) == 0             # ... and nothing is rewritten
+    assert {path: path.read_bytes() for path in files} == checked_out
+
+
 def test_check_reads_the_fixture_not_its_compressed_bytes(tmp_path, data_set, capsys):
     """gzip output differs between zlib builds and Python versions: a fixture
     written on one machine must not count as stale on another."""

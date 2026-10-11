@@ -5,6 +5,7 @@ import pytest
 
 np = pytest.importorskip("numpy")
 
+from backend.app import osutil
 from backend.app.ai.rag import vectors
 from backend.app.ai.rag.embedders import HashEmbedder
 from backend.app.ai.rag.vectors import DOC, QUERY, VectorFileError, VectorIndex, vector_key
@@ -169,6 +170,128 @@ def test_index_reloads_when_another_process_rewrites_a_file(tmp_path, monkeypatc
     monkeypatch.setattr(vectors, "CHECK_INTERVAL_S", 0.0)
     assert new_key in index and index.version > version
     assert index.version == index.version                  # unchanged file: no reload
+
+
+def test_rewrite_of_the_same_size_within_one_clock_tick_is_noticed(tmp_path, monkeypatch):
+    """One text replaced: as many vectors as before, so the same size. And two writes within
+    one tick of the clock carry the same time (about 16 ms on NTFS, two seconds on FAT)."""
+    monkeypatch.setattr(vectors, "CHECK_INTERVAL_S", 0.0)
+    path = tmp_path / "cache.npz"
+    index = VectorIndex(MODEL, None, path)
+    old_key = _file(path, ["first"])[0]
+    assert old_key in index
+    before = path.stat()
+    new_key = _file(path, ["other"])[0]
+    os.utime(path, ns=(before.st_mtime_ns, before.st_mtime_ns))        # as if written within the same tick
+    after = path.stat()
+    assert (after.st_mtime_ns, after.st_size) == (before.st_mtime_ns, before.st_size)
+    assert new_key in index and old_key not in index
+
+
+# ---------------------------------------------------------------------------
+# Windows: a file that is open can be neither replaced nor removed
+# ---------------------------------------------------------------------------
+
+def test_reading_leaves_no_open_file_behind(tmp_path, monkeypatch):
+    """No handle and no memory map may outlive a read: the next build replaces the file, and
+    an index that was read keeps serving its vectors from memory."""
+    import builtins
+
+    path = tmp_path / "cache.npz"
+    keys = _file(path, ["alpha beta", "gamma"])
+    handles = []
+    real_open = builtins.open
+
+    def spying_open(file, *args, **kwargs):
+        handle = real_open(file, *args, **kwargs)
+        if isinstance(file, (str, os.PathLike)) and os.path.basename(os.fspath(file)) == path.name:
+            handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(builtins, "open", spying_open)
+    monkeypatch.setattr(vectors, "CHECK_INTERVAL_S", 3600.0)             # the index does not look again below
+    read_keys, matrix, _ = vectors.read_vector_file(path, MODEL)
+    index = VectorIndex(MODEL, None, path)
+    assert read_keys == keys and len(index) == 2
+    assert len(handles) == 2 and all(handle.closed for handle in handles)
+    assert not isinstance(matrix, np.memmap) and not isinstance(index.get(keys[0]), np.memmap)
+    monkeypatch.setattr(builtins, "open", real_open)
+    # What Windows refuses while a handle is open: replace the file, then remove it
+    _file(path, ["delta"])
+    vectors.remove_file(path)
+    assert not path.exists()
+    assert float(matrix[0].astype(np.float32) @ index.get(keys[0])) == pytest.approx(1.0, abs=1e-3)   # still served
+
+
+def test_write_waits_for_a_reader_on_windows(tmp_path, monkeypatch):
+    """There ``os.replace`` fails while another thread or process has the old file open (a read
+    takes milliseconds); the write tries again instead of failing the build."""
+    path = tmp_path / "m.npz"
+    _file(path, ["old"])
+    real_replace, busy = os.replace, [2]
+
+    def replace(src, dst):
+        if busy[0]:
+            busy[0] -= 1
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(osutil, "IS_WINDOWS", True)
+    new = _file(path, ["new"])
+    assert busy == [0] and vectors.read_vector_file(path, MODEL)[0] == new
+    assert [p.name for p in tmp_path.iterdir()] == ["m.npz"]             # no temporary file left
+    # A file that stays in use: the error surfaces, the old file is whole, nothing is left behind
+    busy[0] = 10 ** 6
+    patient = osutil.atomic_replace
+    monkeypatch.setattr(osutil, "atomic_replace", lambda src, dst: patient(src, dst, retries=2, delay=0.0))
+    with pytest.raises(PermissionError):
+        _file(path, ["newer"])
+    assert vectors.read_vector_file(path, MODEL)[0] == new and [p.name for p in tmp_path.iterdir()] == ["m.npz"]
+    # POSIX: a replace cannot fail for that reason, so a PermissionError is raised at once
+    monkeypatch.setattr(osutil, "IS_WINDOWS", False)
+    busy[0] = 1
+    with pytest.raises(PermissionError):
+        _file(path, ["newest"])
+    assert busy == [0]
+
+
+def test_removing_waits_for_a_reader_on_windows(tmp_path, monkeypatch):
+    path = tmp_path / "cache.npz"
+    path.write_bytes(b"x")
+    attempts = []
+    real_unlink = type(path).unlink
+
+    def unlink(self, missing_ok=False):
+        attempts.append(self.name)
+        if len(attempts) <= 2:
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(type(path), "unlink", unlink)
+    monkeypatch.setattr(vectors, "_REMOVE_POLL_S", 0.0)
+    # POSIX: a PermissionError is a real one (a directory that may not be written), raised at once
+    monkeypatch.setattr(osutil, "IS_WINDOWS", False)
+    with pytest.raises(PermissionError):
+        vectors.remove_file(path)
+    assert len(attempts) == 1 and path.exists()
+    # Windows: tried again until the reader has closed the file
+    del attempts[:]
+    monkeypatch.setattr(osutil, "IS_WINDOWS", True)
+    vectors.remove_file(path)
+    assert len(attempts) == 3 and not path.exists()
+    vectors.remove_file(path)                                            # not there: nothing to do
+    # ... but not for ever: a file that stays in use is the caller's error to handle
+    path.write_bytes(b"garbage")
+
+    def always_in_use(self, missing_ok=False):
+        raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+
+    monkeypatch.setattr(type(path), "unlink", always_in_use)
+    monkeypatch.setattr(vectors, "_REMOVE_WAIT_S", 0.0)
+    with pytest.raises(PermissionError):
+        vectors.remove_file(path)
+    assert vectors.discard_unusable(path, MODEL) is False and path.exists()   # reported, not raised
 
 
 @pytest.mark.parametrize("damage", ["corrupt", "other_model", "other_dimension"])
@@ -347,13 +470,12 @@ def test_build_lock_makes_a_second_process_wait_for_the_first(tmp_path, monkeypa
     import sys
     import threading
 
-    pytest.importorskip("fcntl")
     monkeypatch.setattr(vectors, "LOCK_POLL_S", 0.01)
     path = tmp_path / "cache" / "hash-256.npz"
     texts = [(DOC, f"chunk number {i}") for i in range(20)]
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     other = subprocess.Popen([sys.executable, "-c", _HOLD_LOCK, str(path)], cwd=root, text=True,
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                             encoding="utf-8", stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     try:
         assert other.stdout.readline().strip() == "held"
         assert (tmp_path / "cache" / "hash-256.npz.lock").is_file()
@@ -386,7 +508,6 @@ def test_build_lock_makes_a_second_process_wait_for_the_first(tmp_path, monkeypa
 
 
 def test_build_lock_gives_up_on_a_stop_request_and_is_released_afterwards(tmp_path, monkeypatch):
-    fcntl = pytest.importorskip("fcntl")
     monkeypatch.setattr(vectors, "LOCK_POLL_S", 0.01)
     path = tmp_path / "hash-256.npz"
     polls = {"n": 0}
@@ -401,13 +522,18 @@ def test_build_lock_gives_up_on_a_stop_request_and_is_released_afterwards(tmp_pa
             assert second is False and polls["n"] == 3
     with vectors.build_lock(path, should_stop=lambda: True) as again:    # released: no waiting, no stop check
         assert again is True
-    # A lock file of another user (root's cron run): read access is enough to lock it
-    os.chmod(tmp_path / "hash-256.npz.lock", 0o444)
+    # A lock file of another user (root's cron run): read access is enough to lock it.
+    # (Windows has no file modes: the read-only attribute this sets there makes the lock
+    # file unusable, and the build goes on unguarded like in the case below.)
+    lock_file = tmp_path / "hash-256.npz.lock"
+    os.chmod(lock_file, 0o444)
     with vectors.build_lock(path) as readonly:
         assert readonly is True
+        if not osutil.IS_WINDOWS:
+            assert osutil.FileLock(lock_file).acquire(blocking=False) is False      # really held
+    os.chmod(lock_file, 0o644)
     # No lock possible (the directory is a file): the build goes on unguarded
     blocked = tmp_path / "not-a-directory"
-    blocked.write_text("x")
+    blocked.write_text("x", encoding="utf-8")
     with vectors.build_lock(blocked / "hash-256.npz") as unguarded:
         assert unguarded is True
-    assert fcntl is vectors.fcntl

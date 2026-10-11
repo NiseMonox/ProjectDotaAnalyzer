@@ -589,7 +589,7 @@ def test_talents_are_named_from_the_game_data_at_analysis_time(gamedata, tmp_pat
     (gamedata / data_manager.TALENTS_FILE).write_text(json.dumps({
         facet: {"name": "+{s:bonus_blast_dot_duration}s Probe Blast Slow Duration"},
         "special_bonus_unique_probe_hero_2": {"name": "+{s:value} Probe New Name", "values": {"value": "25"}},
-    }))
+    }), encoding="utf-8")
     data_manager.invalidate_all_caches()
     assert names() == ["Probe Strike", "+Probe Blast Slow Duration", "+25 Probe New Name", "+Probe Removed",
                        "Probe Hero 7", "talent_left_lvl20"]
@@ -604,8 +604,8 @@ def test_talent_names_of_the_match_patch_survive_newer_game_data(gamedata):
     skills = [SkillEvent(ability_name="+Probe Firefly Duration", ability_key=key, level=1, time=600)]
 
     def fetch(patch: str, name: str) -> None:
-        (gamedata / data_manager.TALENTS_FILE).write_text(json.dumps({key: {"name": name}}))
-        (gamedata / "meta.json").write_text(json.dumps({"schema_version": 3, "patch_version": patch}))
+        (gamedata / data_manager.TALENTS_FILE).write_text(json.dumps({key: {"name": name}}), encoding="utf-8")
+        (gamedata / "meta.json").write_text(json.dumps({"schema_version": 3, "patch_version": patch}), encoding="utf-8")
         data_manager.invalidate_all_caches()
 
     def shown(**match_fields) -> str:
@@ -912,7 +912,7 @@ def test_patch_label_comes_from_the_match_or_its_start_time(tmp_path, monkeypatc
     (tmp_path / data_manager.PATCHES_FILE).write_text(json.dumps({
         "fetched_at": "2026-04-10T00:00:00Z",
         "patches": [{"name": "7.40", "date": "2025-12-16T00:50:40.281Z"},
-                    {"name": "7.41", "date": "2026-03-24T00:50:59.580Z"}]}))
+                    {"name": "7.41", "date": "2026-03-24T00:50:59.580Z"}]}), encoding="utf-8")
     assert full_analysis(make_match(**replay))["match_overview"]["patch"] == "7.41"
     assert full_analysis(make_match(start_time=1772470634))["match_overview"]["patch"] == "7.40"
     # the source's own label wins; an unknown start time gives none
@@ -941,7 +941,7 @@ def test_patch_label_carries_the_letter_patch_when_valves_release_list_is_known(
         return full_analysis(make_match(**match))["match_overview"]["patch"]
 
     replay = dict(start_time=1775643322)                               # 2026-04-08
-    (tmp_path / data_manager.PATCHES_FILE).write_text(json.dumps({**majors, **releases}))
+    (tmp_path / data_manager.PATCHES_FILE).write_text(json.dumps({**majors, **releases}), encoding="utf-8")
     assert patch_of(**replay) == "7.41b"
     assert patch_of(start_time=1772470634) == "7.40c"                  # 2026-03-02
     assert patch_of(patch="7.41", **replay) == "7.41b"                 # OpenDota names the major version only
@@ -951,10 +951,10 @@ def test_patch_label_carries_the_letter_patch_when_valves_release_list_is_known(
     assert patch_of(patch="7.39", **replay) == "7.39"
     assert analyzer._patch_versions(make_match(**replay)) == ("7.41", "7.41b")
     # Only Valve's list on disk: it names the version on its own.
-    (tmp_path / data_manager.PATCHES_FILE).write_text(json.dumps(releases))
+    (tmp_path / data_manager.PATCHES_FILE).write_text(json.dumps(releases), encoding="utf-8")
     assert analyzer._patch_versions(make_match(**replay)) == ("7.41", "7.41b")
     # Only the major versions (game data fetched before the feed was read): as before.
-    (tmp_path / data_manager.PATCHES_FILE).write_text(json.dumps(majors))
+    (tmp_path / data_manager.PATCHES_FILE).write_text(json.dumps(majors), encoding="utf-8")
     assert patch_of(**replay) == "7.41"
 
 
@@ -969,7 +969,7 @@ def test_stored_talent_names_are_compared_by_major_version(tmp_path, monkeypatch
         "patches": [{"name": "7.41", "date": "2026-03-24T00:50:59Z"}],
         "releases_fetched_at": "2026-04-10T00:00:00Z",
         "releases": [{"name": "7.41", "date": "2026-03-24T08:00:00Z"},
-                     {"name": "7.41b", "date": "2026-04-07T08:00:00Z"}]}))
+                     {"name": "7.41b", "date": "2026-04-07T08:00:00Z"}]}), encoding="utf-8")
     monkeypatch.setattr(parser, "talent_names_patch", lambda: "7.42")  # the game data has moved on
     match = make_match(start_time=1775643322, talent_names_patch="7.41")
     assert full_analysis(match)["match_overview"]["patch"] == "7.41b"

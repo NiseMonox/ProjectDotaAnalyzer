@@ -34,6 +34,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.app import osutil  # noqa: E402  (imports nothing from the project)
+
 # One-shot commands never start background fetches or a learning run.
 os.environ.setdefault("AI_COACH_AUTO_LEARN", "0")
 os.environ.setdefault("GAMEDATA_AUTO_UPDATE", "0")
@@ -41,12 +43,44 @@ os.environ.setdefault("GAMEDATA_AUTO_UPDATE", "0")
 
 def _peak_rss_mb() -> float:
     """Peak resident memory of this process in MB (0.0 where the platform does not report it)."""
+    if sys.platform == "win32":
+        return _peak_working_set_mb()
     try:
         import resource   # Unix only
     except ImportError:
         return 0.0
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return round(peak / (1024 * 1024 if sys.platform == "darwin" else 1024), 1)
+
+
+def _peak_working_set_mb() -> float:
+    """Windows: the peak working set of this process in MB (0.0 when the system call fails)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class Counters(ctypes.Structure):   # PROCESS_MEMORY_COUNTERS
+            _fields_ = [
+                ("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        # (kernel32 exports GetProcessMemoryInfo under this name since Windows 7)
+        get_info = kernel32.K32GetProcessMemoryInfo
+        get_info.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        get_info.restype = wintypes.BOOL
+        counters = Counters()
+        counters.cb = ctypes.sizeof(Counters)
+        if not get_info(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+            return 0.0
+        return round(counters.PeakWorkingSetSize / (1024 * 1024), 1)
+    except Exception:   # a number for the build summary: never worth failing a finished build
+        return 0.0
 
 
 def _cmd_status(args) -> int:
@@ -298,6 +332,9 @@ def _cmd_eval(args) -> int:
 
 
 def main() -> int:
+    # Output redirected to a file or pipe on Windows is encoded with the system code page:
+    # a character it lacks is escaped instead of ending the command.
+    osutil.harden_stdio()
     parser = argparse.ArgumentParser(description="Knowledge retrieval (RAG) tools")
     parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
     sub = parser.add_subparsers(dest="command", required=True)

@@ -58,6 +58,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -74,6 +75,7 @@ logger = logging.getLogger(__name__)
 
 # backend/data/learned — sibling of gamedata/ and editorial/.
 # config.py owns the path (single source of truth); it also mkdirs it.
+from ... import osutil  # noqa: E402
 from ...config import DATA_DIR, LEARNED_DATA_DIR as LEARNED_DIR  # noqa: E402
 
 # Quick / smoke-run outputs (ignored by load_learned_chunks: not top-level).
@@ -258,16 +260,20 @@ def pause_for_rate_limit() -> bool:
 # ---------------------------------------------------------------------------
 
 def write_json_atomic(path: Path, payload: Any, indent: int | None = 1) -> None:
-    """Write JSON via a temp file + rename so readers never see partial files."""
+    """Write JSON via a temp file + rename so readers never see partial files.
+
+    UTF-8 with ``\\n`` line ends on every system (Windows would write
+    ``\\r\\n`` in text mode: the same data, other bytes and another size).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             json.dump(payload, f, ensure_ascii=False, indent=indent)
         # mkstemp creates 0600 files; a cron run under another user must
         # leave files the service can read.
         os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
+        osutil.atomic_replace(tmp, path)  # Windows: waits while a reader has the old file open
     except BaseException:
         try:
             os.unlink(tmp)
@@ -916,6 +922,34 @@ def is_key_item(key: str, item_meta: dict[str, dict]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# External programs
+# ---------------------------------------------------------------------------
+
+def yt_dlp_path() -> str | None:
+    """Full path of the yt-dlp program on the ``PATH``; None when there is none.
+
+    The learners run what this returns, so the check and the run cannot
+    disagree: Windows starts a bare name only when it is an ``.exe``, while
+    the lookup also knows the other executable suffixes. A batch-file shim
+    (``yt-dlp.cmd`` / ``.bat``) does not count there: Windows would run it
+    through ``cmd.exe``, which interprets characters of a search query or a
+    URL. A batch file earlier on the ``PATH`` hides a real ``yt-dlp.exe``
+    behind it.
+    """
+    found = shutil.which("yt-dlp")
+    if found and osutil.IS_WINDOWS and found.lower().endswith((".cmd", ".bat")):
+        if found not in _refused_shims:  # asked on every status request: say it once
+            _refused_shims.add(found)
+            logger.warning("yt-dlp on the PATH is a batch file (%s), which is not run; install "
+                           "yt-dlp.exe (winget install --id yt-dlp.yt-dlp -e, or pip install yt-dlp)", found)
+        return None
+    return found
+
+
+_refused_shims: set[str] = set()
+
+
+# ---------------------------------------------------------------------------
 # LLM (dedicated client per event loop)
 # ---------------------------------------------------------------------------
 
@@ -1039,6 +1073,7 @@ __all__ = [
     "clear_stop",
     "stop_requested",
     "llm_available",
+    "yt_dlp_path",
     "llm_model",
     "llm_json_completion",
 ]

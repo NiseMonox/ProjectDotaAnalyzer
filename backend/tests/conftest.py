@@ -1,7 +1,9 @@
 """Test-session environment defaults and the network guard.
 
 Sets environment defaults (before any backend module is imported) so tests
-never start background network work or call a real LLM, and blocks network
+never start background network work or call a real LLM, never read the
+developer's ``.env`` (``DOTA_ANALYZER_SKIP_DOTENV``, which processes started
+by a test inherit) and never run in development mode, and blocks network
 access through the ``socket`` module for the whole session: name lookups
 (``getaddrinfo``, ``gethostbyname``, ``gethostbyname_ex``), connections
 (``connect``, ``connect_ex``) and datagrams (``sendto``) to anything but the
@@ -9,7 +11,9 @@ loopback interface. urllib, http.client, httpx, the openai SDK and asyncio
 all go through these calls, so a test that forgets to stub OpenDota, the LLM
 or a download fails instead of silently depending on the network. An attempt
 made by a background thread is charged to the test that is running at that
-moment.
+moment. On Windows asyncio's default event loop (the proactor) connects and
+sends through the Win32 API instead; its two entry points are guarded the
+same way.
 
 The self-learned knowledge (``backend/data/learned``, gitignored, written by
 the learning pipeline) is replaced by an empty directory for the session:
@@ -26,10 +30,20 @@ import ipaddress
 import os
 import shutil
 import socket
+import sys
 import tempfile
 
 import pytest
 
+# The suite never reads <project>/.env (backend.app.config skips it with this
+# switch): what a developer has configured must not change a result. A
+# non-empty value on purpose: it is inherited by every process a test starts,
+# while a variable set to "" does not exist for a child process on Windows.
+os.environ["DOTA_ANALYZER_SKIP_DOTENV"] = "1"
+# Not setdefault: `$env:DEV = "1"; .\run.ps1` leaves DEV=1 behind in a
+# PowerShell window, and the suite run there afterwards must not be in
+# development mode (tests of that mode switch config.DEV themselves).
+os.environ["DEV"] = "0"
 os.environ.setdefault("AI_COACH_AUTO_LEARN", "0")
 os.environ.setdefault("GAMEDATA_AUTO_UPDATE", "0")
 # The server would build the knowledge stores in a background thread at every
@@ -47,6 +61,7 @@ if "RAG_INDEX_DIR" not in os.environ:
     atexit.register(shutil.rmtree, _rag_index_dir, ignore_errors=True)
 # Empty = the built-in default, and (as for the key below) python-dotenv then
 # leaves the variable alone instead of taking a developer's value from .env.
+# In this process only: see DOTA_ANALYZER_SKIP_DOTENV above for child processes.
 for _name in ("RAG_MODEL", "RAG_TOP_K", "RAG_AGENT_SEARCH_LIMIT",
               "RAG_EMBED_API_BASE_URL", "RAG_EMBED_API_KEY", "RAG_EMBED_API_MODEL"):
     os.environ.setdefault(_name, "")
@@ -142,6 +157,37 @@ socket.socket.sendto = _guarded_sendto
 socket.getaddrinfo = _guarded_getaddrinfo
 socket.gethostbyname = _guarded_gethostbyname
 socket.gethostbyname_ex = _guarded_gethostbyname_ex
+
+
+def _guard_proactor(proactor_class) -> None:
+    """Guard ``connect`` and ``sendto`` of asyncio's Windows proactor.
+
+    The proactor event loop hands a connection to ``ConnectEx`` /
+    ``WSAConnect`` and a datagram to ``WSASendTo`` itself; the socket methods
+    patched above never see them. Host names still pass ``getaddrinfo``, but a
+    connection to a literal address would leave the machine unnoticed.
+    Loopback stays allowed: the loop's own self-pipe is a socket pair on
+    127.0.0.1, and the tests' local servers live there.
+    """
+    real_connect, real_sendto = proactor_class.connect, proactor_class.sendto
+
+    def guarded_connect(self, conn, address):
+        _guard_address("connect", address)
+        return real_connect(self, conn, address)
+
+    def guarded_sendto(self, conn, buf, flags=0, addr=None):
+        if addr is not None:
+            _guard_address("send to", addr)
+        return real_sendto(self, conn, buf, flags, addr)
+
+    proactor_class.connect = guarded_connect
+    proactor_class.sendto = guarded_sendto
+
+
+if sys.platform == "win32":
+    from asyncio import windows_events as _windows_events
+
+    _guard_proactor(_windows_events.IocpProactor)
 
 
 @pytest.fixture(autouse=True)

@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.app import osutil
 from backend.app.ai import data_manager, game_data, knowledge_base
 from backend.app.ai.knowledge_store import normalize_tag
 from backend.app.ai.models import DeathEvent, DecisionContext, DecisionPoint, HeroState
@@ -288,12 +289,12 @@ def test_get_current_patch(kb_env):
     assert data_manager.get_patch_version() == data_manager.DEFAULT_PATCH
     assert data_manager.get_meta()["status"] == "no_data"
 
-    (kb_env.gamedata / "meta.json").write_text(json.dumps({"patch_version": "unknown"}))
+    (kb_env.gamedata / "meta.json").write_text(json.dumps({"patch_version": "unknown"}), encoding="utf-8")
     data_manager.invalidate_all_caches()
     assert data_manager.get_current_patch() == data_manager.DEFAULT_PATCH
 
     (kb_env.gamedata / "meta.json").write_text(
-        json.dumps({"patch_version": "7.40", "last_fetched": "2026-01-01T00:00:00Z"}))
+        json.dumps({"patch_version": "7.40", "last_fetched": "2026-01-01T00:00:00Z"}), encoding="utf-8")
     data_manager.invalidate_all_caches()
     assert data_manager.get_current_patch() == "7.40"
     assert game_data.PATCH_VERSION == "7.40"
@@ -902,13 +903,13 @@ def test_get_meta_staleness_follows_config(kb_env, monkeypatch):
 
     ten_days_ago = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(_time.time() - 10 * 86400))
     meta_path = kb_env.gamedata / "meta.json"
-    meta_path.write_text(json.dumps({"patch_version": "7.41", "last_fetched": ten_days_ago}))
+    meta_path.write_text(json.dumps({"patch_version": "7.41", "last_fetched": ten_days_ago}), encoding="utf-8")
     monkeypatch.setattr(config, "GAMEDATA_STALE_DAYS", 7)
     assert data_manager.get_meta()["is_stale"] is True     # the updater refreshes after 7 days
     monkeypatch.setattr(config, "GAMEDATA_STALE_DAYS", 30)
     assert data_manager.get_meta()["is_stale"] is False
     for bad in ("not a date", 1234567890):
-        meta_path.write_text(json.dumps({"patch_version": "7.41", "last_fetched": bad}))
+        meta_path.write_text(json.dumps({"patch_version": "7.41", "last_fetched": bad}), encoding="utf-8")
         assert data_manager.get_meta()["is_stale"] is True
 
 
@@ -970,8 +971,25 @@ def test_item_descriptions_are_generated_not_hand_written():
 def test_saved_game_data_is_readable_for_other_users(tmp_path):
     path = tmp_path / "gamedata" / "heroes.json"
     data_manager._save_json(path, {"x": 1})
-    assert stat.S_IMODE(path.stat().st_mode) == 0o644     # mkstemp alone would leave 0600
+    # mkstemp alone would leave 0600. (Windows has no such modes: a file that is not
+    # read-only reports 0666 there, and read access follows the directory.)
+    assert stat.S_IMODE(path.stat().st_mode) == (0o666 if osutil.IS_WINDOWS else 0o644)
     assert json.loads(path.read_text(encoding="utf-8")) == {"x": 1}
+
+
+def test_saved_game_data_is_the_same_bytes_on_every_system(tmp_path, monkeypatch):
+    """UTF-8 and ``\\n``, also where the default is a code page and ``\\r\\n`` (Windows); and the
+    file is put in place through the helper that waits for a reader there."""
+    path = tmp_path / "gamedata" / "items.json"
+    payload = {"Blink Dagger": {"name_zh": "闪烁匕首", "cost": 2250}, "note": "力量 +10\n敏捷 +10"}
+    replaced = []
+    real_replace = osutil.atomic_replace
+    monkeypatch.setattr(osutil, "atomic_replace", lambda src, dst: (replaced.append(os.path.basename(dst)),
+                                                                    real_replace(src, dst))[1])
+    data_manager._save_json(path, payload)
+    assert path.read_bytes() == json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    assert replaced == ["items.json"] and [p.name for p in path.parent.iterdir()] == ["items.json"]
+    assert data_manager._load_json(path) == payload
 
 
 def test_skipped_editorial_abilities_are_logged_once(kb_env, monkeypatch, caplog):
@@ -1179,9 +1197,9 @@ def test_gamedata_of_the_previous_format_is_refetched_but_not_sanitised(kb_env, 
     _write_gamedata(kb_env.gamedata, patch="7.41")
     (kb_env.gamedata / "items.json").write_text(json.dumps({
         "Black King Bar": {"key": "black_king_bar", "cost": 4050, "name": "Black King Bar", "is_active": False},
-        "Dagon": {"key": "dagon_5", "cost": 7650, "name": "Dagon"}}))
+        "Dagon": {"key": "dagon_5", "cost": 7650, "name": "Dagon"}}), encoding="utf-8")
     (kb_env.gamedata / "meta.json").write_text(json.dumps(
-        {"schema_version": 2, "patch_version": "7.41", "last_fetched": "2026-10-01T00:00:00Z"}))
+        {"schema_version": 2, "patch_version": "7.41", "last_fetched": "2026-10-01T00:00:00Z"}), encoding="utf-8")
     data_manager.invalidate_all_caches()
     assert data_manager.GAMEDATA_SCHEMA_VERSION == 4
     assert data_manager.get_meta()["outdated_format"] is True
@@ -1210,7 +1228,7 @@ def _utc(text):
 
 
 def _write_patch_table(directory, fetched_at, patches=_PATCH_LIST):
-    (directory / data_manager.PATCHES_FILE).write_text(json.dumps({"fetched_at": fetched_at, "patches": patches}))
+    (directory / data_manager.PATCHES_FILE).write_text(json.dumps({"fetched_at": fetched_at, "patches": patches}), encoding="utf-8")
 
 
 def test_patch_for_time_reads_the_stored_table(kb_env, monkeypatch):
@@ -1246,7 +1264,7 @@ def test_patch_for_time_reads_the_stored_table(kb_env, monkeypatch):
 
     # Unusable files give no label instead of an error
     for content in ("{broken", "[]", json.dumps({"patches": [{"name": "7.41", "date": "yesterday"}, 7]})):
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
         os.utime(path, ns=(stamp + 2 * 10**9 + len(content), stamp + 2 * 10**9 + len(content)))
         assert patch_for_time(1775643322) == ""
 

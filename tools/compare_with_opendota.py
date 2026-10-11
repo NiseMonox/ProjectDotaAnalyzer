@@ -8,6 +8,14 @@ Dev tool for verifying tools/clarity-analyzer.jar against Valve's own numbers:
     python3 tools/compare_with_opendota.py raw.json od.json \
         [--ability-ids ability_ids.json] [--item-ids item_ids.json] [-v]
 
+On Windows, make the two files in cmd.exe, not in Windows PowerShell 5.1: its ">" stores
+a program's output re-encoded as UTF-16 (player names of the analyzer's UTF-8 JSON are
+damaged on the way), and its "curl" is not curl:
+
+    cmd /c "java -jar tools/clarity-analyzer.jar replays/<id>.dem > raw.json"
+    curl.exe -o od.json https://api.opendota.com/api/matches/<id>
+    python tools/compare_with_opendota.py raw.json od.json
+
 It prints one line per mismatch ("DIFF"), per accepted source difference ("note") and,
 with -v, per matching check ("ok"). Exit code 1 when there is at least one DIFF.
 No network access: OpenDota stores items and abilities as numeric ids, so the id tables
@@ -76,7 +84,12 @@ class Report:
 
 
 def load_json(path: str | Path):
-    with open(path, encoding="utf-8") as fh:
+    """A JSON file in UTF-8, or in what its byte order mark says (Windows tools add one:
+    "UTF-8 with BOM", and UTF-16 when PowerShell 5.1 wrote the file with ">")."""
+    with open(path, "rb") as fh:
+        head = fh.read(2)
+    encoding = "utf-16" if head in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig"
+    with open(path, encoding=encoding) as fh:
         return json.load(fh)
 
 
@@ -801,6 +814,11 @@ def main() -> int:
     ap.add_argument("--item-ids", help="dump of OpenDota /constants/item_ids")
     ap.add_argument("-v", "--verbose", action="store_true", help="also print matching checks")
     args = ap.parse_args()
+    # Player names and chat lines are printed as they are: output redirected to a file
+    # on Windows is in the system code page, which must not make a name a crash.
+    for stream in (sys.stdout, sys.stderr):
+        if getattr(stream, "errors", None) == "strict" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
 
     raw = load_json(args.raw_json)
     od = load_json(args.opendota_json)

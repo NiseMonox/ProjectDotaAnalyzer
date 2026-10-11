@@ -13,6 +13,8 @@ import os
 import shutil
 from pathlib import Path
 
+from . import osutil
+
 logger = logging.getLogger(__name__)
 
 
@@ -91,8 +93,82 @@ try:
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover - python-dotenv is a hard requirement
     load_dotenv = None
-if load_dotenv is not None:
-    load_dotenv(BASE_DIR / ".env", override=False)
+
+
+def dotenv_encoding(path: Path) -> str:
+    """Encoding to read a ``.env`` file with: UTF-8, or what its byte order mark says.
+
+    The file is UTF-8. Windows tools add a mark that python-dotenv does not
+    expect: Notepad may save "UTF-8 with BOM" (the first variable of the
+    file would get the mark into its name and never be found), and Windows
+    PowerShell 5.1 writes UTF-16 with ``>`` and ``Out-File`` (the file
+    could not be decoded at all and the server would not start).
+    """
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(2)
+    except OSError:
+        head = b""
+    return "utf-16" if head in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig"
+
+
+def load_env_file(path: Path) -> bool:
+    """Load ``path`` into the environment, existing variables win; False when nothing was set."""
+    if load_dotenv is None:
+        return False
+    return bool(load_dotenv(path, override=False, encoding=dotenv_encoding(path)))
+
+
+# Settings that name a file or a directory (read here and by the AI modules).
+_PATH_SETTINGS = ("JAVA_PATH", "JAVA_HOME", "CLARITY_JAR_PATH", "RAG_MODEL_DIR", "RAG_INDEX_DIR",
+                  "BILIBILI_COOKIES_FILE")
+# What python-dotenv makes of a backslash sequence inside double quotes.
+_DOTENV_ESCAPES = {"\a": "\\a", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t", "\v": "\\v"}
+
+
+def repair_path_settings() -> list[str]:
+    """Deal with path settings that a double-quoted ``.env`` value damaged; returns their names.
+
+    Inside double quotes python-dotenv reads ``\\b``, ``\\t``, ``\\n``, ``\\a``,
+    ``\\f``, ``\\r`` and ``\\v`` as control characters. Every JDK path has a
+    ``\\bin`` in it: ``JAVA_PATH="C:\\Program Files\\...\\bin\\java.exe"``
+    arrives with a backspace, and Java is "not found" at a path that looks
+    right in the log. A path with a space invites exactly those quotes.
+
+    No Windows file name can hold a control character, so there the
+    backslash sequence is put back, in ``os.environ`` too (for the modules
+    that read it from there and for child processes). Elsewhere such a name
+    is unusual but possible: the value is left alone. Both ways a warning
+    says how to write the value. Not repaired, because it leaves no such
+    trace: a network path in double quotes loses one of its two leading
+    backslashes (``"\\\\nas\\share"`` arrives as ``\\nas\\share``).
+    """
+    damaged = []
+    for name in _PATH_SETTINGS:
+        value = os.environ.get(name)
+        if not value or not any(char in value for char in _DOTENV_ESCAPES):
+            continue
+        damaged.append(name)
+        hint = ("Inside double quotes a .env file turns \\b, \\t, \\n, \\a, \\f, \\r and \\v into control "
+                "characters: write a Windows path without quotes, in single quotes or with forward slashes")
+        if osutil.IS_WINDOWS:
+            repaired = "".join(_DOTENV_ESCAPES.get(char, char) for char in value)
+            os.environ[name] = repaired
+            logger.warning("%s held a control character and is read as %s. %s.", name, repaired, hint)
+        else:
+            logger.warning("%s=%r holds a control character. %s.", name, value, hint)
+    return damaged
+
+
+# DOTA_ANALYZER_SKIP_DOTENV=1 in the real environment (it cannot stand in the
+# file it switches off): .env is not read at all. The test suite sets it, so
+# neither the tests nor a process they start pick up a developer's key or
+# settings. An empty variable, which load_dotenv leaves alone as well, does
+# not reach a child process on Windows: setting a variable to "" removes it
+# from the environment there.
+if not env_bool("DOTA_ANALYZER_SKIP_DOTENV", False):
+    load_env_file(BASE_DIR / ".env")
+repair_path_settings()
 
 REPLAY_DIR = BASE_DIR / "replays"
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -117,12 +193,14 @@ CLARITY_JAR_PATH = project_path(env_str("CLARITY_JAR_PATH", "tools/clarity-analy
 
 # Java 17+ is required by clarity 4.x (5.x would need Java 21). Resolution order:
 #   1. $JAVA_PATH (explicit override)
-#   2. project-local JDK in tools/jdk17 (macOS bundle or Linux layout)
-#   3. $JAVA_HOME/bin/java
+#   2. project-local JDK in tools/jdk17 (macOS bundle, or the layout of a
+#      Linux tarball / Windows zip: tools/jdk17/bin/java[.exe])
+#   3. $JAVA_HOME/bin/java[.exe]
 #   4. `java` on PATH
+_JAVA_EXE = "java.exe" if osutil.IS_WINDOWS else "java"
 _LOCAL_JDK_CANDIDATES = (
-    BASE_DIR / "tools" / "jdk17" / "Contents" / "Home" / "bin" / "java",  # macOS .jdk bundle
-    BASE_DIR / "tools" / "jdk17" / "bin" / "java",                        # Linux tarball
+    BASE_DIR / "tools" / "jdk17" / "Contents" / "Home" / "bin" / _JAVA_EXE,  # macOS .jdk bundle
+    BASE_DIR / "tools" / "jdk17" / "bin" / _JAVA_EXE,                        # Linux tarball, Windows zip
 )
 
 
@@ -136,10 +214,10 @@ def _resolve_java_path() -> str:
             return str(candidate)
     java_home = env_str("JAVA_HOME")
     if java_home:
-        candidate = Path(java_home) / "bin" / "java"
+        candidate = Path(java_home) / "bin" / _JAVA_EXE
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
-    return shutil.which("java") or "java"
+    return shutil.which("java") or "java"  # which() also tries PATHEXT (java.exe) on Windows
 
 
 JAVA_PATH = _resolve_java_path()

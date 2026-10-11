@@ -26,6 +26,7 @@ def test_frontend_logic():
         pytest.skip("Node.js is not installed")
     result = subprocess.run(
         [node, str(SCRIPT), str(ROOT / "frontend" / "static" / "js")],
-        capture_output=True, text=True, timeout=60,
+        # Node writes UTF-8 to a pipe on every system (the labels are Chinese)
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr

@@ -366,7 +366,7 @@ def test_the_weekly_refresh_does_not_downgrade_either(net):
     before = _master_data_then_only_the_api(net)
     meta = _meta(net)
     meta["last_fetched"] = "2026-09-01T00:00:00Z"                  # stale: the refresh is forced
-    (net.gamedata / "meta.json").write_text(json.dumps(meta))
+    (net.gamedata / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     data_manager.invalidate_all_caches()
     assert data_manager.get_meta()["is_stale"] is True
     result = data_manager.refresh_gamedata_if_outdated()
@@ -450,7 +450,7 @@ def test_a_truncated_upstream_build_does_not_replace_a_complete_data_set(net, mo
     # 3. files of an older format say nothing about what is plausible (they counted recipes as items)
     meta = _meta(net)
     meta.update(schema_version=3, item_count=484)
-    (net.gamedata / "meta.json").write_text(json.dumps(meta))
+    (net.gamedata / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     data_manager.invalidate_all_caches()
     net.sources = {GITHUB: dict(full)}
     assert data_manager.fetch_and_save_gamedata()["items"] == 360
@@ -598,7 +598,7 @@ def test_stale_data_is_fetched_again_but_equal_data_keeps_the_caches(net):
     data_manager.fetch_and_save_gamedata()
     meta = _meta(net)
     meta["last_fetched"] = "2026-01-01T00:00:00Z"                 # older than GAMEDATA_STALE_DAYS
-    (net.gamedata / "meta.json").write_text(json.dumps(meta))
+    (net.gamedata / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     data_manager.invalidate_all_caches()
     assert data_manager.get_meta()["is_stale"] is True
     items = game_data.get_item_table()
@@ -675,11 +675,11 @@ def test_fetched_facts_replace_the_catalogs_for_heroes_and_items(net, tmp_path, 
     static = tmp_path / "static"
     static.mkdir()
     (static / "heroes.json").write_text(json.dumps({"by_id": {
-        "2": {"id": 2, "name": "Axe", "slug": "axe", "attr": "agi", "attack_type": "Ranged", "roles": ["Support"]}}}))
+        "2": {"id": 2, "name": "Axe", "slug": "axe", "attr": "agi", "attack_type": "Ranged", "roles": ["Support"]}}}), encoding="utf-8")
     (static / "items.json").write_text(json.dumps({
         "by_key": {"heart": {"id": 114, "key": "heart", "name": "Heart of Tarasque (old spelling)", "cost": 5000},
                    "recipe_heart": {"id": 113, "key": "recipe_heart", "name": "Heart of Tarrasque Recipe", "cost": 1300}},
-        "name_to_key": {"Heart of Tarasque (old spelling)": "heart"}}))
+        "name_to_key": {"Heart of Tarasque (old spelling)": "heart"}}), encoding="utf-8")
     monkeypatch.setattr(data_manager, "STATIC_DATA_DIR", static)
     data_manager.invalidate_all_caches()
     assert data_manager.load_heroes()["Axe"]["attribute"] == "agi"          # nothing fetched: the catalog

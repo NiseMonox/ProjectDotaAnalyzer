@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Protocol, Sequence
 
+from ... import osutil
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "bge-small-en-v1.5-int8"
@@ -180,7 +182,7 @@ def download_model(spec: ModelSpec, directory: Path, endpoint: str = "",
                 "model_checksum",
                 f"{relative}: got {received} bytes, sha256 {digest.hexdigest()}; "
                 f"expected {size} bytes, sha256 {sha256}")
-        os.replace(partial, target)
+        osutil.atomic_replace(partial, target)
         say(f"{relative}: {received} bytes, checksum ok")
         written.append(target)
     return written

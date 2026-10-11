@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import calendar
 import logging
+import mimetypes
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -23,7 +24,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.types import Receive, Scope, Send
 
 from . import config  # loads .env before any setting is read
-from . import parser
+from . import osutil, parser
 from .routes import rag_package, router
 from .security import BodySizeLimitMiddleware, SecurityHeadersMiddleware, install_exception_handlers
 
@@ -39,7 +40,13 @@ def configure_logging() -> None:
 
     uvicorn only configures its own loggers, so without a root handler the
     app's INFO messages are dropped. Third-party loggers stay at WARNING.
+
+    Log lines carry player and hero names in any script. The root handler
+    writes to stderr, which never fails on a character (Python escapes what
+    the stream's encoding lacks); stdout is given the same behaviour, for
+    output redirected to a file on a Windows with a non-UTF-8 code page.
     """
+    osutil.harden_stdio()
     level = logging.getLevelName(config.LOG_LEVEL)
     if not isinstance(level, int):
         level = logging.INFO
@@ -434,6 +441,34 @@ app.add_middleware(
 app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(router)
+
+# Content types of the page's own files (what StaticFiles answers with).
+_STATIC_MIME_TYPES = (
+    ("text/javascript", ".js"),
+    ("text/css", ".css"),
+    ("application/json", ".json"),
+    ("image/svg+xml", ".svg"),
+    ("text/html", ".html"),
+)
+
+
+def register_static_mime_types() -> None:
+    """Pin the content types of the page's scripts and styles on Windows.
+
+    ``mimetypes``, which StaticFiles asks, takes its table from the registry
+    there, and on some machines other software has set ``.js`` or ``.css``
+    to ``text/plain``. Every response carries ``X-Content-Type-Options:
+    nosniff``, so a browser would refuse to run such a script and show an
+    empty page. Linux and macOS use Python's built-in table and are left
+    as they are.
+    """
+    if not osutil.IS_WINDOWS:
+        return
+    for content_type, suffix in _STATIC_MIME_TYPES:
+        mimetypes.add_type(content_type, suffix)
+
+
+register_static_mime_types()
 
 # Serve frontend static files
 app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")

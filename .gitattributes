@@ -1,0 +1,37 @@
+# Line endings and binary files, the same on every operating system.
+#
+# Text files are LF in the repository and in the working tree, also on Windows
+# (Git for Windows would otherwise check them out with CRLF, its default
+# core.autocrlf=true). The bytes matter here: the knowledge retrieval hashes
+# its texts and data files, tests compare generated files with committed ones,
+# and run.sh / tools/setup_parser.sh do not run with CRLF line endings.
+# Python, Node, Java, PowerShell and current editors on Windows read LF files.
+* text=auto eol=lf
+
+# Windows batch files are the exception: cmd.exe wants CRLF. Stored and checked
+# out byte for byte (the Gradle wrapper's script is committed with CRLF).
+*.bat -text
+*.cmd -text
+
+# Binary: never converted, never diffed or merged as text.
+*.jar binary
+*.npz binary
+*.npy binary
+*.gz binary
+*.bz2 binary
+*.zst binary
+*.dem binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+
+# Vendored, minified libraries: text with LF like everything else (they are
+# served as they are), but a diff of them is noise.
+frontend/static/vendor/** -diff
