@@ -100,19 +100,21 @@ const app = createApp({
         const teamfightReplayTime = ref(0);
         const teamfightPlaying = ref(false);
         const teamfightPlaySpeed = ref(2);   // 0.5 | 1 | 2 | 4 (1 = real time)
-        // Chat: chat-wheel lines only carry a number in the data, so they are opt-in
-        const chatShowWheel = ref(false);
+        // Chat: chat-wheel lines (phrases, voice lines, sprays) are part of the log; the filter hides them
+        const chatShowWheel = ref(true);
 
         // AI coach (logic under "AI coach" below; reset in clearMatch)
         const coachSlot = ref(null);        // player picked in the coach tab
-        const coachReport = ref(null);      // report on screen (schema version 4)
-        const coachReportLang = ref('');    // language that report was written in
+        const coachReport = ref(null);      // report on screen (schema version 5)
+        const coachRefreshAt = ref(0);      // epoch ms from which a degraded report can be generated again (0 = now)
         const coachLoading = ref(false);
         const coachError = ref(null);       // { error, retry } like homeError
         const coachCancelled = ref(false);  // the user stopped waiting
         const coachFallback = ref(false);   // waiting on the JSON route: no progress events
         const coachProgress = ref(DotaCoach.newProgress());
         const coachOpenSources = ref({});   // evaluation key -> its source list is expanded
+        const coachOpenEntries = ref({});   // '<evaluation key>|<entry id>' -> the text of that source is shown
+        const coachEntries = ref({});       // '<lang>|<entry id>' -> { state: loading | ready | error, text, error }
 
         // Sub-views of the tabs
         const selectedLaningPlayer = ref(0);
@@ -354,6 +356,35 @@ const app = createApp({
             { id: 'radiant', players: radiantPlayers.value, won: matchWinner.value === 'radiant' },
             { id: 'dire', players: direPlayers.value, won: matchWinner.value === 'dire' },
         ]);
+
+        // --- Positions (1 = carry ... 5 = hard support) ---
+        // match_overview.players[].position: null (not derived: a replay too
+        // short for it), or {number 1-5, confidence: high | medium | low,
+        // method}. The backend derives it once, so the scoreboard, the coach
+        // picker and a coach report name the same position.
+
+        // Short chip: "1号位" / "Pos 1"; null = nothing to show. A detection
+        // that is less than sure is marked; the tooltip says what it rests on.
+        function positionChip(position) {
+            const number = position ? Number(position.number) : 0;
+            if (!Number.isInteger(number) || number < 1 || number > 5) return null;
+            return {
+                label: codeLabel('position_short', number),
+                tone: DotaCoach.confidenceTone(position.confidence),
+                unsure: position.confidence === 'medium' || position.confidence === 'low',
+                title: `${codeLabel('position', number)} · ` + t('coach.position.title', {
+                    confidence: codeLabel('confidence', position.confidence),
+                    method: codeLabel('position_method', position.method),
+                }),
+            };
+        }
+
+        // Chip of every player by slot
+        const positionChips = computed(() => {
+            const chips = {};
+            (overview.value.players || []).forEach(p => { chips[p.player_slot] = positionChip(p.position); });
+            return chips;
+        });
 
         // --- Start-page status line (from /api/capabilities) ---
         const statusChips = computed(() => {
@@ -706,8 +737,17 @@ const app = createApp({
         const allWards = computed(() => analysisData.value?.wards?.all_wards || []);
         const hasWardData = computed(() => allWards.value.length > 0);
 
+        // The payload counts placed and dewarded wards per team; how the
+        // others ended (denied, expired, still standing) is counted here
+        // from the list, by the same state the table shows.
         const wardTeams = computed(() => ['radiant', 'dire'].map(id => {
             const stats = (analysisData.value?.wards || {})[id] || {};
+            const ended = {};
+            allWards.value.forEach(w => {
+                if (w.team !== id) return;
+                const state = DotaGame.wardState(w);
+                ended[state] = (ended[state] || 0) + 1;
+            });
             return {
                 id,
                 obs: stats.total_obs || 0,
@@ -717,6 +757,10 @@ const app = createApp({
                 // an average over no (finished) wards is no number
                 avgObs: stats.avg_obs_lifetime > 0 ? stats.avg_obs_lifetime : null,
                 avgSen: stats.avg_sent_lifetime > 0 ? stats.avg_sent_lifetime : null,
+                // 'destroyed' (nobody named) is rare: listed only when it happened
+                outcomes: DotaGame.WARD_STATES
+                    .filter(state => state !== 'destroyed' || ended[state] > 0)
+                    .map(state => ({ state, n: ended[state] || 0 })),
             };
         }));
 
@@ -768,23 +812,42 @@ const app = createApp({
             return ward && ward.hero_name ? heroName(ward.hero_name) : t('wards.unknown_owner');
         }
 
+        // killer_hero_name: the enemy that dewarded it, or the ally that
+        // denied it; '' when a unit other than a hero did it.
         function wardStateDetail(ward) {
             const state = DotaGame.wardState(ward);
             const time = formatGameTime(ward.destroyed_time, '-');
-            if (state === 'dewarded') {
+            if (state === 'dewarded' || state === 'denied') {
                 return ward.killer_hero_name
-                    ? t('wards.dewarded_by', { time, hero: heroName(ward.killer_hero_name) })
-                    : t('wards.dewarded_at', { time });
+                    ? t(`wards.${state}_by`, { time, hero: heroName(ward.killer_hero_name) })
+                    : t(`wards.${state}_at`, { time });
             }
             if (state === 'destroyed') return t('wards.destroyed_at', { time });
             if (state === 'expired') return t('wards.expired_at', { time });
             return t('wards.standing');
         }
 
-        // Tooltip of the outcome: what the less obvious states mean.
+        // Tooltip of an outcome: what the state means.
         function wardStateTitle(ward) {
-            return DotaGame.wardState(ward) === 'destroyed' ? t('wards.destroyed_title') : wardStateDetail(ward);
+            return codeLabel('ward_state_title', DotaGame.wardState(ward));
         }
+
+        // Icon of an outcome (an SVG path on a 24 x 24 grid, drawn as a
+        // stroke): a cross, the game's "!" of a deny, a question mark (nobody
+        // named), a clock, a tick.
+        const WARD_STATE_ICON = {
+            dewarded: 'M6 6l12 12M18 6L6 18',
+            denied: 'M12 4v10M12 19v.5',
+            destroyed: 'M8.5 9a3.5 3.5 0 116 2.4c-1.2 1.1-2.5 1.6-2.5 3.6M12 19v.5',
+            expired: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7.5V12l3 2',
+            active: 'M5 12.5l4.5 4.5L19 7',
+        };
+
+        function wardStateIcon(state) {
+            return WARD_STATE_ICON[state] || WARD_STATE_ICON.destroyed;
+        }
+
+        const wardHasDenied = computed(() => allWards.value.some(w => DotaGame.wardState(w) === 'denied'));
 
         function wardTypeName(ward) {
             return t(ward && ward.ward_type === 'observer' ? 'wards.observer_one' : 'wards.sentry_one');
@@ -938,10 +1001,11 @@ const app = createApp({
         }
 
         // The death a hero is down from at `now` (seconds into the fight),
-        // or null while it is alive. A hero is down from a death until it
-        // buys back: the buyback times come from the scoreboard data. A
-        // source without them only counts buybacks per fight: then the
-        // first `buybacks` deaths are taken as bought back a few seconds later.
+        // or null while it is alive: for sources without alive_intervals.
+        // A hero is down from a death until it buys back: the buyback times
+        // come from the scoreboard data. A source without them only counts
+        // buybacks per fight: then the first `buybacks` deaths are taken as
+        // bought back a few seconds later.
         function fallenAt(tf, player, deaths, now) {
             const last = deaths.length ? deaths[deaths.length - 1] : null;
             if (!last) return null;
@@ -949,6 +1013,26 @@ const app = createApp({
             const buybacks = ((row && row.buyback_log) || []).map(b => Number(b.time) - Number(tf.start_time));
             if (buybacks.length) return buybacks.some(at => at >= last.time_offset && at <= now) ? null : last;
             return player.buybacks >= deaths.length && now - last.time_offset > 5 ? null : last;
+        }
+
+        // Whether a hero is down at `now`: null while it is alive, else
+        // { since } = when it fell, in seconds into the fight (the start of
+        // the playback for a hero that was dead before the fight began).
+        // `deaths` are its counted deaths up to `now`, in time order.
+        // alive_intervals (replay sources) know respawns and buybacks; the
+        // playback runs a little past the fight they cover, so a death after
+        // its end comes from the kill order. null = the source cannot tell
+        // (OpenDota): the deaths and buybacks of the fight decide.
+        function downAt(tf, player, deaths, now) {
+            if (!Array.isArray(player.alive_intervals)) {
+                const death = fallenAt(tf, player, deaths, now);
+                return death ? { since: death.time_offset } : null;
+            }
+            const duration = Number(tf.duration) || 0;
+            const late = deaths.filter(k => k.time_offset > duration).pop();
+            if (late) return { since: late.time_offset };
+            const life = DotaGame.lifeAt(player.alive_intervals, now, duration);
+            return life.alive ? null : { since: life.since == null ? tfWindow.value.min : life.since };
         }
 
         // Playback: real time at 1x, ten frames a second.
@@ -1021,6 +1105,12 @@ const app = createApp({
             (laningData.value.players || []).some(p =>
                 (p.damage_events || []).length > 0 || (p.regen_events || []).length > 0
                 || p.total_damage_dealt_laning > 0 || p.total_damage_taken_laning > 0 || p.regen_items_used > 0)
+        );
+
+        // lane_efficiency_applicable is false for a game mode the figure does
+        // not describe (Turbo): the column then holds dashes, and says why.
+        const laningEfficiencyNote = computed(() =>
+            laningData.value.lane_efficiency_applicable === false ? t('laning.efficiency_na', { mode: gameModeLabel.value }) : ''
         );
 
         // Why the damage / regen / HP columns are missing: OpenDota never has
@@ -1368,14 +1458,23 @@ const app = createApp({
             chatShowWheel.value ? chatMessages.value : chatMessages.value.filter(m => m.type !== 'chatwheel')
         );
 
-        // type 'chat': key is the text. type 'chatwheel': key is 'chatwheel_<id>'
-        // (a phrase or sound of the chat wheel; the payload has no phrase text).
+        // type 'chat': key is the text the player typed. type 'chatwheel': key
+        // is 'chatwheel_<id>' and the payload says what the line is: phrase
+        // {en, zh} (null for a spray and for an id its catalog does not
+        // know), sound (a voice line) and spray. Shown as text, never as HTML.
         function chatText(msg) {
-            if (msg.type === 'chatwheel') {
-                const id = DotaGame.chatWheelId(msg.key);
-                return id == null ? t('chat.wheel') : t('chat.wheel_n', { n: id });
-            }
-            return String(msg.key == null ? '' : msg.key);
+            if (msg.type !== 'chatwheel') return String(msg.key == null ? '' : msg.key);
+            const line = DotaGame.chatWheelLine(msg, locale.value);
+            if (line.kind === 'phrase') return line.text;
+            if (line.kind === 'spray') return '';
+            return line.id == null ? t('chat.wheel') : t('chat.wheel_n', { n: line.id });
+        }
+
+        // How a chat-wheel line is marked: 'voice' (heard in the game),
+        // 'phrase' (text only), 'spray', or 'unknown' (only its number is known).
+        function chatWheelKind(msg) {
+            const line = DotaGame.chatWheelLine(msg, locale.value);
+            return line.sound && line.kind !== 'spray' ? 'voice' : line.kind;
         }
 
         function chatPlayerName(msg) {
@@ -2177,7 +2276,9 @@ const app = createApp({
         // same report, or the error in the backend's words. The server shares
         // one generation between all requests for the same report and keeps
         // working when nobody listens, so reconnecting, cancelling or asking
-        // again never starts a second one.
+        // again never starts a second one. The one exception is asked for
+        // by name: "generate again" on a degraded report (refresh=1), which
+        // the server allows once per cooldown.
         const COACH_IDLE_MS = 330000;           // the server itself gives up after about 240 s
         const COACH_JSON_TIMEOUT_MS = 300000;
         const COACH_SWAP_DELAY_MS = 250;        // a cached report replaces the one on screen without a flash
@@ -2185,7 +2286,6 @@ const app = createApp({
         let coachAbort = null;
         let coachSwapTimer = null;
         let coachSeq = 0;                       // tells the current request from the ones it replaced
-        let coachWasDegraded = false;           // "try again" on a degraded report is waiting for its answer
 
         function coachPath(route, slot) {
             return `/api/match/${encodeURIComponent(matchKey.value)}/${route}/${encodeURIComponent(slot)}`;
@@ -2201,12 +2301,19 @@ const app = createApp({
 
         // Ask for the report of a player in the current language.
         // options.restored: the match was already put back on the server once.
+        // options.refresh: "generate again" on a degraded report. Only that
+        // button sets it; every other request takes the report the server has.
         function requestCoach(slot, options) {
             if (slot == null || !matchKey.value || !coachAvailable.value) return;
-            const restored = !!(options && options.restored);
             stopCoachRequest();
             const seq = coachSeq;
             const lang = locale.value;
+            const ask = {
+                lang,
+                restored: !!(options && options.restored),
+                refresh: !!(options && options.refresh),
+                params: options && options.refresh ? { lang, refresh: 1 } : { lang },
+            };
             coachSlot.value = slot;
             coachLoading.value = true;
             coachError.value = null;
@@ -2222,52 +2329,60 @@ const app = createApp({
                 }, COACH_SWAP_DELAY_MS);
             }
             coachStream = DotaApi.stream(coachPath('ai-coach-stream', slot), {
-                params: { lang },
+                params: ask.params,
                 idleMs: COACH_IDLE_MS,
                 onMessage(msg) {
                     if (seq !== coachSeq) return;
                     if (msg.type === 'progress') coachProgress.value = DotaCoach.advance(coachProgress.value, msg);
-                    else if (msg.type === 'done') finishCoach(seq, msg.data, lang);
-                    else if (msg.type === 'error') failCoach(seq, DotaApi.errorFromEvent(msg, lang), restored);
+                    else if (msg.type === 'done') finishCoach(seq, msg.data, ask);
+                    else if (msg.type === 'error') failCoach(seq, DotaApi.errorFromEvent(msg, lang), ask);
                 },
                 onFail(reason) {
                     if (seq !== coachSeq) return;
                     coachStream = null;
-                    if (reason === 'idle') failCoach(seq, clientError('coach_timeout'), restored);
-                    else fetchCoachJson(seq, lang, restored);
+                    if (reason === 'idle') failCoach(seq, clientError('coach_timeout'), ask);
+                    else fetchCoachJson(seq, ask);
                 },
             });
         }
 
-        // The stream gave out: the JSON route waits for the same report.
-        async function fetchCoachJson(seq, lang, restored) {
+        // The stream gave out: the JSON route waits for the same report (a
+        // run the stream started with refresh=1 is joined, not started again).
+        async function fetchCoachJson(seq, ask) {
             coachFallback.value = true;
             const controller = new AbortController();
             coachAbort = controller;
             const res = await DotaApi.get(coachPath('ai-coach', coachSlot.value), {
-                params: { lang }, signal: controller.signal, timeoutMs: COACH_JSON_TIMEOUT_MS,
+                params: ask.params, signal: controller.signal, timeoutMs: COACH_JSON_TIMEOUT_MS,
             });
             if (seq !== coachSeq) return;
-            if (res.ok) finishCoach(seq, res.data, lang);
-            else failCoach(seq, res.error, restored);
+            if (res.ok) finishCoach(seq, res.data, ask);
+            else failCoach(seq, res.error, ask);
         }
 
-        function finishCoach(seq, report, lang) {
+        function finishCoach(seq, report, ask) {
             if (seq !== coachSeq) return;
-            if (!DotaCoach.isReport(report)) { failCoach(seq, clientError('bad_response'), true); return; }
+            if (!DotaCoach.isReport(report)) { failCoach(seq, clientError('bad_response'), { ...ask, restored: true }); return; }
             stopCoachRequest();
             const slot = coachSlot.value;
-            // The same player again (another language, a second try): a refresh.
-            const refresh = !!coachReport.value && coachReport.value.player_slot === slot;
-            if (!refresh) coachOpenSources.value = {};
+            // The same player again (another language, a second try): the report is replaced in place.
+            const samePlayer = !!coachReport.value && coachReport.value.player_slot === slot;
+            if (!samePlayer) coachOpenSources.value = {};
+            coachOpenEntries.value = {};
             coachReport.value = report;
-            coachReportLang.value = lang;
+            const again = DotaCoach.refreshState(report);
+            coachRefreshAt.value = again.wait > 0 ? Date.now() + again.wait * 1000 : 0;
             coachLoading.value = false;
             coachFallback.value = false;
             coachProgress.value = { ...coachProgress.value, percent: 100 };
-            if (coachWasDegraded && report.degraded) toast('coach.degraded.still', 'info');
-            coachWasDegraded = false;
-            if (activeTab.value !== 'ai_coach' && !refresh) {
+            // "Generate again" came back degraded: the new run had gaps
+            // too, or the server has not started one yet. Either way the
+            // page waits for the next click; the banner counts down to it.
+            if (ask.refresh && again.available) {
+                toast(again.wait > 0 ? 'coach.degraded.still' : 'coach.degraded.still_now', 'info',
+                    () => ({ time: formatDuration(again.wait) }));
+            }
+            if (activeTab.value !== 'ai_coach' && !samePlayer) {
                 const hero = report.hero_name;
                 toast('coach.toast.ready', 'success', () => ({ hero: heroName(hero) }));
             }
@@ -2275,25 +2390,28 @@ const app = createApp({
             if (capabilities.value && capabilities.value.ai_coach_llm) loadCapabilities();
         }
 
-        async function failCoach(seq, error, restored) {
+        async function failCoach(seq, error, ask) {
             if (seq !== coachSeq || !error || error.code === 'aborted') return;
             stopCoachRequest();
             const slot = coachSlot.value;
+            const refresh = !!(ask && ask.refresh);
             // The server can drop a match it holds (cache pruning, a
             // restart): put it back once, then ask again.
-            if (error.code === 'match_not_found' && !restored) {
+            if (error.code === 'match_not_found' && !(ask && ask.restored)) {
                 const mine = coachSeq;
                 const key = matchKey.value;
                 const back = await restoreMatchOnServer();
                 if (mine !== coachSeq || key !== matchKey.value) return;
-                if (back) { requestCoach(slot, { restored: true }); return; }
+                if (back) { requestCoach(slot, { restored: true, refresh }); return; }
             }
-            coachWasDegraded = false;
             coachLoading.value = false;
             coachFallback.value = false;
             // Never leave another player's report under this player's error.
             if (coachReport.value && coachReport.value.player_slot !== slot) coachReport.value = null;
-            coachError.value = { error, source: 'coach', retry: () => requestCoach(slot), hintKey: '' };
+            // "Retry" repeats what was asked for, a new run included (a click each time).
+            coachError.value = { error, source: 'coach', retry: () => requestCoach(slot, { refresh }), hintKey: '' };
+            // A new run refused by a limit: "generate again" stays off as long as the limit lasts.
+            if (refresh && error.retryAt > coachRefreshAt.value) coachRefreshAt.value = error.retryAt;
             if (activeTab.value !== 'ai_coach') toastError(error);
             if (error.code === 'rate_limited' || error.code === 'daily_limit') loadCapabilities();
         }
@@ -2309,7 +2427,6 @@ const app = createApp({
         function cancelCoach() {
             if (!coachLoading.value) return;
             stopCoachRequest();
-            coachWasDegraded = false;
             coachLoading.value = false;
             coachFallback.value = false;
             const shown = coachReport.value;
@@ -2323,33 +2440,46 @@ const app = createApp({
             }
         }
 
-        // A degraded report is kept by the server for some minutes; asking
-        // again later lets the model have another go.
+        // --- "Generate again" on a degraded report ---
+        // The report says whether the server offers a new run and how long
+        // it still refuses one (refresh: {available, retry_after}): until
+        // then the button is off and counts down. One click is one request
+        // with refresh=1; its answer, whatever it is, ends it.
+        const coachCanRefresh = computed(() => DotaCoach.refreshState(coachReport.value).available);
+
+        // Seconds until the new run can be asked for (0 = now).
+        const coachRefreshWait = computed(() => retrySeconds({ retryAt: coachRefreshAt.value }));
+
+        // Line beside the button: what it does, or how long it stays off.
+        const coachRefreshNote = computed(() => {
+            if (!coachCanRefresh.value) return '';
+            const left = coachRefreshWait.value;
+            return left > 0 ? t('coach.degraded.wait', { time: formatDuration(left) }) : t('coach.degraded.hint');
+        });
+
         function retryDegradedCoach() {
-            if (coachSlot.value == null || coachLoading.value) return;
-            coachWasDegraded = true;
-            requestCoach(coachSlot.value);
+            if (coachSlot.value == null || coachLoading.value || !coachCanRefresh.value || coachRefreshWait.value > 0) return;
+            requestCoach(coachSlot.value, { refresh: true });
         }
 
         function resetCoach() {
             stopCoachRequest();
-            coachWasDegraded = false;
             coachSlot.value = null;
             coachReport.value = null;
-            coachReportLang.value = '';
+            coachRefreshAt.value = 0;
             coachLoading.value = false;
             coachError.value = null;
             coachCancelled.value = false;
             coachFallback.value = false;
             coachProgress.value = DotaCoach.newProgress();
             coachOpenSources.value = {};
+            coachOpenEntries.value = {};
         }
 
         // --- Picker and report header ---
         // report.position: {} when it could not be derived, else {number 1-5,
-        // label_zh, label_en, confidence: high | medium | low, method}. Only
-        // a report knows it, so the picker (ten players, most of them
-        // without a report yet) does not show positions.
+        // label_zh, label_en, confidence: high | medium | low, method}: the
+        // same derivation as the chips of the picker (positionChips above).
         function positionView(position) {
             if (!position || !position.number) return null;
             const given = locale.value === 'en' ? position.label_en : position.label_zh;
@@ -2373,6 +2503,7 @@ const app = createApp({
                 hero: heroName(p.hero_name),
                 player: playerName(p),
                 kda: `${formatCount(p.kills)}/${formatCount(p.deaths)}/${formatCount(p.assists)}`,
+                position: positionChips.value[p.player_slot] || null,
             })),
         })));
 
@@ -2403,11 +2534,13 @@ const app = createApp({
             coachFallback.value ? t('coach.loading.fallback') : codeLabel('coach_stage', DotaCoach.currentStage(coachProgress.value))
         );
 
+        // Language the report on screen is written in (its own `lang`);
+        // '' without a report.
+        const coachReportLang = computed(() => DotaCoach.reportLang(coachReport.value));
+
         // The report on screen is in another language than the page (the
         // new one is loading, failed, or was cancelled).
-        const coachLangMismatch = computed(() =>
-            !!coachReport.value && !!coachReportLang.value && coachReportLang.value !== locale.value
-        );
+        const coachLangMismatch = computed(() => !!coachReportLang.value && coachReportLang.value !== locale.value);
 
         // --- Report text ---
         // Texts of the report are plain; the model sometimes adds **bold**,
@@ -2453,11 +2586,13 @@ const app = createApp({
         }
 
         // Knowledge sources of one evaluation: {id, title, source_type,
-        // patch, cited}; cited ones come first in the payload.
+        // patch, cited}; cited ones come first in the payload. The id is
+        // what the text of the entry is read by (toggleSource below).
         function sourceView(source, index) {
             const type = String(source.source_type || '');
             return {
                 key: source.id || 'source' + index,
+                id: source.id ? String(source.id) : '',
                 title: String(source.title || ''),
                 type: DotaCoach.SOURCE_TYPES.includes(type) ? type : 'other',
                 typeLabel: codeLabel('source_type', type),
@@ -2511,9 +2646,6 @@ const app = createApp({
             };
         }
 
-        // Filler of positive moments in rule-based reports: no "mistake" to show.
-        const NO_MISTAKE = new Set(['无', 'None']);
-
         // Whether `text` already says `sentence` (rule-based texts reuse the
         // root-cause summary of the chain as the "mistake" line).
         function saysAlready(text, sentence) {
@@ -2525,6 +2657,7 @@ const app = createApp({
         function evaluationView(item, index, kind, report) {
             const known = !isMissing(item.time);
             const positive = item.severity === 'positive';
+            // analysis / mistake / better_play are '' where there is nothing to say
             const mistake = String(item.mistake || '').trim();
             const sources = (Array.isArray(item.sources) ? item.sources : []).filter(s => s && s.title).map(sourceView);
             const chain = kind === 'death' ? chainView(item.causal_chain, item.time) : null;
@@ -2542,7 +2675,7 @@ const app = createApp({
                 grade: gradeView(item.score),
                 brief: item.brief || codeLabel('point_type', item.point_type),
                 analysis: item.analysis || '',
-                mistake: positive && NO_MISTAKE.has(mistake) ? '' : mistake,
+                mistake,
                 better: String(item.better_play || '').trim(),
                 lesson: String(item.lesson || '').trim(),
                 positive,
@@ -2705,6 +2838,7 @@ const app = createApp({
                 slot,
                 lang: coachReportLang.value || locale.value,
                 degraded: !!report.degraded,
+                canRefresh: coachCanRefresh.value,
                 hero: heroName(report.hero_name || (player && player.hero_name)),
                 slug: (player && player.hero_slug) || heroSlugByName(report.hero_name),
                 player: player ? playerName(player) : '',
@@ -2787,6 +2921,44 @@ const app = createApp({
             coachOpenSources.value = next;
         }
 
+        // --- Text of a source (read on demand) ---
+        // A source row opens to the entry itself: GET /api/knowledge/<id>
+        // in the language of the report (its titles are in that language).
+        // Texts are kept per language while the page is open.
+        function sourceEntryKey(source) {
+            return (coachReportLang.value || locale.value) + '|' + source.id;
+        }
+
+        function sourceEntry(source) {
+            return coachEntries.value[sourceEntryKey(source)] || null;
+        }
+
+        function isSourceOpen(itemKey, source) {
+            return !!source.id && !!coachOpenEntries.value[itemKey + '|' + source.id];
+        }
+
+        async function loadSourceEntry(source) {
+            const lang = coachReportLang.value || locale.value;
+            const key = lang + '|' + source.id;
+            const have = coachEntries.value[key];
+            if (have && have.state !== 'error') return;
+            coachEntries.value = { ...coachEntries.value, [key]: { state: 'loading' } };
+            const res = await DotaApi.get('/api/knowledge/' + encodeURIComponent(source.id), { params: { lang } });
+            const entry = res.ok && typeof res.data.text === 'string'
+                ? { state: 'ready', text: res.data.text }
+                // the detail of a refusal is written in the language asked for
+                : { state: 'error', error: res.ok ? clientError('bad_response') : { ...res.error, lang } };
+            coachEntries.value = { ...coachEntries.value, [key]: entry };
+        }
+
+        function toggleSource(itemKey, source) {
+            if (!source.id) return;
+            const key = itemKey + '|' + source.id;
+            const open = !coachOpenEntries.value[key];
+            coachOpenEntries.value = { ...coachOpenEntries.value, [key]: open };
+            if (open) loadSourceEntry(source);
+        }
+
         // Printing (or "save as PDF") shows every source list: the ones
         // that were closed are opened for the print and closed again after.
         let sourcesBeforePrint = null;
@@ -2830,7 +3002,7 @@ const app = createApp({
             farmMode.value = 'gold';
             objMode.value = 'timeline';
             wardFilters.value = { observers: true, sentries: true, radiant: true, dire: true };
-            chatShowWheel.value = false;
+            chatShowWheel.value = true;
             wardTimelineEnabled.value = false;
             wardTimelineTime.value = 0;
             wardShowVision.value = false;
@@ -3009,12 +3181,14 @@ const app = createApp({
 
         // --- Vision map ---
         const WARD_FILL = { observer: '#ecc94b', sentry: '#63b3ed' };
+        // Same colours as the outcome chips of the ward list (.state-* in app.css)
+        const WARD_STATE_COLOR = { dewarded: '#fc8181', denied: '#d6bcfa', destroyed: '#f6ad55', expired: '#a0aec0', active: '#68d391' };
 
         function renderWardMap() {
             if (!wardMap.value || !hasWardData.value) return;
             const chart = useChart('wards', wardMap.value);
             const liveOnly = wardTimelineEnabled.value;   // the slider shows the wards standing at that time
-            const observers = [], sentries = [], dewards = [], vision = [];
+            const observers = [], sentries = [], dewards = [], denies = [], vision = [];
 
             timelineWards.value.forEach(w => {
                 if (!DotaGame.onMap(w.x, w.y)) return;
@@ -3030,6 +3204,7 @@ const app = createApp({
                 };
                 (type === 'observer' ? observers : sentries).push(entry);
                 if (!liveOnly && state === 'dewarded') dewards.push({ value: point });
+                if (!liveOnly && state === 'denied') denies.push({ value: point });
                 if (wardShowVision.value) {
                     vision.push({ value: [point[0], point[1], worldToMapLength(wardRadii.value[type])], type, team: w.team });
                 }
@@ -3065,11 +3240,19 @@ const app = createApp({
                     itemStyle: { color: 'transparent', borderColor: '#ef4444', borderWidth: 2 },
                 });
             }
+            if (denies.length) {
+                // The game's own sign for a deny: an exclamation mark
+                series.push({
+                    name: codeLabel('ward_state', 'denied'), type: 'scatter', data: denies, silent: true, z: 12,
+                    symbol: 'path://M-1,-5L1,-5L1,1.5L-1,1.5ZM-1,3L1,3L1,5L-1,5Z', symbolSize: [4, 13],
+                    itemStyle: { color: '#fff', borderColor: '#6b46c1', borderWidth: 1 },
+                });
+            }
 
             chart.setOption(mapOption(series, p => {
                 const w = p.data && p.data._ward;
                 if (!w) return '';
-                const stateColor = { dewarded: '#fc8181', destroyed: '#f6ad55', expired: '#a0aec0', active: '#68d391' }[DotaGame.wardState(w)];
+                const stateColor = WARD_STATE_COLOR[DotaGame.wardState(w)];
                 return `<b>${esc(wardOwnerName(w))}</b> · ${esc(teamLabel(w.team))}<br/>${esc(wardTypeName(w))}`
                     + `<br/>${esc(t('wards_placed'))}: ${esc(eventTime(w))}`
                     + `<br/><span style="color:${stateColor}">${esc(wardStateDetail(w))}</span>`
@@ -3218,10 +3401,11 @@ const app = createApp({
                 const track = p.positions || [];
                 const ownKills = kills.filter(k => k.victim_slot === p.player_slot && k.time_offset <= now);
                 // A probable reincarnation (counted false) is not a death.
-                const lastDeath = fallenAt(tf, p, ownKills.filter(k => k.counted !== false), now);
-                const isDead = !!lastDeath;
-                // A fallen hero stays where it died (its track goes on to the fountain)
-                const shownAt = isDead ? Math.min(now, lastDeath.time_offset) : now;
+                const down = downAt(tf, p, ownKills.filter(k => k.counted !== false), now);
+                const isDead = !!down;
+                // A fallen hero stays where it died (its track goes on to the
+                // fountain) and fades until it is alive again.
+                const shownAt = isDead ? Math.min(now, down.since) : now;
 
                 let pos = null;
                 if (track.length) pos = interpolatePosition(track, shownAt);
@@ -3824,7 +4008,7 @@ const app = createApp({
             // match header, scoreboard, draft
             activeTab, tabs, onTabKeydown, overview, teamScores,
             matchResult, gameModeLabel, regionLabel, matchIdText, openDotaUrl,
-            durationText, coachAvailable, scoreboardTeams, draftView,
+            durationText, coachAvailable, scoreboardTeams, positionChips, draftView,
             showUnparsedNotice, parseRequest, parseActionBlocked, requestParse, refetchParsed,
             // names, icons, formatting
             heroName, itemName, abilityName, playerName, isAnonymous,
@@ -3844,7 +4028,7 @@ const app = createApp({
             // vision
             hasWardData, wardFilters, wardStats, wardTeams, wardRadii, filteredWards, timelineWards,
             wardTimelineEnabled, wardTimelineTime, wardTimeRange, wardShowVision, wardMap,
-            wardStateOf, wardOwnerName, wardStateDetail, wardStateTitle, wardLife, wardMaxLife, wardLifePct,
+            wardStateOf, wardOwnerName, wardStateDetail, wardStateTitle, wardStateIcon, wardHasDenied, wardLife, wardMaxLife, wardLifePct,
             // smokes
             hasSmokeData, smokeTimeline, smokeTeams, smokeResultColor, smokeResultText, smokeMembers,
             smokeTimelineEnabled, smokeTimelineTime, smokeTimeRange, smokeSelected,
@@ -3854,7 +4038,7 @@ const app = createApp({
             teamfightReplayTime, teamfightPlaying, teamfightPlaySpeed, toggleTeamfightPlay, seekTeamfight,
             swingTeam, swingText, itemUses,
             // laning
-            hasLaningData, laningData, laningTeams, laningHasDetails, laningDetailsNote, laningHasSnapshots,
+            hasLaningData, laningData, laningTeams, laningHasDetails, laningDetailsNote, laningEfficiencyNote, laningHasSnapshots,
             selectedLaningPlayer, selectedLaning, laningBreakdown, laneLabel, laneSideLabel, efficiencyText, efficiencyClass,
             laningHeatmap, laningCsTimeline, laningHpTimeline,
             // combat
@@ -3868,13 +4052,14 @@ const app = createApp({
             hasObjectivesData, objectivesData, objModes, objMode, objectiveRows,
             buildings, buildingTeams, buildingMap, runeColumns, sortedRunes,
             // chat
-            chatMessages, chatShowWheel, chatWheelCount, visibleChat, chatText, chatPlayerName,
+            chatMessages, chatShowWheel, chatWheelCount, visibleChat, chatText, chatWheelKind, chatPlayerName,
             // AI coach
             coachSlot, coachLoading, coachError, coachCancelled, coachFallback, coachProgress,
             coachTeams, coachHeroName, coachMode, coachStageRows, coachStageLabel, coachLangMismatch,
             coachView, coachSections, coachOpenSources, coachAllSourcesOpen,
-            requestCoach, retryCoach, cancelCoach, retryDegradedCoach,
+            requestCoach, retryCoach, cancelCoach, retryDegradedCoach, coachRefreshWait, coachRefreshNote,
             richText, scrollToCoachSection, setSourcesOpen, toggleAllSources, printCoachReport, closeTip,
+            isSourceOpen, sourceEntry, toggleSource, loadSourceEntry,
         };
     },
 });

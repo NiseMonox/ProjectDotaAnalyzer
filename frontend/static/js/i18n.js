@@ -61,15 +61,15 @@ window.I18N_MESSAGES = {
 
         // Ward section
         wards_title: '眼位分析',
-        wards_observer: '侦查守卫',
+        wards_observer: '侦察守卫',
         wards_sentry: '岗哨守卫',
         wards_timeline: '时间轴',
         wards_vision_range: '视野范围',
-        wards_obs_short: '侦查',
+        wards_obs_short: '侦察',
         wards_sen_short: '岗哨',
-        wards_dewarded_obs: '被反(侦查)',
+        wards_dewarded_obs: '被反(侦察)',
         wards_dewarded_sen: '被反(岗哨)',
-        wards_avg_obs_life: '侦查平均存活',
+        wards_avg_obs_life: '侦察平均存活',
         wards_avg_sen_life: '岗哨平均存活',
         wards_active: '活跃眼位',
         wards_timeline_title: '眼位时间线',
@@ -388,6 +388,7 @@ window.I18N_PAIRS = {
     'upload.fetch_btn': ['获取比赛', 'Fetch match'],
     'upload.opendota_hint': ['通过 OpenDota 获取公开比赛的数据，无需上传录像（例如 8713267082）', 'Loads a public match from OpenDota, no replay upload needed (e.g. 8713267082)'],
     'upload.demo_btn': ['查看演示比赛', 'Open the demo match'],
+    'upload.demo_hint': ['手边没有录像？可以先用演示比赛浏览各个分析页和 AI 教练。', 'No replay at hand? The demo match lets you look through the analysis tabs and the AI coach.'],
     'upload.uploading': ['正在上传录像', 'Uploading the replay'],
     'upload.parsing': ['上传完成，正在解析录像…', 'Upload complete, parsing the replay…'],
     'upload.loading_analysis': ['正在加载分析结果…', 'Loading the analysis…'],
@@ -406,7 +407,7 @@ window.I18N_PAIRS = {
     // ?lang=); these texts cover errors raised in the browser and re-render
     // a server error after the language was switched. ---
     'error.generic': ['出错了，请稍后重试。', 'Something went wrong. Please try again.'],
-    'error.boot_cdn': ['页面所需的脚本未能加载（Vue / ECharts 来自 CDN），请检查网络后刷新页面。', 'The scripts this page needs could not be loaded (Vue / ECharts come from a CDN). Check your network and reload.'],
+    'error.boot_cdn': ['页面所需的脚本（Vue / ECharts）未能加载，请检查网络后刷新页面。', 'The scripts this page needs (Vue / ECharts) could not be loaded. Check your network and reload.'],
     'error.network': ['无法连接服务器，请检查网络后重试。', 'Could not reach the server. Check your connection and try again.'],
     'error.network_upload': ['上传中断：与服务器的连接断开（服务器可能正在重启，或文件远超大小上限）。请重试。', 'The upload was interrupted: the connection to the server was lost (it may be restarting, or the file is far above the size limit). Please try again.'],
     'error.timeout': ['请求超时，请稍后重试。', 'The request timed out. Please try again.'],
@@ -440,6 +441,7 @@ window.I18N_PAIRS = {
     'error.coach_no_game': ['该录像在比赛开始前或刚开始几分钟就已结束，没有可分析的对局内容，请上传完整的录像。', 'This replay ends before the game starts or within its first minutes, so there is nothing to analyze. Please upload the complete replay.'],
     'error.coach_failed': ['AI 教练分析失败，请稍后重试。', 'AI coaching analysis failed. Please try again later.'],
     'error.coach_timeout': ['AI 教练分析超时，请稍后重试。', 'AI coaching analysis timed out. Please try again later.'],
+    'error.knowledge_not_found': ['知识库中已没有这条资料（之后的学习更新可能替换了它）。', 'This entry is no longer in the knowledge base (a later learning run may have replaced it).'],
     'error.invalid_player_slot': ['该玩家不在本场比赛中。', 'This player is not part of the match.'],
     'error.internal_error': ['服务器内部错误。', 'Internal server error.'],
     // Optional second line under an error
@@ -575,10 +577,12 @@ window.I18N_PAIRS = {
     'wards.unknown_owner': ['未知玩家', 'Unknown player'],
     'wards.dewarded_by': ['{time} 被 {hero} 反掉', 'Dewarded by {hero} at {time}'],
     'wards.dewarded_at': ['{time} 被反掉', 'Dewarded at {time}'],
+    'wards.denied_by': ['{time} 被己方 {hero} 反补', 'Denied by {hero} at {time}'],
+    'wards.denied_at': ['{time} 被己方反补', 'Denied at {time}'],
     'wards.expired_at': ['{time} 到时消失', 'Expired at {time}'],
     'wards.destroyed_at': ['{time} 被摧毁', 'Destroyed at {time}'],
-    'wards.destroyed_title': ['在到时之前就消失了，但数据中没有敌方将它摧毁的记录：通常是被己方反补。', 'Gone well before its time ran out, with no enemy recorded as destroying it: usually denied by its own team.'],
-    'wards.observer_one': ['侦查守卫', 'Observer ward'],
+    'wards.outcomes': ['守卫结局', 'How the wards ended'],
+    'wards.observer_one': ['侦察守卫', 'Observer ward'],
     'wards.sentry_one': ['岗哨守卫', 'Sentry ward'],
     'wards.none_match': ['没有符合当前筛选条件的守卫。', 'No ward matches the current filters.'],
     'wards.standing': ['数据结束时仍在', 'Still standing at the end'],
@@ -587,7 +591,7 @@ window.I18N_PAIRS = {
     'wards.col_state': ['结局', 'Outcome'],
     'wards.col_life': ['存活时间', 'Lifetime'],
     'wards.life_title': ['存活 {life}（完整时长 {max}）', 'Stood for {life} (full duration {max})'],
-    'wards.vision_title': ['侦查守卫视野 {obs}，岗哨守卫真视范围 {sen}（游戏内距离单位）', 'Observer vision {obs}, sentry true sight {sen} (game units)'],
+    'wards.vision_title': ['侦察守卫视野 {obs}，岗哨守卫真视范围 {sen}（游戏内距离单位）', 'Observer vision {obs}, sentry true sight {sen} (game units)'],
     'wards.map_label': ['眼位地图', 'Ward map'],
 
     // --- Smokes ---
@@ -623,6 +627,7 @@ window.I18N_PAIRS = {
 
     // --- Laning ---
     'laning.efficiency_title': ['10:00 时的经济占理想对线收入的比例', 'Gold at 10:00 as a share of an ideal lane income'],
+    'laning.efficiency_na': ['{mode}的金钱收入加倍，对线效率（以常规比赛的理想对线收入为基准）不适用，因此不计算。', 'Lane efficiency is not computed for {mode}: it measures gold against the ideal lane income of a standard match, and this mode doubles the gold.'],
     'laning.lh10': ['10 分正补', 'LH@10'],
     'laning.dn10': ['10 分反补', 'DN@10'],
     'laning.lh_title': ['10:00 时的正补数', 'Last hits at 10:00'],
@@ -728,12 +733,18 @@ window.I18N_PAIRS = {
     'unit.courier_of': ['{team}信使', '{team} courier'],
 
     // --- Chat ---
-    'chat.show_wheel': ['显示轮盘语音（{n} 条）', 'Show chat-wheel lines ({n})'],
-    'chat.wheel': ['轮盘语音', 'Chat wheel'],
-    'chat.wheel_n': ['轮盘语音 #{n}', 'Chat wheel #{n}'],
-    'chat.wheel_title': ['聊天轮盘的预设语音或音效（数据中只有编号）', 'A preset chat-wheel phrase or sound (the data only has its number)'],
+    'chat.show_wheel': ['显示聊天轮盘消息（{n} 条）', 'Show chat-wheel lines ({n})'],
+    'chat.wheel': ['聊天轮盘', 'Chat wheel'],
+    'chat.wheel_n': ['聊天轮盘 #{n}', 'Chat wheel #{n}'],
+    'chat.tag.phrase': ['轮盘', 'Wheel'],
+    'chat.tag.voice': ['语音', 'Voice line'],
+    'chat.tag.spray': ['喷漆', 'Spray'],
+    'chat.title.phrase': ['聊天轮盘的预设短语', 'A preset phrase of the chat wheel'],
+    'chat.title.voice': ['聊天轮盘的语音：游戏里会播放出来，这里是它的文字', 'A voice line of the chat wheel: played as sound in the game; this is its text'],
+    'chat.title.spray': ['聊天轮盘的喷漆：一个图案，没有文字', 'A spray of the chat wheel: a picture, no text'],
+    'chat.title.unknown': ['聊天轮盘的预设短语或音效：数据中只有它的编号，没有对应的文字', 'A preset chat-wheel phrase or sound: the data has its number only, no text for it'],
     'chat.unknown_sender': ['未知发送者', 'Unknown sender'],
-    'chat.only_wheel': ['这场比赛只有轮盘语音，没有文字聊天。', 'This match only has chat-wheel lines, no typed chat.'],
+    'chat.only_wheel': ['这场比赛没有人打字，只有聊天轮盘消息（已隐藏）。', 'Nobody typed in this match: it only has chat-wheel lines (hidden).'],
     // --- AI coach tab ---
     'coach.title': ['AI 教练', 'AI coach'],
     'coach.unavailable.title': ['这份录像无法进行 AI 教练分析', 'No AI coach review for this replay'],
@@ -779,9 +790,12 @@ window.I18N_PAIRS = {
     'coach.tools.print': ['打印 / 存为 PDF', 'Print / save as PDF'],
     'coach.tools.print_title': ['打印这份报告（会展开全部知识来源）', 'Print this report (with every source list expanded)'],
     'coach.degraded.title': ['部分 AI 评价未能生成', 'Some AI evaluations are missing'],
-    'coach.degraded.text': ['大模型没有对部分决策点或阶段给出回答（超时或出错），这些内容改用了规则分析，并标有「降级」。服务器会把这份报告保留几分钟，之后重新生成可以得到完整的 AI 评价。', 'The LLM gave no answer for some decisions or phases (a timeout or an error). Rule-based text is shown for them, marked "Fallback". The server keeps this report for a few minutes; generating it again after that can give the complete AI review.'],
+    'coach.degraded.text': ['大模型没有对部分决策点或阶段给出回答（超时或出错），这些内容改用了规则分析，并标有「降级」。', 'The LLM gave no answer for some decisions or phases (a timeout or an error). Rule-based text is shown for them, marked "Fallback".'],
+    'coach.degraded.hint': ['重新生成会让大模型把整份报告再写一遍，需要重新等待，并计入使用额度。', 'Generating again has the LLM write the whole report once more: it takes as long as the first time and counts toward the usage limits.'],
+    'coach.degraded.wait': ['服务器在 {time}后才接受重新生成。', 'The server accepts a new run in {time}.'],
     'coach.degraded.retry': ['重新生成', 'Generate again'],
-    'coach.degraded.still': ['服务器返回的仍是同一份降级报告，请过几分钟再试。', 'The server returned the same degraded report again. Please try in a few minutes.'],
+    'coach.degraded.still': ['这份报告仍有降级内容，{time}后可以再次重新生成。', 'The report still has fallback parts. It can be generated again in {time}.'],
+    'coach.degraded.still_now': ['这份报告仍有降级内容，可以再次重新生成。', 'The report still has fallback parts. It can be generated again.'],
     'coach.mark.llm': ['AI', 'AI'],
     'coach.mark.llm_title': ['这一条由大模型撰写', 'Written by the LLM'],
     'coach.mark.rules': ['规则', 'Rules'],
@@ -832,7 +846,7 @@ window.I18N_PAIRS = {
     'coach.laning.trades': ['对线期事件', 'Laning events'],
     'coach.laning.none': ['没有对线复盘：数据中没有 10 分钟时的对线数据（比赛或录像不足 10 分钟，或数据来源不含分时数据）。', 'No laning review: the data has no laning numbers at 10:00 (the game or the recording is shorter, or the source has no timelines).'],
     'coach.sources.title': ['评价所依据的知识', 'Knowledge behind the evaluations'],
-    'coach.sources.explainer': ['教练在评价每个决策点之前，会先从知识库中检索与当时情境最相关的条目（英雄与对位要点、教练原则、统计数据等）。每条评价下方的「知识来源」列出了这些条目，方便核对结论的依据。', 'Before judging a decision, the coach retrieves the knowledge-base entries that fit the situation best (hero and matchup notes, coaching principles, statistics). "Knowledge sources" under each evaluation lists them, so you can check what a verdict rests on.'],
+    'coach.sources.explainer': ['教练在评价每个决策点之前，会先从知识库中检索与当时情境最相关的条目（英雄与对位要点、教练原则、统计数据等）。每条评价下方的「知识来源」按相关度列出了这些条目，点开任意一条即可阅读原文，方便核对结论的依据。', 'Before judging a decision, the coach retrieves the knowledge-base entries that fit the situation best (hero and matchup notes, coaching principles, statistics). "Knowledge sources" under each evaluation lists them by relevance; open any entry to read its text and check what a verdict rests on.'],
     'coach.sources.note_cited': ['标有「模型引用」的条目是大模型在结论中实际用到的；其余条目被检索出来并交给了模型，但没有被引用。', 'Entries marked "Cited" are the ones the model actually used for its verdict; the others were retrieved and given to the model, but not cited.'],
     'coach.sources.note_rules': ['规则分析不引用条目：这里列出的是按相关度检索到的条目，可作为延伸阅读。', 'A rule-based review cites nothing: the entries listed were retrieved by relevance and serve as background reading.'],
     'coach.sources.total.one': ['全报告共 {n} 条', '{n} entry in this report'],
@@ -848,6 +862,11 @@ window.I18N_PAIRS = {
     'coach.sources.patch_title': ['该条目对应的游戏版本', 'Game version this entry belongs to'],
     'coach.sources.expand_all': ['展开全部来源', 'Expand all sources'],
     'coach.sources.collapse_all': ['收起全部来源', 'Collapse all sources'],
+    'coach.sources.entry_open': ['阅读这条资料的原文', 'Read this entry'],
+    'coach.sources.entry_close': ['收起原文', 'Hide the text'],
+    'coach.sources.entry_loading': ['正在读取…', 'Loading…'],
+    'coach.sources.entry_note': ['知识库中的原文，也就是检索后交给教练的内容（编辑整理的英雄和物品条目为英文）。', 'The entry as the knowledge base holds it: this is the text retrieval hands to the coach.'],
+    'coach.sources.entry_retry': ['重试', 'Retry'],
     'coach.knowledge.chunks.one': ['知识库 {n} 条', 'knowledge base of {n} entry'],
     'coach.knowledge.chunks.other': ['知识库 {n} 条', 'knowledge base of {n} entries'],
     'coach.knowledge.vectors.one': ['{n} 个向量', '{n} vector'],
@@ -993,7 +1012,7 @@ window.I18N_CODES = {
     // ================= Analysis tabs =================
     // laning.players[].lane_name (relative to the team) and lane_side (map side)
     lane: {
-        safe: ['安全路', 'Safe lane'],
+        safe: ['优势路', 'Safe lane'],
         mid: ['中路', 'Mid lane'],
         off: ['劣势路', 'Off lane'],
         roaming: ['游走', 'Roaming'],
@@ -1024,12 +1043,20 @@ window.I18N_CODES = {
         mid: ['中期（10–25 分钟）', 'Mid (10–25 min)'],
         late: ['后期（25 分钟后）', 'Late (25 min+)'],
     },
-    // DotaGame.wardState()
+    // DotaGame.wardState() and what each state means (tooltip)
     ward_state: {
         dewarded: ['被反', 'Dewarded'],
+        denied: ['被反补', 'Denied'],
         destroyed: ['被摧毁', 'Destroyed'],
         expired: ['到时消失', 'Expired'],
         active: ['仍在', 'Standing'],
+    },
+    ward_state_title: {
+        dewarded: ['被敌方反掉：敌方英雄或其单位摧毁了它。', 'Dewarded: an enemy hero or unit destroyed it.'],
+        denied: ['被己方反补：己方英雄（可能就是放置者）自己摧毁了它，敌方因此拿不到反眼的奖励。', 'Denied: a hero of its own team (possibly the one who placed it) destroyed it, so the enemy gets no reward for it.'],
+        destroyed: ['在到时之前就消失了，数据中没有记录是谁摧毁的。', 'Gone well before its time ran out; the data does not say who destroyed it.'],
+        expired: ['没有被摧毁，存满持续时间后自行消失。', 'Never destroyed: it stood for its full duration and ran out.'],
+        active: ['数据结束时仍然存在：比赛在它到时之前结束，或录像在此中断。', 'Still standing when the data ends: the game was over before it ran out, or the recording stops there.'],
     },
     // smokes.timeline[].result and its meaning (tooltip)
     smoke_result: {
@@ -1161,7 +1188,7 @@ window.I18N_CODES = {
         hero_healing_per_min: ['每分钟治疗量', 'Hero healing per minute'],
         tower_damage: ['对建筑造成的总伤害', 'Total tower damage'],
     },
-    // ================= AI coach report (schema version 4) =================
+    // ================= AI coach report (schema version 5) =================
     // Progress stages of the event stream
     coach_stage: {
         starting: ['准备分析', 'Getting ready'],
@@ -1282,6 +1309,10 @@ window.I18N_CODES = {
         4: ['4号位 (support)', 'Position 4 (Support)'],
         5: ['5号位 (hard support)', 'Position 5 (Hard Support)'],
         '#': ['{n}号位', 'Position {n}'],
+    },
+    // The same position as a short chip (picker, scoreboard)
+    position_short: {
+        '#': ['{n}号位', 'Pos {n}'],
     },
     confidence: {
         high: ['高', 'high'],

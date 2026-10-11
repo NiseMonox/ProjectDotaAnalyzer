@@ -7,7 +7,9 @@
  *   newProgress() / advance(progress, event) / stageRows(progress)
  *       progress of a report from the stream's {type:'progress', stage,
  *       current, total} events; the percentage never goes backwards
- *   isReport(data)               shape check of a report (schema version 4)
+ *   isReport(data)               shape check of a report (schema version 5)
+ *   reportLang(report)           language the report is written in
+ *   refreshState(report)         whether a degraded report can be generated again, and when
  *   findKill(kills, slot, time)  kill-feed entry of a death in the report
  *   sourceSummary(report)        knowledge sources of the whole report
  *   tone maps                    code -> colour class suffix
@@ -100,6 +102,25 @@ window.DotaCoach = (function () {
         return Array.isArray(value) ? value : [];
     }
 
+    /** 'zh' | 'en': the report's own `lang`; '' when it does not say. */
+    function reportLang(report) {
+        const lang = report && report.lang;
+        return lang === 'zh' || lang === 'en' ? lang : '';
+    }
+
+    /**
+     * "Generate again" of a report: { available, wait }. The server offers
+     * it for a degraded report only (refresh: {available, retry_after}) and
+     * starts the new run when asked with ?refresh=1; `wait` is the number of
+     * seconds until it will (0 = now). Asking earlier returns the same
+     * report with the time that is left.
+     */
+    function refreshState(report) {
+        const refresh = report && isObject(report.refresh) ? report.refresh : null;
+        if (!refresh || refresh.available !== true || !report.degraded) return { available: false, wait: 0 };
+        return { available: true, wait: Math.max(0, Math.ceil(Number(refresh.retry_after) || 0)) };
+    }
+
     /**
      * The kill-feed entry (combat.kills[]) of a death analysed in the report.
      * The report has whole seconds (truncated), the feed has fractions.
@@ -179,7 +200,7 @@ window.DotaCoach = (function () {
 
     return {
         newProgress, advance, stageRows, currentStage,
-        isReport, findKill, sourceSummary, SOURCE_TYPES,
+        isReport, reportLang, refreshState, findKill, sourceSummary, SOURCE_TYPES,
         gradeTone,
         ratingTone: (code) => tone(RATING_TONE, code),
         severityTone: (code) => tone(SEVERITY_TONE, code),

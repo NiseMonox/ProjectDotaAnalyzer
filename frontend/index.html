@@ -7,11 +7,13 @@
     <meta name="theme-color" content="#16283e">
     <title>Dota 2 对局分析器</title>
     <link rel="icon" type="image/svg+xml" href="/static/assets/favicon.svg">
-    <script src="https://cdn.jsdelivr.net/npm/vue@3.4/dist/vue.global.prod.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5/dist/echarts.min.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/app.css?v=7">
+    <!-- Libraries are served from this host (pinned copies in static/vendor), so the page does not depend on a CDN. -->
+    <script src="/static/vendor/vue-3.4.38.global.prod.js"></script>
+    <script src="/static/vendor/echarts-5.5.1.min.js"></script>
+    <link href="/static/vendor/tailwind-2.2.19.min.css" rel="stylesheet">
+    <!-- Optional web font, loaded without blocking the first paint; system fonts are the fallback. -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="/static/css/app.css?v=9">
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
     <!-- Shown by the script at the end of the page when Vue / ECharts did not load -->
@@ -122,7 +124,9 @@
                     <p id="match-id-hint" class="home-hint">{{ t('upload.opendota_hint') }}</p>
                     <p v-if="waitNote('fetch')" class="home-hint home-wait" role="status">{{ waitNote('fetch') }}</p>
 
-                    <button type="button" class="link-btn home-demo-btn" :disabled="!!busy" @click="loadDemo">{{ t('upload.demo_btn') }}</button>
+                    <!-- No replay at hand: the demo is the one thing a first visitor can open -->
+                    <button type="button" class="btn-secondary home-demo-btn" :disabled="!!busy" aria-describedby="demo-hint" @click="loadDemo">{{ t('upload.demo_btn') }}</button>
+                    <p id="demo-hint" class="home-hint">{{ t('upload.demo_hint') }}</p>
 
                     <!-- Fetch / demo in progress -->
                     <div v-if="busy && (busy.kind === 'fetch' || busy.kind === 'demo')" class="flow-status" role="status" aria-live="polite">
@@ -296,14 +300,15 @@
                             </thead>
                             <tbody>
                                 <tr v-for="p in team.players" :key="p.player_slot" class="od-row">
-                                    <!-- Hero: portrait + player name + hero name stacked -->
+                                    <!-- Hero: portrait + player name + (position) hero name stacked -->
                                     <td class="od-td od-td-hero">
                                         <div class="od-hero-cell">
                                             <game-icon kind="hero-portrait" :k="p.hero_slug || ''" :label="heroName(p.hero_name)" class="od-hero-portrait"></game-icon>
                                             <div class="od-hero-info">
                                                 <span class="od-player-name" :class="{ 'od-player-anon': isAnonymous(p) }"
                                                       :title="isAnonymous(p) ? t('match.anonymous_title') : playerName(p)">{{ playerName(p) }}</span>
-                                                <span class="od-hero-name">{{ heroName(p.hero_name) }}</span>
+                                                <span class="od-hero-name"><span v-if="positionChips[p.player_slot]" class="od-pos"
+                                                    :title="positionChips[p.player_slot].title">{{ positionChips[p.player_slot].label }}<span v-if="positionChips[p.player_slot].unsure" aria-hidden="true">?</span></span> {{ heroName(p.hero_name) }}</span>
                                             </div>
                                         </div>
                                     </td>
@@ -574,6 +579,14 @@
                                 <div><dt>{{ t('wards_avg_obs_life') }}</dt><dd>{{ formatGameTime(team.avgObs, '-') }}</dd></div>
                                 <div><dt>{{ t('wards_avg_sen_life') }}</dt><dd>{{ formatGameTime(team.avgSen, '-') }}</dd></div>
                             </dl>
+                            <!-- How this team's wards ended, by the same states as the list below -->
+                            <ul class="ward-outcomes" :aria-label="t('wards.outcomes')">
+                                <li v-for="outcome in team.outcomes" :key="outcome.state" class="state-chip" :class="['state-' + outcome.state, { 'state-none': !outcome.n }]"
+                                    :title="codeLabel('ward_state_title', outcome.state)">
+                                    <svg class="state-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="wardStateIcon(outcome.state)"/></svg>
+                                    {{ codeLabel('ward_state', outcome.state) }}<b>{{ outcome.n }}</b>
+                                </li>
+                            </ul>
                         </div>
                     </div>
 
@@ -595,7 +608,8 @@
                             <span><span class="ward-legend ward-sent ward-legend-diamond" aria-hidden="true"></span>{{ t('wards_sen_short') }}</span>
                             <span><span class="legend-ring legend-ring-radiant" aria-hidden="true"></span>{{ codeLabel('team', 'radiant') }}</span>
                             <span><span class="legend-ring legend-ring-dire" aria-hidden="true"></span>{{ codeLabel('team', 'dire') }}</span>
-                            <span v-if="!wardTimelineEnabled"><span class="legend-x" aria-hidden="true">✕</span>{{ codeLabel('ward_state', 'dewarded') }}</span>
+                            <span v-if="!wardTimelineEnabled" :title="codeLabel('ward_state_title', 'dewarded')"><span class="legend-x" aria-hidden="true">✕</span>{{ codeLabel('ward_state', 'dewarded') }}</span>
+                            <span v-if="!wardTimelineEnabled && wardHasDenied" :title="codeLabel('ward_state_title', 'denied')"><span class="legend-deny" aria-hidden="true">!</span>{{ codeLabel('ward_state', 'denied') }}</span>
                         </div>
                     </div>
 
@@ -625,7 +639,10 @@
                                         <hero-tag :slug="slugOf(ward)" :name="wardOwnerName(ward)" :team="ward.team || ''"></hero-tag>
                                     </td>
                                     <td class="text-left">
-                                        <span class="state-chip" :class="'state-' + wardStateOf(ward)" :title="wardStateTitle(ward)">{{ wardStateDetail(ward) }}</span>
+                                        <span class="state-chip" :class="'state-' + wardStateOf(ward)" :title="wardStateTitle(ward)">
+                                            <svg class="state-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="wardStateIcon(wardStateOf(ward))"/></svg>
+                                            {{ wardStateDetail(ward) }}
+                                        </span>
                                     </td>
                                     <td class="text-left">
                                         <span class="life-cell" :title="t('wards.life_title', { life: formatGameTime(wardLife(ward)), max: formatGameTime(wardMaxLife(ward)) })">
@@ -894,6 +911,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <p v-if="laningEfficiencyNote" class="panel-note" :class="laningDetailsNote ? 'mb-2' : 'mb-4'">{{ laningEfficiencyNote }}</p>
                     <p v-if="laningDetailsNote" class="panel-note mb-4">{{ laningDetailsNote }}</p>
 
                     <div ref="laningCsTimeline" class="chart-box chart-box-md mb-6" role="img" :aria-label="t('laning_cs_title')"></div>
@@ -1257,9 +1275,13 @@
                                           :sub="chatPlayerName(msg)"></hero-tag>
                                 <span v-else class="team-none">{{ chatPlayerName(msg) || t('chat.unknown_sender') }}</span>
                             </span>
-                            <span v-if="msg.type === 'chatwheel'" class="chat-wheel" :title="t('chat.wheel_title')">
-                                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>
-                                {{ chatText(msg) }}
+                            <!-- A chat-wheel line: a tag saying what it is (preset phrase, voice line, spray), then its text -->
+                            <span v-if="msg.type === 'chatwheel'" class="chat-text chat-wheel" :class="'chat-wheel-' + chatWheelKind(msg)">
+                                <span class="chat-wheel-tag" :title="t('chat.title.' + chatWheelKind(msg))">
+                                    <svg v-if="chatWheelKind(msg) === 'voice'" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>
+                                    {{ chatWheelKind(msg) === 'unknown' ? chatText(msg) : t('chat.tag.' + chatWheelKind(msg)) }}
+                                </span>
+                                <span v-if="chatWheelKind(msg) === 'phrase' || chatWheelKind(msg) === 'voice'" class="chat-wheel-text">{{ chatText(msg) }}</span>
                             </span>
                             <span v-else class="chat-text">{{ chatText(msg) }}</span>
                         </div>
@@ -1298,6 +1320,8 @@
                                     <span class="coach-pick-player">{{ p.player }}</span>
                                 </span>
                                 <span class="coach-pick-side">
+                                    <span v-if="p.position" class="coach-pos coach-pos-sm" :class="'coach-pos-' + p.position.tone"
+                                          :title="p.position.title">{{ p.position.label }}<span v-if="p.position.unsure" class="coach-pos-note" aria-hidden="true">?</span></span>
                                     <span class="coach-pick-kda" :title="t('coach.picker.kda_title')">{{ p.kda }}</span>
                                 </span>
                             </button>
@@ -1408,11 +1432,15 @@
                         </div>
                     </header>
 
-                    <!-- Some of the model's answers are missing: say so, offer another go -->
+                    <!-- Some of the model's answers are missing: say so. When the server offers
+                         a new run (refresh.available), the button asks for it; it is off, with
+                         the time left, while the server would still answer with this report. -->
                     <ui-banner v-if="coachView.degraded" kind="warn"
                                :title="t('coach.degraded.title')" :text="t('coach.degraded.text')">
-                        <template #actions>
-                            <button type="button" class="btn-secondary btn-sm no-print" :disabled="coachLoading" @click="retryDegradedCoach">{{ t('coach.degraded.retry') }}</button>
+                        <template v-if="coachView.canRefresh" #actions>
+                            <button type="button" class="btn-secondary btn-sm no-print"
+                                    :disabled="coachLoading || coachRefreshWait > 0" @click="retryDegradedCoach">{{ t('coach.degraded.retry') }}</button>
+                            <span class="coach-refresh-note no-print" aria-live="off">{{ coachRefreshNote }}</span>
                         </template>
                     </ui-banner>
 
@@ -1573,7 +1601,7 @@
                                 </ol>
                             </div>
 
-                            <!-- Knowledge sources of this evaluation (titles are plain text) -->
+                            <!-- Knowledge sources of this evaluation (titles and entry texts are plain text) -->
                             <details v-if="item.sources.length" class="coach-sources" :open="!!coachOpenSources[item.key]"
                                      @toggle="setSourcesOpen(item.key, $event.target.open)">
                                 <summary>
@@ -1583,10 +1611,26 @@
                                 <ul class="coach-source-list">
                                     <li v-for="source in item.sources" :key="source.key" class="coach-source" :class="{ 'coach-source-cited': source.cited }">
                                         <span class="coach-src-type" :class="'coach-src-' + source.type" :title="source.typeTitle || null">{{ source.typeLabel }}</span>
-                                        <span class="coach-source-title">{{ source.title }}</span>
+                                        <button v-if="source.id" type="button" class="coach-source-title coach-source-toggle"
+                                                :aria-expanded="isSourceOpen(item.key, source) ? 'true' : 'false'"
+                                                :title="isSourceOpen(item.key, source) ? t('coach.sources.entry_close') : t('coach.sources.entry_open')"
+                                                @click="toggleSource(item.key, source)">{{ source.title }}</button>
+                                        <span v-else class="coach-source-title">{{ source.title }}</span>
                                         <span v-if="source.patch" class="coach-source-patch" :title="t('coach.sources.patch_title')">{{ source.patch }}</span>
                                         <span class="coach-source-use" :class="{ 'coach-source-use-cited': source.cited }"
                                               :title="source.cited ? t('coach.sources.cited_title') : t('coach.sources.retrieved_title')">{{ source.cited ? t('coach.sources.cited') : t('coach.sources.retrieved') }}</span>
+                                        <!-- The entry itself, read from the knowledge base when the row is opened -->
+                                        <div v-if="isSourceOpen(item.key, source)" class="coach-source-entry">
+                                            <template v-if="sourceEntry(source) && sourceEntry(source).state === 'ready'">
+                                                <p class="coach-source-text">{{ sourceEntry(source).text }}</p>
+                                                <p class="coach-source-note">{{ t('coach.sources.entry_note') }}</p>
+                                            </template>
+                                            <p v-else-if="sourceEntry(source) && sourceEntry(source).state === 'error'" class="coach-source-note coach-source-error" role="alert">
+                                                {{ errorText(sourceEntry(source).error) }}
+                                                <button v-if="sourceEntry(source).error.code !== 'knowledge_not_found'" type="button" class="link-btn no-print" @click="loadSourceEntry(source)">{{ t('coach.sources.entry_retry') }}</button>
+                                            </p>
+                                            <p v-else class="coach-source-note" role="status">{{ t('coach.sources.entry_loading') }}</p>
+                                        </div>
                                     </li>
                                 </ul>
                             </details>
@@ -1637,16 +1681,16 @@
     </div><!-- /#app -->
 
     <!-- Plain scripts, no build step. Order matters: i18n, API, catalogs, game rules, coach helpers and UI components before the app. -->
-    <script src="/static/js/i18n.js?v=12"></script>
+    <script src="/static/js/i18n.js?v=14"></script>
     <script src="/static/js/api.js?v=2"></script>
     <script src="/static/js/catalog.js?v=2"></script>
-    <script src="/static/js/game.js?v=2"></script>
-    <script src="/static/js/coach.js?v=1"></script>
+    <script src="/static/js/game.js?v=3"></script>
+    <script src="/static/js/coach.js?v=2"></script>
     <script src="/static/js/ui.js?v=3"></script>
-    <script src="/static/js/app.js?v=12"></script>
+    <script src="/static/js/app.js?v=13"></script>
     <script>
-        // Vue and ECharts come from a CDN. When they did not arrive the app
-        // cannot start: say so instead of leaving a blank page.
+        // Vue and ECharts are served from static/vendor. When they did not
+        // arrive the app cannot start: say so instead of leaving a blank page.
         if (!window.Vue || !window.echarts) {
             var bootError = document.getElementById('boot-error');
             bootError.textContent = window.I18N

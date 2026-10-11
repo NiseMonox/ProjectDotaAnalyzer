@@ -7,9 +7,10 @@
  *   Map          toMap(x, y), mapLength(distance), onMap(x, y), isJump(a, b, seconds)
  *   Patch rules  patchAtLeast(patch, major, minor), wardVision(type, patch),
  *                wardLifetime(type), wardState(ward)
+ *   Teamfights   lifeAt(alive_intervals, seconds, duration)
  *   Units        parseBuilding(name), classifyUnit(name)
  *   Skills       skillGrid(skill_order)
- *   Chat         chatWheelId(key)
+ *   Chat         chatWheelId(key), chatWheelLine(message, lang)
  */
 window.DotaGame = (function () {
     'use strict';
@@ -90,24 +91,58 @@ window.DotaGame = (function () {
         return WARD_LIFETIME[type] || WARD_LIFETIME.observer;
     }
 
-    const WARD_STATES = ['active', 'dewarded', 'destroyed', 'expired'];
+    // In the order the Vision tab lists them.
+    const WARD_STATES = ['dewarded', 'denied', 'destroyed', 'expired', 'active'];
     // A ward that fell this many seconds before its full lifetime did not expire.
     const WARD_EARLY_S = 5;
 
     /**
-     * How a ward ended (the payload's `state`): 'dewarded' (an enemy removed
-     * it), 'expired' (it ran its full time), 'destroyed' (it fell clearly
-     * before its time, but not to an enemy the data names: usually denied by
-     * its own team) or 'active' (still standing when the data ends). A
+     * How a ward ended (the payload's `state`): 'dewarded' (the enemy removed
+     * it), 'denied' (a hero of its own team destroyed it), 'expired' (it ran
+     * its full time), 'destroyed' (it fell clearly before its time and the
+     * data names nobody) or 'active' (still standing when the data ends). A
      * payload without `state` is read the same way from its other fields.
      */
     function wardState(ward) {
         if (!ward) return 'active';
         if (WARD_STATES.includes(ward.state)) return ward.state;
         if (ward.destroyed_time == null) return 'active';
+        if (ward.denied) return 'denied';
         if (ward.dewarded) return 'dewarded';
         const life = ward.lifetime != null ? ward.lifetime : ward.destroyed_time - ward.time;
         return life < wardLifetime(ward.ward_type) - WARD_EARLY_S ? 'destroyed' : 'expired';
+    }
+
+    // ---- Teamfights ----
+
+    /**
+     * Whether a hero is alive `seconds` into a fight, from the payload's
+     * alive_intervals: [[from, to], ...] in seconds from the fight start,
+     * inside 0..duration ([] = dead for the whole fight). A death ends an
+     * interval; a respawn or a buyback starts the next one; a hero still
+     * dead from before the fight starts late.
+     *
+     * Returns { alive, since }: for a dead hero `since` is the moment it
+     * fell, or null when it has been dead since before the fight. The
+     * intervals cover 0..duration only: a moment before the fight reads as
+     * its start, and an interval that reaches `duration` stays open
+     * (nothing in them says the hero died there). A malformed pair is
+     * skipped.
+     */
+    function lifeAt(intervals, seconds, duration) {
+        const end = Number(duration);
+        const closes = Number.isFinite(end) && end > 0 ? end : Infinity;
+        const now = Math.max(0, Number(seconds) || 0);
+        let since = null;
+        for (const pair of Array.isArray(intervals) ? intervals : []) {
+            if (!Array.isArray(pair)) continue;
+            const from = Number(pair[0]);
+            const to = Number(pair[1]);
+            if (!Number.isFinite(from) || !Number.isFinite(to) || from > now) continue;
+            if (now < to || to >= closes) return { alive: true, since: null };
+            if (since == null || to > since) since = to;
+        }
+        return { alive: false, since };
     }
 
     // ---- Units ----
@@ -236,11 +271,33 @@ window.DotaGame = (function () {
         return m ? Number(m[1]) : null;
     }
 
+    /**
+     * What a chat-wheel message (type 'chatwheel') says: { kind, text, id, sound }.
+     *   kind 'phrase'   text is the line in `lang` ('zh' | 'en'); the payload's
+     *                   `phrase` is {en, zh}, and the other language is used
+     *                   where one is empty
+     *   kind 'spray'    a spray: a picture, no text
+     *   kind 'unknown'  the payload has no phrase for this id (text '')
+     * sound: the line is a voice line, heard in the game. id is the chat-wheel
+     * number (null when the key carries none).
+     */
+    function chatWheelLine(msg, lang) {
+        const m = msg || {};
+        const id = chatWheelId(m.key);
+        const phrase = m.phrase && typeof m.phrase === 'object' ? m.phrase : {};
+        const own = lang === 'en' ? phrase.en : phrase.zh;
+        const other = lang === 'en' ? phrase.zh : phrase.en;
+        const text = String(own || other || '').trim();
+        if (text) return { kind: 'phrase', text, id, sound: !!m.sound };
+        return { kind: m.spray ? 'spray' : 'unknown', text: '', id, sound: !!m.sound };
+    }
+
     return {
         WORLD_MIN, WORLD_SPAN, toMap, mapLength, onMap, isJump,
-        patchParts, patchAtLeast, wardVision, wardLifetime, wardState,
+        patchParts, patchAtLeast, wardVision, wardLifetime, wardState, WARD_STATES,
+        lifeAt,
         parseBuilding, classifyUnit,
         ATTRIBUTES_KEY, isTalentEntry, skillGrid,
-        chatWheelId,
+        chatWheelId, chatWheelLine,
     };
 })();
