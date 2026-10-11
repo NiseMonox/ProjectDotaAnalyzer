@@ -8,11 +8,24 @@
 ./run.sh
 # or: backend/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+Windows (PowerShell; the venv's interpreter is `backend\venv\Scripts\python.exe`; guide: `docs/WINDOWS.md`):
+```powershell
+.\run.ps1
+# or: backend\venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```
 
 ## Test
 ```bash
-DEEPSEEK_API_KEY="" backend/venv/bin/python -m pytest -q -p no:cacheprovider   # network-free (conftest guard)
+DEEPSEEK_API_KEY="" backend/venv/bin/python -m pytest -q -p no:cacheprovider   # network-free, never reads .env (conftest)
 ```
+Windows:
+```powershell
+$env:DEEPSEEK_API_KEY = ""; backend\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+# in Git Bash (the shell Claude Code uses on Windows):
+#   DEEPSEEK_API_KEY="" backend/venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
+```
+CI (`.github/workflows/ci.yml`) runs the suite on Windows, Linux and macOS; the Windows job adds
+`-X warn_default_encoding -W error::EncodingWarning`: open every text file with `encoding="utf-8"`.
 
 ## Tech Stack
 - Backend: Python 3 + FastAPI (uvicorn)

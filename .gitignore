@@ -1,9 +1,18 @@
 .env
+.env.*
+!.env.example
 backend/venv/
+.venv/
+venv/
 .pytest_cache/
 __pycache__/
 *.pyc
+*.log
 .DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
 # Replays: uploads (stored as <hash>.dem), the staging directory, and anything
 # put there by hand (.dem.bz2 / .dem.zst downloads are 35-70 MB each). Nothing
 # in it is tracked; the app creates the directory.

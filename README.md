@@ -53,6 +53,9 @@ DEV=1 ./run.sh                 # the same with auto-reload
 bash tools/setup_parser.sh     # checks Java and that the committed parser jar starts
 ```
 
+- **Windows.** `.\run.ps1` in PowerShell does what `run.sh` does. The guide for developing on
+  Windows is [`docs/WINDOWS.md`](docs/WINDOWS.md) (in Chinese): what to install, every command in
+  PowerShell form, the local data a clone does not contain, and what differs from macOS / Linux.
 - **Demo.** "Open the demo match" on the start page parses `replays/8713267082.dem` when that
   file exists. The `replays/` directory is not part of the repository (replays are 40 to 70 MB),
   so in a fresh clone the demo is generated mock data: an invented match, without chat and
@@ -76,10 +79,17 @@ DEEPSEEK_API_KEY="" backend/venv/bin/python -m pytest -q
 
 The suite needs no network and no key: `backend/tests/conftest.py` blocks every connection that
 is not to the loopback interface, so a test that forgets to stub OpenDota or the LLM fails
-instead of calling out, and the empty key keeps the one in `.env` from being loaded. Result on
-2026-10-11: **1630 passed, 3 skipped** (the three skipped tests need a downloaded embedding
-model or a directory of real replays, named by `RAG_TEST_MODEL_DIR` and `CLARITY_TEST_REPLAYS`).
+instead of calling out, and it keeps `.env` from being read, so the key and the settings in it
+stay out of the tests. Result on 2026-10-11 (macOS): **1731 passed, 6 skipped**. Three of the
+skipped tests need a downloaded embedding model or a directory of real replays, named by
+`RAG_TEST_MODEL_DIR` and `CLARITY_TEST_REPLAYS`; the other three test the Windows scripts and
+need PowerShell. A fresh clone skips two more until the game data has been fetched once.
 The Java analyzer has its own JUnit tests under `tools/clarity-analyzer/src/test/`.
+
+On Windows the interpreter of the virtual environment is `backend\venv\Scripts\python.exe`; the
+commands in PowerShell form are in [`docs/WINDOWS.md`](docs/WINDOWS.md). Every push to GitHub runs
+the suite on Windows, Linux and macOS, a smoke test of the real server and the command-line
+tools, and the analyzer's JUnit tests (`.github/workflows/ci.yml`).
 
 Related commands:
 
@@ -209,6 +219,8 @@ ID 从 OpenDota 获取公开比赛，即可在 15 个分析页中查看整场比
   nDCG@10 从 0.801（原有排序）提高到 0.891（混合检索）。每条评价都列出所依据的知识条目，点开即可阅读原文。
 - **自学习**：四个层级自动补充知识，分别是 OpenDota 统计、职业比赛数据挖掘、大模型归纳和教学视频字幕提炼，
   每条学到的内容都标明来源。
-- **运行**：`./run.sh`，需要 Python 3.10 至 3.13；上传录像还需要 Java 17。配置项见 `.env.example`，
-  服务器部署见 `deploy/README.md`。仓库不包含录像文件，因此刚克隆下来时“演示比赛”是生成的模拟数据。
-- **测试**：`backend/venv/bin/python -m pytest -q`，无需联网和密钥；2026-10-11 的结果为 1630 项通过、3 项跳过。
+- **运行**：`./run.sh`（Windows 上是 `.\run.ps1`，详见 [`docs/WINDOWS.md`](docs/WINDOWS.md)），需要
+  Python 3.10 至 3.13；上传录像还需要 Java 17。配置项见 `.env.example`，服务器部署见
+  `deploy/README.md`。仓库不包含录像文件，因此刚克隆下来时“演示比赛”是生成的模拟数据。
+- **测试**：`backend/venv/bin/python -m pytest -q`，无需联网和密钥；2026-10-11 在 macOS 上的结果为
+  1731 项通过、6 项跳过。GitHub Actions 在 Windows、Linux 和 macOS 上运行同一套测试。
