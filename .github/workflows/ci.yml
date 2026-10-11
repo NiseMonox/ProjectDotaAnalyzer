@@ -1,0 +1,251 @@
+# Continuous integration: the test suite on Windows, Linux and macOS, a smoke
+# test of the real server and the command-line tools, and the unit tests of
+# the Java replay analyzer.
+#
+# Needs nothing that is not in the repository: no replay, no embedding model,
+# no .env, no secret. The suite is network-free (backend/tests/conftest.py
+# blocks every connection that is not to the loopback interface) and so is the
+# smoke test; only the installs and the Gradle build download anything.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows runs with Python's default-encoding check as an error: a
+          # text file opened without encoding="utf-8" is read as cp936 or
+          # cp932 on a Chinese or Japanese Windows, and this project's data
+          # is UTF-8.
+          - name: Windows / Python 3.12
+            os: windows-latest
+            python: "3.12"
+            python-flags: -X warn_default_encoding -W error::EncodingWarning
+          - name: Linux / Python 3.12
+            os: ubuntu-latest
+            python: "3.12"
+          - name: macOS / Python 3.12
+            os: macos-latest
+            python: "3.12"
+          # The oldest supported Python (the production server runs it).
+          - name: Linux / Python 3.10
+            os: ubuntu-latest
+            python: "3.10"
+          # The jobs above install backend/requirements-dev.txt only, so they
+          # prove the "numpy only" serving path of the knowledge retrieval.
+          # This one adds the optional embedding packages.
+          - name: Linux / Python 3.12 + RAG packages
+            os: ubuntu-latest
+            python: "3.12"
+            rag: true
+    env:
+      # Rule-based AI coach, never a paid LLM call. (PYTHONUTF8 is left unset
+      # on purpose: it would hide the encoding mistakes this workflow looks for.)
+      DEEPSEEK_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      # Java 17 runs the replay analyzer (tools/clarity-analyzer.jar).
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Node.js runs the frontend logic test (backend/tests/test_frontend_logic.py).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+
+      - name: Install dependencies
+        id: install
+        run: python -m pip install -r backend/requirements-dev.txt
+
+      - name: Install the optional retrieval packages
+        if: ${{ matrix.rag }}
+        run: python -m pip install -r backend/requirements-rag.txt
+
+      # -ra lists every skipped test with its reason; faulthandler_timeout
+      # prints the stack of a test that hangs instead of a silent job timeout.
+      - name: Test suite
+        run: python ${{ matrix.python-flags }} -m pytest -q -ra -p no:cacheprovider -o faulthandler_timeout=600
+
+      # The scripts a developer runs by hand: Java 17 is found and the
+      # committed jar starts. On Windows with Windows PowerShell 5.1, the
+      # version every Windows has, and with the command the guide gives.
+      - name: Replay parser check (tools/setup_parser.ps1)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File tools\setup_parser.ps1
+
+      - name: Replay parser check (tools/setup_parser.sh)
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        run: bash tools/setup_parser.sh
+
+      # What the suite cannot show with its in-process test client: the
+      # command-line tools as separate processes whose output is a pipe (on
+      # Windows: encoded with the ANSI code page), and a real uvicorn server,
+      # without and with --reload. On Windows --reload runs the server on
+      # asyncio's selector event loop, which cannot start subprocesses, so the
+      # upload of a broken replay must still reach the JVM there: HTTP 422
+      # replay_parse_failed, not a 500. On Windows the server is also started
+      # the way the guide says, with run.ps1, which creates backend\venv and
+      # installs into it. Runs also when the suite failed, so one run reports
+      # both.
+      - name: Smoke test (command-line tools, real server, JVM)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        shell: python
+        env:
+          GAMEDATA_AUTO_UPDATE: "0"
+          AI_COACH_AUTO_LEARN: "0"
+        run: |
+          import json, os, socket, subprocess, sys, time, urllib.error, urllib.request
+
+          def run(*args):
+              """A Python child process in the repository root; its stdout as bytes."""
+              done = subprocess.run([sys.executable, *args], stdout=subprocess.PIPE)
+              assert done.returncode == 0, "%s exited with %s" % (" ".join(args), done.returncode)
+              return done.stdout
+
+          status = json.loads(run("-m", "backend.scripts.rag", "status", "--json").decode("utf-8", "replace"))
+          print({key: status[key] for key in ("mode", "vectors", "numpy", "embedder_available")}, flush=True)
+          assert status["mode"] == "hybrid" and status["vectors"] > 0 and status["numpy"] is True
+          # Prints Chinese text into a pipe.
+          assert run("-m", "backend.scripts.rag", "query", "when to buy back", "--lang", "zh").strip()
+          assert run("-m", "backend.scripts.learn", "--status").strip()
+
+          with socket.socket() as probe:
+              probe.bind(("127.0.0.1", 0))
+              port = probe.getsockname()[1]
+          base = "http://127.0.0.1:%d" % port
+
+          def get(path):
+              with urllib.request.urlopen(base + path, timeout=120) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          def upload(name, content):
+              """POST one file to /api/upload: (HTTP status, error code of the answer)."""
+              boundary = "smoke-test-boundary"
+              body = (("--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n"
+                       "Content-Type: application/octet-stream\r\n\r\n" % (boundary, name)).encode("ascii")
+                      + content + ("\r\n--%s--\r\n" % boundary).encode("ascii"))
+              request = urllib.request.Request(base + "/api/upload", data=body, headers={
+                  "Content-Type": "multipart/form-data; boundary=" + boundary})
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      return response.status, json.loads(response.read().decode("utf-8")).get("code")
+              except urllib.error.HTTPError as exc:
+                  return exc.code, json.loads(exc.read().decode("utf-8")).get("code")
+
+          def stop(server):
+              if os.name == "nt":  # the server is a tree of processes (--reload, run.ps1)
+                  subprocess.run(["taskkill", "/F", "/T", "/PID", str(server.pid)], capture_output=True)
+              else:
+                  server.terminate()
+              server.wait(60)
+
+          # (name, command, extra environment, seconds the start may take)
+          uvicorn = [sys.executable, "-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", str(port)]
+          servers = [
+              ("uvicorn", uvicorn, {}, 120),
+              ("uvicorn --reload", uvicorn + ["--reload", "--reload-dir", "backend/app"], {}, 120),
+          ]
+          if os.name == "nt":
+              address = {"HOST": "127.0.0.1", "PORT": str(port)}
+              servers += [
+                  ("run.ps1, first run, Windows PowerShell 5.1",
+                   ["powershell", "-ExecutionPolicy", "Bypass", "-File", "run.ps1"], address, 600),
+                  ("run.ps1 with DEV=1, PowerShell 7",
+                   ["pwsh", "-ExecutionPolicy", "Bypass", "-File", "run.ps1"], dict(address, DEV="1"), 120),
+              ]
+
+          for name, command, extra, patience in servers:
+              print("::group::Server: " + name, flush=True)
+              server = subprocess.Popen(command, stdin=subprocess.DEVNULL, env=dict(os.environ, **extra))
+              try:
+                  deadline = time.monotonic() + patience
+                  while True:
+                      try:
+                          assert get("/api/health") == {"status": "ok"}
+                          break
+                      except OSError:
+                          assert server.poll() is None, "the server exited with %s" % server.returncode
+                          assert time.monotonic() < deadline, "the server did not answer within %s s" % patience
+                          time.sleep(0.5)
+                  capabilities = get("/api/capabilities")
+                  print(capabilities, flush=True)
+                  assert capabilities["replay_parser"] is True, "Java 17 or the parser jar was not found"
+                  demo = get("/api/demo")
+                  assert demo["parse_source"] == "mock", demo["parse_source"]  # no replay in the repository
+                  report = get("/api/match/demo/ai-coach/0?lang=zh")
+                  print({key: report[key] for key in ("lang", "llm_used", "degraded", "knowledge")}, flush=True)
+                  assert report["lang"] == "zh" and report["llm_used"] is False and report["summary"]
+                  assert report["knowledge"]["mode"] == "hybrid" and report["knowledge"]["vectors"] > 0
+                  answer = upload("broken.dem", b"PBDEMS2\x00" + bytes(256))
+                  print("upload of a broken replay:", answer, flush=True)
+                  assert answer == (422, "replay_parse_failed"), answer
+              finally:
+                  stop(server)
+                  print("::endgroup::", flush=True)
+          print("smoke test passed", flush=True)
+
+  # The JUnit tests of the replay analyzer, and that its jar builds, also with
+  # gradlew.bat. The committed tools/clarity-analyzer.jar is not compared with
+  # this build: it is byte-identical for one JDK build only (see build.gradle).
+  analyzer:
+    name: Java analyzer / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        working-directory: tools/clarity-analyzer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            tools/clarity-analyzer/*.gradle
+            tools/clarity-analyzer/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Unit tests and jar (gradlew.bat)
+        if: ${{ runner.os == 'Windows' }}
+        run: .\gradlew.bat test shadowJar --no-daemon
+
+      - name: Unit tests and jar (gradlew)
+        if: ${{ runner.os != 'Windows' }}
+        run: ./gradlew test shadowJar --no-daemon
