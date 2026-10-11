@@ -23,7 +23,8 @@ end of the window (gold/xp lead, towers).
 Kills, deaths and assists come from ``MatchData.kills_log``
 (:func:`counted_kills`), so the phases add up to the scoreboard. Only a
 source without a kill log falls back to teamfight records and is flagged
-``kda_estimated``.
+``kda_estimated``; a match without any timed data at all has no phases
+to review (:func:`has_timed_data`).
 
 This module is pure data extraction — no LLM calls, no rendering.
 """
@@ -276,6 +277,18 @@ def _radiant_won_fight(tf) -> bool | None:
     if tf.radiant_deaths != tf.dire_deaths:
         return tf.radiant_deaths < tf.dire_deaths
     return None
+
+
+def has_timed_data(match: MatchData, player: PlayerData, death_times: Iterable[int] | None = None) -> bool:
+    """Whether anything about *player* is known at a time of the match.
+
+    A scoreboard-only match (an OpenDota match whose replay was never
+    parsed) has no kill log, no teamfights, no per-minute series and no
+    located death: every phase window would read "0 kills, 0 deaths, 0
+    gold" beside a full scoreboard, so such a match has no phases to review.
+    """
+    return bool(counted_kills(match) or match.teamfights or (death_times is not None and list(death_times))
+                or player.gold_t or player.xp_t or player.lh_t)
 
 
 def slice_player_phases(

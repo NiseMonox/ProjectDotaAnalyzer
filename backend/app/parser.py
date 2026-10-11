@@ -1977,18 +1977,22 @@ def _upgrade_levels(keys: list[str], separate_talents: bool) -> list[int]:
     return levels
 
 
-def _estimate_upgrade_times(keys: list[str], xp_t: list[int], separate_talents: bool = True) -> list[int]:
+def _estimate_upgrade_times(keys: list[str], xp_t: list[int], separate_talents: bool = True,
+                            duration: int = 0) -> list[int]:
     """Approximate when each entry of a skill build (ability keys in the order
     they were learned) was made, from the per-minute XP curve.
 
     OpenDota has the order but no times. Each entry is placed at the moment
     the hero reached the level that allowed it (see :func:`_upgrade_levels`;
     ``separate_talents`` = the rules since 7.40), never before the entry in
-    front of it.
+    front of it and never after the end of the match (*duration*, when
+    known): a level reached after the last full minute of the curve was
+    still reached in the game.
     """
     count = len(keys)
+    end = float(duration) if duration and duration > 0 else None
     if not xp_t:
-        return [(i + 1) * 60 for i in range(count)]
+        return [int(min((i + 1) * 60, end)) if end is not None else (i + 1) * 60 for i in range(count)]
     level_time: dict[int, float] = {1: 0.0}
     for level in range(2, len(_XP_FOR_LEVEL) + 1):
         need = _XP_FOR_LEVEL[level - 1]
@@ -2008,6 +2012,8 @@ def _estimate_upgrade_times(keys: list[str], xp_t: list[int], separate_talents: 
         if t is None:
             t = prev_t + 60
         t = max(t, prev_t)
+        if end is not None:
+            t = min(t, end)
         times.append(int(t))
         prev_t = t
     return times
@@ -2317,6 +2323,14 @@ class OpenDotaParser(ReplayParser):
                         for slot, (_id, name, slug) in zip(slots, heroes) for key in (slug, name) if key}
         hero_teams = {key: _team_for_slot(slot) for key, slot in slot_by_hero.items()}
 
+        # Team scores. Matches from before Valve's API had them (2013) come
+        # with 0 : 0 beside a full scoreboard: the kills of each side's
+        # players are the score then.
+        scores = {team: _as_int(raw.get(f"{team}_score")) for team in ("radiant", "dire")}
+        if not any(scores.values()):
+            for slot, p in zip(slots, raw_players):
+                scores[_team_for_slot(slot)] += _as_int(p.get("kills"))
+
         def _item(item_id: int) -> tuple[str, str]:
             """(display name, key) of an inventory item id; never dropped."""
             if item_id in item_map:
@@ -2355,7 +2369,7 @@ class OpenDotaParser(ReplayParser):
             ability_arr = [a for a in (p.get("ability_upgrades_arr") or []) if a is not None]
             ability_keys = [ability_ids.get(str(ab_id)) or f"ability_{ab_id}" for ab_id in ability_arr]
             xp_t = _per_minute(p.get("xp_t"), duration)
-            upgrade_times = _estimate_upgrade_times(ability_keys, xp_t, separate_talents)
+            upgrade_times = _estimate_upgrade_times(ability_keys, xp_t, separate_talents, duration)
             skills: list[SkillEvent] = []
             levels: Counter = Counter()
             for i, ab_id in enumerate(ability_arr):
@@ -2371,10 +2385,11 @@ class OpenDotaParser(ReplayParser):
             wards = self._ward_events(p, slot, team, hero_teams, duration, slot_by_hero)
             all_wards.extend(wards)
             kills, assists = _as_int(p.get("kills")), _as_int(p.get("assists"))
-            if p.get("teamfight_participation") is not None:
-                participation = _as_float(p.get("teamfight_participation"))
-            else:  # not a parsed match
-                participation = kill_participation(kills, assists, _as_int(raw.get(f"{team}_score")))
+            participation = _as_float(p.get("teamfight_participation")) if p.get("teamfight_participation") is not None else None
+            # Not a parsed match: no value, or (first player of old matches) a
+            # 0 that the hero's own kills and assists contradict.
+            if participation is None or (participation <= 0 and kills + assists > 0):
+                participation = kill_participation(kills, assists, scores[team])
             buyback_log = _time_log(p.get("buyback_log"))
             lane, lane_role, is_roaming = self._lane_fields(p, team)
             gold_t = _per_minute(p.get("gold_t"), duration)
@@ -2501,8 +2516,8 @@ class OpenDotaParser(ReplayParser):
             radiant_win=bool(raw.get("radiant_win", False)),
             game_mode=game_mode_code(mode),
             start_time=start_time,
-            radiant_score=_as_int(raw.get("radiant_score")),
-            dire_score=_as_int(raw.get("dire_score")),
+            radiant_score=scores["radiant"],
+            dire_score=scores["dire"],
             players=players,
             wards=sorted(all_wards, key=lambda w: w.time),
             smokes=[],

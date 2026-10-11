@@ -384,13 +384,20 @@ class MatchStore:
     ``KillEvent.killer_team`` (which side a fountain or creep kill belongs
     to), skill builds under the 7.40 talent rules (also the estimated skill
     times of OpenDota imports). Every AI coach report cached before it was
-    also written by the coach of an earlier round.
+    also written by the coach of an earlier round;
+    6 = OpenDota imports: the team scores of a match the API answers 0 : 0
+    for (matches of 2013) are the kills of each side's players, and with
+    them the kill participation; estimated skill times never lie after the
+    end of the match. The AI coach reports cached before it had CS
+    benchmark sentences that disagreed with their own benchmark column,
+    empty phase cards for scoreboard-only matches and the root cause of a
+    death repeated in the analysis text.
     ``MatchData.talent_names_patch`` was added without a bump: its default
     ("" = unknown) is what every reader assumes for older files, and a bump
     would also discard the cached AI coach reports.
     """
 
-    FORMAT = 5
+    FORMAT = 6
     SUFFIX = ".json.gz"
 
     def __init__(self, directory: Path, max_files: Callable[[], int]) -> None:

@@ -1061,6 +1061,43 @@ def raw_ability_name(raw: Any) -> str:
     return clean_ability_name(raw.get("dname"), _template_values(raw.get("attrib")))
 
 
+_NAME_NUMBER = r"([0-9]+(?:[.,][0-9]+)*)"
+
+
+def template_values_from_name(template: Any, resolved: Any) -> dict[str, str]:
+    """The numbers a resolved name states for the tokens of its template:
+    ("+{s:bonus_damage} Counter Helix Damage", "+40 Counter Helix Damage")
+    -> {"bonus_damage": "40"}. {} when the two do not line up (another
+    wording, or a token that stands for no plain number)."""
+    template = " ".join(str(template or "").split())
+    resolved = " ".join(str(resolved or "").split())
+    keys = _TEMPLATE_RE.findall(template)
+    if not keys or "{s:" in resolved:
+        return {}
+    pattern = _NAME_NUMBER.join(re.escape(part) for part in _TEMPLATE_RE.split(template)[::2])
+    match = re.fullmatch(pattern, resolved, flags=re.IGNORECASE)
+    if match is None:
+        return {}
+    values: dict[str, str] = {}
+    for key, value in zip(keys, match.groups()):
+        if values.setdefault(key, value) != value:
+            return {}
+    return values
+
+
+def filled_ability_name(name: Any, attrib: Any, values: dict[str, str] | None = None) -> str:
+    """*name* (in any language) with every template token filled from
+    *values* and the ``attrib`` values of its ability; "" when it has no
+    name or a number is unknown. For localised names, where
+    :func:`clean_ability_name`'s way of shortening an unfilled English name
+    does not apply."""
+    text = " ".join(str(name or "").split())
+    known = {**_template_values(attrib), **(values or {})}
+    if any(key not in known for key in _TEMPLATE_RE.findall(text)):
+        return ""
+    return clean_ability_name(text, known)
+
+
 def _talent_fallback_name(key: str) -> str:
     """Readable name for a talent no catalog knows: the key without its prefix."""
     text = key.strip().lower()

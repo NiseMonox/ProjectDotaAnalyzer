@@ -331,20 +331,40 @@ def analyze_item_builds(match: MatchData) -> list[dict]:
     return results
 
 
+def _is_ultimate(ability_key: str) -> bool | None:
+    """Whether the game data calls the ability its hero's ultimate; None when
+    it does not know the ability (the reader may then go by the build)."""
+    try:
+        from .ai import game_data
+        hit = game_data.get_ability_by_key(ability_key) if ability_key else None
+    except Exception:  # data layer unavailable
+        return None
+    return bool(hit[2].get("is_ultimate")) if hit else None
+
+
 def analyze_skill_builds(match: MatchData) -> list[dict]:
-    """Analyze skill progression for all players."""
+    """Analyze skill progression for all players.
+
+    ``is_ultimate`` of an entry is the game data's word (True / False), or
+    None for a talent, the attribute bonus and an ability it does not know:
+    the order of the skill points alone cannot tell an ultimate that was
+    skilled late or early (Turbo) from a basic ability.
+    """
     keep_stored_talents = keeps_stored_talent_names(match)
     results = []
     for player in match.players:
         skill_order = []
         for skill in player.skills:
+            is_talent = _is_talent(skill.ability_key or skill.ability_name)
+            plain = is_talent or skill.ability_key == "special_bonus_attributes"
             skill_order.append({
                 "ability": _skill_name(skill, keep_stored_talents),
                 "ability_key": skill.ability_key,
                 "level": skill.level,
                 "time": skill.time,
                 "time_str": format_time(skill.time),
-                "is_talent": _is_talent(skill.ability_key or skill.ability_name),
+                "is_talent": is_talent,
+                "is_ultimate": None if plain else _is_ultimate(skill.ability_key),
             })
 
         results.append({
@@ -359,14 +379,34 @@ def analyze_skill_builds(match: MatchData) -> list[dict]:
     return results
 
 
+# A ward that fell this many seconds before its full lifetime did not expire.
+_WARD_EARLY_S = 5
+
+
+def _ward_state(ward) -> str:
+    """How a ward ended: ``active`` (still standing when the data ends),
+    ``dewarded`` (an enemy destroyed it: the parser's flag), ``expired`` (it
+    ran its full time) or ``destroyed``: it fell clearly before its time,
+    but not to an enemy the data names — usually its own team denied it,
+    and it certainly did not expire.
+    """
+    if ward.destroyed_time is None:
+        return "active"
+    if ward.dewarded:
+        return "dewarded"
+    full = OBSERVER_LIFETIME_S if ward.ward_type == "observer" else SENTRY_LIFETIME_S
+    return "destroyed" if ward.destroyed_time - ward.time < full - _WARD_EARLY_S else "expired"
+
+
 def analyze_wards(match: MatchData) -> dict:
     """Analyze ward placements for both teams.
 
     Every ward carries ``dewarded`` (an enemy destroyed it; the parser's
-    flag, never a lifetime guess) and ``lifetime`` (seconds until it was
-    destroyed or expired; None while alive at game end). ``killer_slot`` /
-    ``killer_hero_name`` / ``killer_hero_slug`` name the hero that dewarded
-    it (None / "" when it was not dewarded, or not by a hero, or unknown).
+    flag, never a lifetime guess), ``state`` (see :func:`_ward_state`) and
+    ``lifetime`` (seconds until it was destroyed or expired; None while
+    alive at game end). ``killer_slot`` / ``killer_hero_name`` /
+    ``killer_hero_slug`` name the hero that dewarded it (None / "" when it
+    was not dewarded, or not by a hero, or unknown).
     """
     slot_map = _slot_map(match)
     radiant_obs = []
@@ -398,6 +438,7 @@ def analyze_wards(match: MatchData) -> dict:
             "lifetime": lifetime,
             "destroyed_time": ward.destroyed_time,
             "dewarded": ward.dewarded,
+            "state": _ward_state(ward),
             **deward,
         }
 
@@ -419,6 +460,7 @@ def analyze_wards(match: MatchData) -> dict:
             "destroyed_time": ward.destroyed_time,
             "lifetime": lifetime,
             "dewarded": ward.dewarded,
+            "state": _ward_state(ward),
             **deward,
         })
 
@@ -1047,13 +1089,21 @@ def analyze_farm(match: MatchData) -> dict:
 
     ``reasons`` dicts are keyed by codes from GOLD_REASON_CODES /
     XP_REASON_CODES (unknown numeric reasons become ``unknown_<n>``;
-    reasons with a total of 0 are left out).
+    reasons with a total of 0 are left out). The counts of ``unit_kills``
+    other than ``hero_kills`` are None when the source has no breakdown.
     """
 
     unit_kills = []
     gold_reasons_list = []
     xp_reasons_list = []
     lh_timeline = []
+
+    # A scoreboard-only source (an OpenDota match whose replay was never
+    # parsed) has last hits but no word on what was killed: every count
+    # below is 0 for every player. That is "unknown" (None), not a zero.
+    breakdown = ("lane_kills", "neutral_kills", "ancient_kills", "tower_kills", "courier_kills", "roshans_killed")
+    known = (any(getattr(p, field) for p in match.players for field in breakdown)
+             or not any(p.last_hits for p in match.players))
 
     for p in match.players:
         base = {
@@ -1066,12 +1116,7 @@ def analyze_farm(match: MatchData) -> dict:
         unit_kills.append({
             **base,
             "hero_kills": p.kills,
-            "lane_kills": p.lane_kills,
-            "neutral_kills": p.neutral_kills,
-            "ancient_kills": p.ancient_kills,
-            "tower_kills": p.tower_kills,
-            "courier_kills": p.courier_kills,
-            "roshans_killed": p.roshans_killed,
+            **{field: getattr(p, field) if known else None for field in breakdown},
         })
 
         gold_reasons_list.append({**base, "reasons": _amounts_by_code(p.gold_reasons, GOLD_REASON_CODES)})

@@ -987,3 +987,66 @@ def test_payload_exposes_buybacks_streaks_dewarders_and_smoke_users():
         (0, "Hero0", "hero0"), (None, "", "")]
     assert (result["teamfights"][0]["gold_delta"], result["teamfights"][0]["xp_delta"]) == (-599, 404)
     json.dumps(result, allow_nan=False)
+
+
+# ---------------------------------------------------------------------------
+# Frontend fix pass: what the tabs showed wrongly because of the payload
+# ---------------------------------------------------------------------------
+
+def test_a_ward_that_fell_early_without_an_enemy_did_not_expire():
+    """Demo 16:42: a sentry gone after 18 s, ``dewarded`` false, was labelled "Expired"."""
+    wards = [
+        WardEvent(ward_type="sentry", x=0, y=0, time=1002, player_slot=0, destroyed_time=1020),              # denied
+        WardEvent(ward_type="sentry", x=0, y=0, time=100, player_slot=0, destroyed_time=520),               # 7:00
+        WardEvent(ward_type="observer", x=0, y=0, time=100, player_slot=0, destroyed_time=457),             # ~6:00
+        WardEvent(ward_type="observer", x=0, y=0, time=100, player_slot=0, destroyed_time=454),             # 6 s short
+        WardEvent(ward_type="observer", x=0, y=0, time=100, player_slot=128, destroyed_time=150, dewarded=True),
+        WardEvent(ward_type="sentry", x=0, y=0, time=1700, player_slot=128),                                # still up
+    ]
+    result = analyzer.analyze_wards(make_match([make_player(0), make_player(128)], wards=wards))
+    assert [w["state"] for w in result["all_wards"]] == [
+        "destroyed", "expired", "expired", "destroyed", "dewarded", "active"]
+    assert [w["state"] for w in result["radiant"]["sentries"]] == ["destroyed", "expired"]
+    # "dewarded" stays the parser's word (an enemy did it): the counters do not guess
+    assert result["radiant"]["dewarded_sent"] == 0 and result["dire"]["dewarded_obs"] == 1
+
+
+def test_unit_kills_a_scoreboard_only_source_cannot_break_down_are_unknown():
+    """An OpenDota match that was never parsed: 193 last hits and "0 creeps, 0 neutrals" in the farm tab."""
+    basic = make_match([make_player(0, kills=6, last_hits=193), make_player(128, kills=2, last_hits=40)])
+    assert analyzer.analyze_farm(basic)["unit_kills"][0] == {
+        "player_slot": 0, "hero_name": "Hero0", "hero_slug": "hero0", "team": "radiant", "hero_kills": 6,
+        "lane_kills": None, "neutral_kills": None, "ancient_kills": None, "tower_kills": None,
+        "courier_kills": None, "roshans_killed": None}
+    # one count anywhere means the source has the breakdown: a zero is a zero
+    parsed = make_match([make_player(0, kills=6, last_hits=193, lane_kills=150),
+                         make_player(128, kills=2, last_hits=40)])
+    rows = analyzer.analyze_farm(parsed)["unit_kills"]
+    assert (rows[0]["lane_kills"], rows[0]["neutral_kills"], rows[1]["lane_kills"]) == (150, 0, 0)
+    # nobody has a last hit (a replay cut before the horn): real zeros as well
+    assert analyzer.analyze_farm(make_match([make_player(0)]))["unit_kills"][0]["lane_kills"] == 0
+    json.dumps(analyzer.analyze_farm(basic), allow_nan=False)
+
+
+def test_skill_build_says_which_ability_is_the_ultimate(monkeypatch):
+    """Turbo Skywrath Mage: Mystic Flare was skilled at levels the frontend's guess did not take
+    for an ultimate's, and its row was drawn as a basic ability."""
+    from backend.app.ai import game_data
+
+    known = {"skywrath_mage_mystic_flare": {"is_ultimate": True}, "skywrath_mage_arcane_bolt": {}}
+    monkeypatch.setattr(game_data, "get_ability_by_key",
+                        lambda key: ("Skywrath Mage", key, known[key]) if key in known else None)
+    skills = [SkillEvent(ability_name=name, ability_key=key, level=1, time=60 * n)
+              for n, (name, key) in enumerate([
+                  ("Arcane Bolt", "skywrath_mage_arcane_bolt"), ("Mystic Flare", "skywrath_mage_mystic_flare"),
+                  ("+8 Intelligence", "special_bonus_intelligence_8"), ("Attribute Bonus", "special_bonus_attributes"),
+                  ("Something New", "brand_new_ability")])]
+    order = analyzer.analyze_skill_builds(make_match([make_player(0, skills=skills)]))[0]["skill_order"]
+    # None: a talent, the attribute bonus, and an ability the game data does not know
+    assert [s["is_ultimate"] for s in order] == [False, True, None, None, None]
+
+    def broken(key):
+        raise RuntimeError("data layer down")
+    monkeypatch.setattr(game_data, "get_ability_by_key", broken)
+    order = analyzer.analyze_skill_builds(make_match([make_player(0, skills=skills)]))[0]["skill_order"]
+    assert [s["is_ultimate"] for s in order] == [None] * 5

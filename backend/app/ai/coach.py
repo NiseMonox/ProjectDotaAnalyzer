@@ -944,8 +944,11 @@ def _compare_step(match: MatchData, player: PlayerData, lang: str, position: int
 
 def _phase_stats_step(match: MatchData, player: PlayerData, deaths: list[DeathEvent], lang: str) -> list:
     try:
-        from .phases import slice_player_phases
-        return slice_player_phases(match, player, death_times=[d.time for d in deaths], lang=lang)
+        from .phases import has_timed_data, slice_player_phases
+        death_times = [d.time for d in deaths]
+        if not has_timed_data(match, player, death_times):
+            return []   # scoreboard-only match: nothing happened at a known time
+        return slice_player_phases(match, player, death_times=death_times, lang=lang)
     except Exception as exc:
         logger.error("Phase slicing failed: %s", exc, exc_info=True)
         return []

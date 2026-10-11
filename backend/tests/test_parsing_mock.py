@@ -113,7 +113,8 @@ def test_codes_not_labels(match):
 
 def test_mock_parser_returns_mock_match():
     m = asyncio.run(parser.MockParser().parse(""))
-    assert m.match_id == 8713267082 and len(m.players) == 10
+    # modelled on match 8713267082, but not that match: no id, no server region to show
+    assert (m.match_id, m.cluster, m.region) == (0, 0, 0) and len(m.players) == 10
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +254,7 @@ def test_identifiers_match_the_real_parsers(match):
         assert sum(p.damage_inflictor.values()) == p.hero_damage and "attack" in p.damage_inflictor
         assert p.damage_taken == {q.hero_name: q.damage[p.hero_name] for q in match.players if q.team != p.team}
         assert {e.inflictor for e in p.laning_damage_events} <= {"attack"} | {key for key in abilities}
-    assert (match.cluster, match.region, match.patch, match.winner_known) == (152, 5, "7.40", True)
+    assert (match.cluster, match.region, match.patch, match.winner_known) == (0, 0, "7.40", True)   # no server: generated
 
 
 def test_mock_is_a_consistent_match_of_its_patch(match):

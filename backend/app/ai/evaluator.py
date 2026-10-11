@@ -2389,7 +2389,6 @@ def _evaluate_pregame_death(
 
 _ROOT_CAUSE_TEXT = {
     "en": {
-        "prefix": " Root cause: {s}.",
         "ignore_missing": ("Ignored missing-enemy signals: {s}", "Retreat to safety as soon as several enemy heroes go missing"),
         "overextend": ("Overextended: {s}", "Stay within vision and allied tower range unless the map is under control"),
         "bad_positioning": ("Poor positioning: {s}", "Move along warded paths and keep an escape route open"),
@@ -2400,7 +2399,6 @@ _ROOT_CAUSE_TEXT = {
         "teamfight_positioning": ("Teamfight positioning: {s}", "Keep distance from the enemy initiators and enter after key spells are used"),
     },
     "zh": {
-        "prefix": "根因分析：{s}。",
         "ignore_missing": ("忽视敌方消失信号：{s}", "看到多名敌方英雄消失时立即撤退到安全位置"),
         "overextend": ("走位过深：{s}", "在没有掌控地图时保持在视野和友方塔的保护范围内"),
         "bad_positioning": ("站位不佳：{s}", "沿着有视野的路线移动，并保留退路"),
@@ -2562,8 +2560,9 @@ def _evaluate_death(
         # was not outnumbered, the two would contradict each other in one text.
         agrees = cc.root_cause_type != "teamfight_outnumbered" or heads is None or heads.outnumbered
         if agrees:
+            # The summary becomes the "mistake" line (and the report shows it
+            # with the chain itself): the analysis does not say it once more.
             summary = cc.root_cause_summary.rstrip(".。")
-            analysis += texts["prefix"].format(s=summary)
             mistake_tpl, better = texts[cc.root_cause_type]
             label = re.split(r"[:：]", mistake_tpl)[0]
             # A summary that opens with the label itself needs no label in front.

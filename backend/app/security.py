@@ -450,13 +450,16 @@ class SlidingWindowRateLimiter:
 # Without a key a report is rule-based and costs 1-400 ms of CPU, and one
 # match has ten players in two languages: those get the far higher
 # "ai_coach_rules" (under the LLM limit the 11th player of an hour was
-# answered 429 with a retry time of an hour).
+# answered 429 with a retry time of an hour). Its window is ten minutes:
+# looking through six matches in both languages used up 120 an hour, and
+# the page then asked the visitor to come back in 54 minutes for a report
+# that takes 0.1 s to write.
 RATE_LIMIT_DEFAULTS: dict[str, str] = {
     "upload": "10/3600",
     "fetch": "30/600",
     "request_parse": "10/600",
     "ai_coach": "10/3600",
-    "ai_coach_rules": "120/3600",
+    "ai_coach_rules": "200/600",
 }
 
 _limiters: dict[str, SlidingWindowRateLimiter | None] = {}

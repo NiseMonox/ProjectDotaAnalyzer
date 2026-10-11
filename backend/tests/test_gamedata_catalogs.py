@@ -766,3 +766,160 @@ def parser_ids(catalog_dir: Path) -> dict[str, str]:
     """What backend/app/parser.py reads from an ability catalog: ``id`` -> key."""
     return {str(entry["id"]): key for key, entry in _load(catalog_dir / "abilities.json")["by_key"].items()
             if isinstance(entry.get("id"), int)}
+
+
+# ---------------------------------------------------------------------------
+# Chinese names and missing pictures
+# ---------------------------------------------------------------------------
+
+def test_catalogs_carry_the_games_chinese_names(catalogs):
+    """The Chinese UI showed "Hoodwink", "Sentry Ward" and "Scurry": the
+    catalogs only had the English names."""
+    heroes = catalogs["heroes"]["by_id"]
+    assert all(hero.get("name_zh") for hero in heroes.values())
+    assert (heroes["123"]["name"], heroes["123"]["name_zh"]) == ("Hoodwink", "森海飞霞")
+    items = catalogs["items"]["by_key"]
+    assert items["ward_sentry"]["name_zh"] == "岗哨守卫" and items["recipe_dagon"]["name_zh"] == "图纸（达贡之神力）"
+    current = [key for key, item in items.items() if item["name"] and not item.get("legacy") and not item.get("obsolete")]
+    assert sum(1 for key in current if items[key].get("name_zh")) >= 0.95 * len(current)
+    abilities = catalogs["abilities"]["by_key"]
+    assert abilities["hoodwink_scurry"]["name_zh"] == "密林奔走"
+    assert abilities["ability_capture"]["name_zh"] == "占领前哨" and "name_zh" not in abilities["special_bonus_attributes"]
+    # a talent is a template in Valve's list: the number is the one of the English name
+    assert abilities["special_bonus_unique_axe_4"]["name"] == "+40 Counter Helix Damage"
+    assert abilities["special_bonus_unique_axe_4"]["name_zh"] == "+40 反击螺旋伤害"
+    for name in ("heroes", "items", "abilities"):
+        table = catalogs[name]["by_id" if name == "heroes" else "by_key"]
+        named = [entry["name_zh"] for entry in table.values() if "name_zh" in entry]
+        assert named and all(zh and "{" not in zh and "\n" not in zh for zh in named)
+    # match payloads carry English names: the name tables stay English
+    assert "森海飞霞" not in catalogs["heroes"]["name_to_id"] and "岗哨守卫" not in catalogs["items"]["name_to_key"]
+
+
+def test_abilities_without_a_picture_have_no_image_url(catalogs):
+    """Viper's Predator (an innate ability) had an image URL the CDN answers
+    404 for: a failed request on the laning tab of every Viper game."""
+    abilities = catalogs["abilities"]["by_key"]
+    assert abilities["viper_predator"]["img"] is None
+    assert abilities["axe_coat_of_blood"]["legacy"] and abilities["axe_coat_of_blood"]["img"] is None   # carried-over key
+    assert abilities["viper_poison_attack"]["img"].endswith("/abilities/viper_poison_attack.png")
+
+
+def test_chinese_names_are_read_from_valves_lists():
+    feeds = {
+        "herolist": {"result": {"data": {"heroes": [
+            {"id": 2, "name": "npc_dota_hero_axe", "name_loc": "斧王", "name_english_loc": "Axe"},
+            {"id": 3, "name": "npc_dota_hero_bane", "name_loc": "", "name_english_loc": "Bane"}]}}},
+        "itemlist": {"result": {"data": {"itemabilities": [
+            {"id": 1, "name": "item_blink", "name_loc": "闪烁匕首", "name_english_loc": "Blink Dagger"},
+            {"id": 9, "name": "item_black_grimoire", "name_loc": "Black Grimoire", "name_english_loc": "Black Grimoire"},
+            {"id": 7, "name": "item_recipe_dagon", "name_loc": "图纸（达贡之神力）\\n（说明）", "name_english_loc": "Dagon Recipe"}]}}},
+        "abilitylist": {"result": {"data": {"itemabilities": [
+            {"id": 5, "name": "axe_culling_blade", "name_loc": "淘汰之刃", "name_english_loc": "Culling Blade"},
+            {"id": 6, "name": "special_bonus_unique_axe_4", "name_loc": "+{s:bonus_damage}  反击螺旋伤害",
+             "name_english_loc": "+{s:bonus_damage} Counter Helix Damage"},
+            "not a row"]}}},
+    }
+    assert generator.names_zh(feeds) == {
+        "heroes": {"axe": "斧王"},
+        "items": {"blink": "闪烁匕首", "recipe_dagon": "图纸（达贡之神力）"},     # untranslated left out, one line
+        "abilities": {"axe_culling_blade": "淘汰之刃", "special_bonus_unique_axe_4": "+{s:bonus_damage} 反击螺旋伤害"},
+        "ability_templates": {"special_bonus_unique_axe_4": "+{s:bonus_damage} Counter Helix Damage"},
+    }
+    assert generator.names_zh({}) == {"heroes": {}, "items": {}, "abilities": {}, "ability_templates": {}}
+
+
+def test_a_chinese_talent_name_takes_the_numbers_of_the_english_one():
+    values = data_manager.template_values_from_name
+    assert values("+{s:bonus_damage} Counter Helix Damage", "+40 Counter Helix Damage") == {"bonus_damage": "40"}
+    assert values("{s:a}% slow for {s:b}s", "60% slow for 1.5s") == {"a": "60", "b": "1.5"}
+    assert values("+{s:value} Health", "+Health") == {}                      # the source has no number
+    assert values("+{s:value} Health", "+{s:value} Health") == {}            # still a template
+    assert values("{s:a} / {s:a} Damage", "10 / 20 Damage") == {}            # one token, two numbers
+    assert values("Culling Blade", "Culling Blade") == {}
+    fill = data_manager.filled_ability_name
+    assert fill("+{s:bonus_damage} 反击螺旋伤害", None, {"bonus_damage": "40"}) == "+40 反击螺旋伤害"
+    assert fill("+{s:value} 生命", [{"key": "value", "value": "250"}]) == "+250 生命"
+    assert fill("+{s:value} 生命", []) == "" and fill("", None) == ""        # unknown number: no name, not "+X"
+    assert fill("淘汰之刃", None) == "淘汰之刃"
+
+    raw = {"abilities": {"special_bonus_unique_axe_4": {"dname": "+40 Counter Helix Damage"},
+                         "special_bonus_unique_axe_5": {"dname": "+Berserker's Call Armor"}},
+           "hero_abilities": {}, "ability_ids": {},
+           "names_zh": {"abilities": {"special_bonus_unique_axe_4": "+{s:bonus_damage} 反击螺旋伤害",
+                                      "special_bonus_unique_axe_5": "+{s:bonus_armor} 狂战士之吼护甲"},
+                        "ability_templates": {"special_bonus_unique_axe_4": "+{s:bonus_damage} Counter Helix Damage",
+                                              "special_bonus_unique_axe_5": "+{s:bonus_armor} Berserker's Call Armor"}}}
+    built = generator._abilities(raw)["by_key"]
+    assert built["special_bonus_unique_axe_4"]["name_zh"] == "+40 反击螺旋伤害"
+    assert "name_zh" not in built["special_bonus_unique_axe_5"]              # readers fall back to the English name
+
+
+def test_missing_ability_pictures_are_the_ones_the_cdn_answers_404_for():
+    abilities = {
+        "viper_predator": {"dname": "Predator", "img": "/apps/dota2/images/dota_react/abilities/viper_predator.png"},
+        "viper_poison_attack": {"dname": "Poison Attack", "img": "/a/viper_poison_attack.png?t=1"},
+        "axe_coat_of_blood": {"dname": "Coat of Blood", "img": "/a/axe_coat_of_blood.png"},
+        "axe_culling_blade": {"dname": "Culling Blade", "img": "/a/axe_culling_blade.png"},
+        "special_bonus_hp_250": {"dname": "+250 Health"},                   # no path: never asked
+        "nameless": {"img": "/a/nameless.png"},
+    }
+    asked: list[str] = []
+
+    def status(url: str) -> int:
+        asked.append(url)
+        return {"viper_predator": 404, "viper_poison_attack": 200}.get(url.rsplit("/", 1)[-1][:-4], 0)
+
+    previous = {"by_key": {"axe_coat_of_blood": {"img": None}, "axe_culling_blade": {"img": "https://x/y.png"},
+                           # keys the source no longer has are carried over: their pictures are asked for too
+                           "viper_predator_old": {"img": "https://x/viper_predator.png", "legacy": True},
+                           "old_talent": {"img": None, "legacy": True}, "older_talent": {"img": "", "legacy": True}}}
+    # no clear answer (a timeout, a 503): what the previous catalog says stays
+    assert generator.missing_ability_images(abilities, previous, status=status) == [
+        "axe_coat_of_blood", "viper_predator", "viper_predator_old"]
+    assert sorted(asked) == sorted([generator.CDN + path for path in (
+        "/apps/dota2/images/dota_react/abilities/viper_predator.png", "/a/viper_poison_attack.png",
+        "/a/axe_coat_of_blood.png", "/a/axe_culling_blade.png")] + ["https://x/viper_predator.png"])
+
+
+def test_generator_carries_chinese_names_and_missing_pictures(tmp_path, data_set, capsys):
+    source = _source_dir(tmp_path, data_set, _ITEMS_TXT)
+    (source / "names_zh.json").write_text(json.dumps({
+        "heroes": {"axe": "斧王", "not_in_the_source": "无"},
+        "items": {"dagon": "达贡之神力", "recipe_dagon": "图纸（达贡之神力）", "heart": "恐鳌之心"},
+        "abilities": {"axe_culling_blade": "淘汰之刃", "special_bonus_hp_250": "+{s:value} 生命"},
+        "ability_templates": {"special_bonus_hp_250": "+{s:value} Health"}}), encoding="utf-8")
+    (source / "missing_images.json").write_text(json.dumps(["axe_culling_blade", "axe_old", "not_anywhere"]), encoding="utf-8")
+    out, fixture = tmp_path / "catalogs", tmp_path / "fixture.json.gz"
+    out.mkdir()
+    (out / "abilities.json").write_text(json.dumps({"by_key": {      # a key only the previous catalog has
+        "axe_old": {"key": "axe_old", "name": "Old", "img": "https://x/axe_old.png"}}, "name_to_key": {"Old": "axe_old"}}),
+        encoding="utf-8")
+    args = ["--source", str(source), "--out", str(out), "--fallback", str(tmp_path / "fallback"), "--fixture", str(fixture)]
+    assert generator.main(args) == 0 and generator.main(args + ["--check"]) == 0
+
+    hero = _load(out / "heroes.json")["by_id"]["2"]
+    assert hero["name_zh"] == "斧王" and list(hero)[:3] == ["id", "name", "name_zh"]
+    items = _load(out / "items.json")
+    assert items["by_key"]["dagon"]["name_zh"] == "达贡之神力" and "name_zh" not in items["by_key"]["black_king_bar"]
+    assert items["by_key"]["recipe_dagon"]["name_zh"] == "图纸（达贡之神力）" and "达贡之神力" not in items["name_to_key"]
+    abilities = _load(out / "abilities.json")["by_key"]
+    assert abilities["axe_culling_blade"]["name_zh"] == "淘汰之刃" and abilities["axe_culling_blade"]["img"] is None
+    assert abilities["axe_berserkers_call"]["img"] and "name_zh" not in abilities["axe_berserkers_call"]
+    assert (abilities["special_bonus_hp_250"]["name"], abilities["special_bonus_hp_250"]["name_zh"]) == ("+250 Health", "+250 生命")
+    assert abilities["axe_old"] == {"key": "axe_old", "name": "Old", "img": None, "legacy": True}
+    # the fixture holds what the catalogs were built from, and nothing the source does not have
+    stored = generator.read_fixture(fixture)
+    assert stored["names_zh"]["heroes"] == {"axe": "斧王"} and stored["missing_images"] == ["axe_culling_blade"]
+    assert generator.current_part(_load(out / "abilities.json"), "by_key") == generator.build(stored)["abilities"]
+
+    # Valve's lists are unreachable on the next run: names and missing pictures stay
+    (source / "names_zh.json").unlink()
+    (source / "missing_images.json").unlink()
+    capsys.readouterr()
+    assert generator.main(args + ["--check"]) == 0
+    assert "keeping the ones of the previous catalogs" in capsys.readouterr().out
+    assert generator.main(args) == 0
+    assert _load(out / "abilities.json")["by_key"]["axe_culling_blade"] == abilities["axe_culling_blade"]
+    assert _load(out / "abilities.json")["by_key"]["special_bonus_hp_250"]["name_zh"] == "+250 生命"
+    assert _load(out / "heroes.json")["by_id"]["2"]["name_zh"] == "斧王"

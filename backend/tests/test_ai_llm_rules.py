@@ -330,8 +330,11 @@ def test_root_cause_must_agree_with_the_head_count():
 
     outnumbered = {"headcount_basis": "nearby", "headcount_allies": 0, "headcount_enemies": 3}
     ev = rules(death_ctx(is_tf=True, phase="mid_game", time=1156, mc=outnumbered, chain=chain))
-    assert ev.mistake.startswith("Fought while outnumbered: Took a teamfight") and "Root cause" in ev.analysis
-    assert "fight.." not in ev.analysis
+    assert ev.mistake.startswith("Fought while outnumbered: Took a teamfight")
+    # The root cause is the mistake line (and the chain shown under it): the analysis used to end
+    # with the same sentence a third time ("... Root cause: Fought while outnumbered; wait ...").
+    assert "Root cause" not in ev.analysis and "wait for teammates" not in ev.analysis
+    assert ev.analysis.count("outnumbered") == 1
     # A summary that already opens with the label is not prefixed with it again.
     same = ("teamfight_outnumbered", "Fought while outnumbered; wait for teammates or avoid the fight")
     ev = rules(death_ctx(is_tf=True, phase="mid_game", time=1156, mc=outnumbered, chain=same))

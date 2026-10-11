@@ -41,18 +41,29 @@ meant for a scheduled job; the test suite itself is network-free.
 
 Catalog shape (unchanged; ``meta`` and the optional fields are additions):
 
-- heroes.json: ``{"by_id": {"<id>": {id, name, slug, img, icon, attr, roles,
-  attack_type, day_vision, night_vision}}, "name_to_id", "cdn_base", "meta"}``
-  — two heroes carry the game's name instead of the source's (``HERO_NAMES``);
-  ``name_to_id`` knows both spellings.
-- items.json: ``{"by_key": {"<key>": {id, key, name, img, cost[, tier][,
-  qual][, obsolete][, legacy]}}, "name_to_key", "cdn_base", "meta"}`` — recipes included
-  ("Abyssal Blade Recipe"); a display name shared by several keys maps to the
-  base item (Dagon -> dagon), which also comes first among them in ``by_key``.
-- abilities.json: ``{"by_key": {"<key>": {key, name, img[, id][, ids][,
-  legacy]}}, "name_to_key", "cdn_base", "meta"}`` — every named ability and
-  talent; no name keeps a ``{s:...}`` template token; a name shared by several
-  keys maps to the hero ability; ``ids`` only where the source lists several.
+- heroes.json: ``{"by_id": {"<id>": {id, name[, name_zh], slug, img, icon,
+  attr, roles, attack_type, day_vision, night_vision}}, "name_to_id",
+  "cdn_base", "meta"}`` — two heroes carry the game's name instead of the
+  source's (``HERO_NAMES``); ``name_to_id`` knows both spellings.
+- items.json: ``{"by_key": {"<key>": {id, key, name[, name_zh], img, cost[,
+  tier][, qual][, obsolete][, legacy]}}, "name_to_key", "cdn_base", "meta"}``
+  — recipes included ("Abyssal Blade Recipe"); a display name shared by
+  several keys maps to the base item (Dagon -> dagon), which also comes first
+  among them in ``by_key``.
+- abilities.json: ``{"by_key": {"<key>": {key, name[, name_zh], img[, id][,
+  ids][, legacy]}}, "name_to_key", "cdn_base", "meta"}`` — every named ability
+  and talent; no name keeps a ``{s:...}`` template token; a name shared by
+  several keys maps to the hero ability; ``ids`` only where the source lists
+  several; ``img`` is null for talents and for abilities the image CDN has no
+  picture of (most innate abilities).
+
+``name_zh`` is the name in the game's Simplified Chinese localisation, read
+from Valve's own lists (``NAMES_ZH_FEEDS``; dotaconstants is English only).
+It is left out where Valve has none, or where it is a template whose number
+the data does not have: readers fall back to ``name``. The ``name_to_*``
+tables stay English, like every name in a match payload. When Valve's lists
+cannot be reached the names of the previous run are kept, and likewise the
+pictures found missing (``missing_ability_images``).
 
 Keys of the previous catalog that the source no longer has are kept with
 ``"legacy": true``: old replays still carry removed items and abilities.
@@ -73,6 +84,7 @@ import re
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import zlib
 from pathlib import Path
@@ -96,6 +108,15 @@ ITEMS_TXT = "game/dota/pak01_dir/scripts/npc/items.txt"
 ITEMS_TXT_URLS = (
     "https://raw.githubusercontent.com/SteamDatabase/GameTracking-Dota2/master/" + ITEMS_TXT,
     "https://cdn.jsdelivr.net/gh/SteamDatabase/GameTracking-Dota2@master/" + ITEMS_TXT,
+)
+# Valve's lists of heroes, items and abilities in Simplified Chinese:
+# (catalog, feed, key of the list in the answer, prefix the feed puts in
+# front of our keys).
+NAMES_ZH_URL = "https://www.dota2.com/datafeed/{feed}?language=schinese"
+NAMES_ZH_FEEDS = (
+    ("heroes", "herolist", "heroes", "npc_dota_hero_"),
+    ("items", "itemlist", "itemabilities", "item_"),
+    ("abilities", "abilitylist", "itemabilities", ""),
 )
 # (catalog file, its table)
 CATALOGS = (("heroes", "by_id"), ("items", "by_key"), ("abilities", "by_key"))
@@ -160,28 +181,151 @@ def _download_items_txt() -> str | None:
     return None
 
 
-def load_source(directory: Path | None, previous_items: dict | None = None) -> tuple[dict[str, Any], dict[str, str]]:
+def names_zh(feeds: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """``{"heroes": {slug: name}, "items": {key: name}, "abilities": {key:
+    name}, "ability_templates": {key: English name}}`` from the answers of
+    Valve's lists (*feeds*: feed name -> JSON).
+
+    Talent names are still templates here ("+{s:bonus_damage} 反击螺旋伤害");
+    ``ability_templates`` has the English template of each of them
+    ("+{s:bonus_damage} Counter Helix Damage"), which tells where the number
+    stands in the name dotaconstants resolved ("+40 Counter Helix Damage").
+    An entry without a Chinese name, or whose Chinese name is the English
+    one, is left out.
+    """
+    from backend.app.ai.data_manager import clean_item_name
+
+    names: dict[str, dict[str, str]] = {"ability_templates": {}}
+    for catalog, feed, table, prefix in NAMES_ZH_FEEDS:
+        answer = feeds.get(feed)
+        rows = (((answer or {}).get("result") or {}).get("data") or {}).get(table) if isinstance(answer, dict) else None
+        found: dict[str, str] = {}
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            key, name = str(row.get("name") or ""), str(row.get("name_loc") or "")
+            english = " ".join(str(row.get("name_english_loc") or "").split())
+            name = clean_item_name(name) if catalog == "items" else " ".join(name.split())
+            if not (key.startswith(prefix) and len(key) > len(prefix)) or not name or name == english:
+                continue
+            found[key[len(prefix):]] = name
+            if catalog == "abilities" and "{s:" in name and english:
+                names["ability_templates"][key] = english
+        names[catalog] = found
+    return names
+
+
+def _download_names_zh() -> dict[str, dict[str, str]] | None:
+    """Valve's Chinese names; None when a list is unreachable or empty."""
+    feeds: dict[str, Any] = {}
+    for _catalog, feed, _table, _prefix in NAMES_ZH_FEEDS:
+        url = NAMES_ZH_URL.format(feed=feed)
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "DotaAnalyzer/1.0"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                feeds[feed] = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            print(f"warning: {url} is unreachable ({exc})")
+            return None
+    names = names_zh(feeds)
+    return names if all(names.get(catalog) for catalog, *_rest in NAMES_ZH_FEEDS) else None
+
+
+def _previous_names_zh(previous: dict[str, dict]) -> dict[str, dict[str, str]]:
+    """The Chinese names the previous catalogs carry, in the shape of :func:`names_zh`."""
+    names: dict[str, dict[str, str]] = {}
+    for catalog, table in CATALOGS:
+        entries = ((previous.get(catalog) or {}).get(table) or {}).values()
+        names[catalog] = {str(entry["slug" if catalog == "heroes" else "key"]): entry["name_zh"]
+                          for entry in entries if isinstance(entry, dict) and entry.get("name_zh")}
+    return names
+
+
+def _image_status(url: str) -> int:
+    """HTTP status of a HEAD request for *url* (0: no answer after a second try)."""
+    for _attempt in range(2):
+        try:
+            request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "DotaAnalyzer/1.0"})
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return int(response.status)
+        except urllib.error.HTTPError as exc:
+            return int(exc.code)
+        except Exception:
+            continue
+    return 0
+
+
+def missing_ability_images(abilities: dict[str, Any], previous: dict | None = None, status=_image_status) -> list[str]:
+    """Keys of the named abilities whose picture the image CDN does not have.
+
+    dotaconstants gives every ability an image path, but the CDN has no
+    picture for most innate abilities (Viper's Predator): the page would
+    request a file that is not there. Each path is asked for once; only a
+    404 counts as missing, and a path that got no clear answer keeps what
+    the *previous* ability catalog says about it. The keys only that
+    catalog still has (they are carried over, see :func:`merge_legacy`) are
+    asked for as well.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    before = {key: entry for key, entry in ((previous or {}).get("by_key") or {}).items() if isinstance(entry, dict)}
+    urls = {key: _image(ability.get("img")) for key, ability in abilities.items()
+            if isinstance(ability, dict) and ability.get("dname") and ability.get("img")}
+    urls.update({key: entry["img"] for key, entry in before.items()
+                 if key not in urls and isinstance(entry.get("img"), str) and entry["img"]
+                 and not (isinstance(abilities.get(key), dict) and abilities[key].get("dname"))})
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        statuses = dict(zip(urls, pool.map(status, urls.values())))
+    unclear = [key for key, code in statuses.items() if code not in (200, 404)]
+    if unclear:
+        print(f"warning: no clear answer for {len(unclear)} ability pictures; keeping the previous catalog's word on them")
+    return sorted(key for key, code in statuses.items()
+                  if code == 404 or (code != 200 and key in before and before[key].get("img") is None))
+
+
+def load_source(directory: Path | None, previous_items: dict | None = None,
+                previous: dict[str, dict] | None = None,
+                stored: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, str]]:
     """The raw input and what it is: ``source`` (an id of
     ``data_manager.CONSTANTS_SOURCES``, or ``files`` for *directory*) and,
     for a download, the revision, its date and the game version it can
     reflect (``data_manager.download_constants_snapshot``).
 
-    The constants files by name plus ``obsolete_items``: the keys Valve's
-    items.txt flags (``<directory>/items.txt`` when reading files). Without
-    that file — or when it names no obsolete item at all, which means its
-    format changed — the flags of *previous_items* (the committed item
-    catalog) are carried over.
+    The constants files by name plus what no dotaconstants file says:
+
+    - ``obsolete_items``: the keys Valve's items.txt flags
+      (``<directory>/items.txt`` when reading files). Without that file — or
+      when it names no obsolete item at all, which means its format changed
+      — the flags of *previous_items* (the committed item catalog) are
+      carried over.
+    - ``names_zh``: the Chinese names (:func:`names_zh`;
+      ``<directory>/names_zh.json`` in that shape when reading files).
+    - ``missing_images``: abilities without a picture
+      (:func:`missing_ability_images`; ``<directory>/missing_images.json``,
+      a list of keys, when reading files).
+
+    When Valve cannot be asked, the last two are the ones of the *stored*
+    data set (the test fixture of the previous run), else what the
+    *previous* catalogs (by catalog name) carry.
     """
+    previous, stored = previous or {}, stored or {}
     if directory is not None:
         raw = {name: json.loads((directory / f"{name}.json").read_text(encoding="utf-8"))
                for name in SOURCE_FILES}
         identity = {"source": "files"}
         script = directory / "items.txt"
         items_txt = script.read_text(encoding="utf-8", errors="replace") if script.exists() else None
+        chinese = _read_json(directory / "names_zh.json") or None
+        try:
+            missing = json.loads((directory / "missing_images.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            missing = None
     else:
         from backend.app.ai import data_manager
         raw, identity = data_manager.download_constants_snapshot(SOURCE_FILES)
         items_txt = _download_items_txt()
+        chinese = _download_names_zh()
+        missing = missing_ability_images(raw["abilities"], previous.get("abilities"))
     flagged = obsolete_items(items_txt) if items_txt is not None else []
     if not flagged:
         print(f"warning: {'items.txt names no obsolete item' if items_txt is not None else 'no items.txt'}; "
@@ -190,6 +334,18 @@ def load_source(directory: Path | None, previous_items: dict | None = None) -> t
             key for key, entry in ((previous_items or {}).get("by_key") or {}).items()
             if isinstance(entry, dict) and entry.get("obsolete"))
     raw["obsolete_items"] = flagged
+    if chinese is None:
+        print("warning: no Chinese names; keeping the ones of the previous catalogs")
+        chinese = stored.get("names_zh") if isinstance(stored.get("names_zh"), dict) else _previous_names_zh(previous)
+    raw["names_zh"] = {name: dict(chinese.get(name) or {})
+                       for name in [catalog for catalog, _table in CATALOGS] + ["ability_templates"]}
+    if not isinstance(missing, list):
+        missing = stored.get("missing_images")
+    if not isinstance(missing, list):
+        missing = [key for key, entry in ((previous.get("abilities") or {}).get("by_key") or {}).items()
+                   if isinstance(entry, dict) and entry.get("img") is None
+                   and isinstance(raw["abilities"].get(key), dict) and raw["abilities"][key].get("img")]
+    raw["missing_images"] = sorted(str(key) for key in missing)
     return raw, identity
 
 
@@ -245,6 +401,14 @@ def trim(raw: dict[str, Any]) -> dict[str, Any]:
             entry["attrib"] = [pick(row, ("key", "value")) for row in ability.get("attrib") or []
                                if isinstance(row, dict)]
         abilities[key] = entry
+    chinese = raw.get("names_zh") or {}
+    kept = {"heroes": {str(hero["name"]).replace("npc_dota_hero_", "") for hero in raw["heroes"].values()},
+            "items": set(raw["items"]), "abilities": set(abilities), "ability_templates": set(abilities)}
+    for key in set(abilities) & set(chinese.get("abilities") or {}):
+        if "{s:" in chinese["abilities"][key] and "attrib" not in abilities[key]:
+            # the values that may fill the Chinese template
+            abilities[key]["attrib"] = [pick(row, ("key", "value")) for row in raw["abilities"][key].get("attrib") or []
+                                        if isinstance(row, dict)]
     hero_keys = _hero_ability_keys(raw)
     numbers = {
         "items": {key: entry_numbers(item) for key, item in raw["items"].items()
@@ -263,6 +427,9 @@ def trim(raw: dict[str, Any]) -> dict[str, Any]:
         "ability_ids": {aid: key for aid, key in raw["ability_ids"].items()
                         if key in abilities or key in data_manager.BUILTIN_ABILITY_LABELS},
         "obsolete_items": [key for key in raw.get("obsolete_items") or [] if key in raw["items"]],
+        "names_zh": {catalog: {key: name for key, name in (chinese.get(catalog) or {}).items() if key in keys}
+                     for catalog, keys in kept.items()},
+        "missing_images": [key for key in raw.get("missing_images") or [] if key in abilities],
         "numbers": numbers,
     }
 
@@ -278,6 +445,12 @@ def trim(raw: dict[str, Any]) -> dict[str, Any]:
 HERO_NAMES = {"obsidian_destroyer": "Outworld Destroyer", "ringmaster": "Ringmaster"}
 
 
+def _zh(raw: dict[str, Any], catalog: str, key: str) -> dict[str, str]:
+    """``{"name_zh": ...}`` for an entry Valve names in Chinese, else ``{}``."""
+    name = ((raw.get("names_zh") or {}).get(catalog) or {}).get(key)
+    return {"name_zh": name} if name else {}
+
+
 def _heroes(raw: dict[str, Any]) -> dict:
     by_id: dict[str, dict] = {}
     name_to_id: dict[str, int] = {}
@@ -285,7 +458,7 @@ def _heroes(raw: dict[str, Any]) -> dict:
         slug = str(hero["name"]).replace("npc_dota_hero_", "")
         name = HERO_NAMES.get(slug, hero["localized_name"])
         entry = {
-            "id": hero["id"], "name": name, "slug": slug,
+            "id": hero["id"], "name": name, **_zh(raw, "heroes", slug), "slug": slug,
             "img": f"{CDN}{_IMAGES}/heroes/{slug}.png",
             "icon": f"{CDN}{_IMAGES}/heroes/icons/{slug}.png",
             "attr": hero.get("primary_attr"), "roles": hero.get("roles", []),
@@ -312,7 +485,7 @@ def _items(raw: dict[str, Any]) -> dict:
         if not name and recipe:
             base = clean_item_name((items.get(key[len("recipe_"):]) or {}).get("dname"))
             name = f"{base} Recipe" if base else ""
-        entry = {"id": item.get("id"), "key": key, "name": name,
+        entry = {"id": item.get("id"), "key": key, "name": name, **(_zh(raw, "items", key) if name else {}),
                  "img": f"{CDN}{_IMAGES}/items/recipe.png" if recipe else _image(item.get("img")),
                  "cost": item.get("cost")}
         for field in ("tier", "qual"):  # neutral tier, shop quality
@@ -378,14 +551,23 @@ def _abilities(raw: dict[str, Any]) -> dict:
     from backend.app.ai import data_manager
 
     hero_keys = _hero_ability_keys(raw)
+    chinese = (raw.get("names_zh") or {}).get("abilities") or {}
+    templates = (raw.get("names_zh") or {}).get("ability_templates") or {}
+    no_picture = set(raw.get("missing_images") or [])
     by_key: dict[str, dict] = {}
     for key, ability in raw["abilities"].items():
         name = data_manager.raw_ability_name(ability)
         if name:
-            by_key[key] = {"key": key, "name": name, "img": _image(ability.get("img"))}
+            # A Chinese template is only used with every number filled in:
+            # the ones the English name states, else the entry's own values.
+            stated = data_manager.template_values_from_name(templates.get(key), ability.get("dname"))
+            zh = data_manager.filled_ability_name(chinese.get(key), ability.get("attrib"), stated)
+            by_key[key] = {"key": key, "name": name, **({"name_zh": zh} if zh else {}),
+                           "img": None if key in no_picture else _image(ability.get("img"))}
     # Abilities no source names (capturing an outpost, the attribute bonus).
-    for key, (_zh, en) in data_manager.BUILTIN_ABILITY_LABELS.items():
-        by_key[key] = {"key": key, "name": en, "img": by_key.get(key, {}).get("img")}
+    for key, (zh, en) in data_manager.BUILTIN_ABILITY_LABELS.items():
+        by_key[key] = {"key": key, "name": en, **({"name_zh": zh} if zh != en else {}),
+                       "img": by_key.get(key, {}).get("img")}
     number_abilities(by_key, raw)
 
     name_to_key: dict[str, str] = {}
@@ -595,7 +777,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="write nothing; exit 1 when a committed file differs from the source")
     args = parser.parse_args(argv)
 
-    raw, identity = load_source(args.source, _read_json(args.out / "items.json"))
+    committed = {name: _read_json(args.out / f"{name}.json") for name, _table in CATALOGS}
+    try:
+        stored = json.loads(_stored_fixture_text(args.fixture) or "{}")
+    except ValueError:
+        stored = {}
+    raw, identity = load_source(args.source, committed["items"], committed, stored)
     trimmed = trim(raw)
     catalogs = build(raw)
     if build(trimmed) != catalogs:
@@ -615,6 +802,9 @@ def main(argv: list[str] | None = None) -> int:
         kept = merge_legacy(catalogs[name], previous, table)
         if name == "abilities":
             number_abilities(catalogs[name][table], raw)        # the carried-over keys, too
+            for key in raw["missing_images"]:
+                if catalogs[name][table].get(key, {}).get("legacy"):
+                    catalogs[name][table][key]["img"] = None
         # (compared as text: the order of the entries is part of the content)
         changed = dump_catalog({k: v for k, v in previous.items() if k != "meta"}) != dump_catalog(catalogs[name])
         restamp = bool(patch) and (previous.get("meta") or {}).get("patch") != patch

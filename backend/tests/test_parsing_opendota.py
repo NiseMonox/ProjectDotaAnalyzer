@@ -867,3 +867,49 @@ def test_real_items_wards_and_match_fields(real, real_raw):
     bare = OpenDotaParser()._transform(copy.deepcopy(real_raw), parser.load_hero_map(), older)
     tide = next(p for p in bare.players if p.hero_name == "Tidehunter")
     assert "item_1854" in tide.final_item_keys and len(tide.final_item_keys) == 6
+
+
+# ---------------------------------------------------------------------------
+# Frontend fix pass
+# ---------------------------------------------------------------------------
+
+def test_a_match_without_team_scores_takes_them_from_the_kills():
+    """Match 271145478 (2013): OpenDota answers radiant_score 0, dire_score 0 beside a scoreboard
+    with 29 and 27 kills, and the header of every tab read 0 - 0."""
+    raw = _fixture()
+    raw["radiant_score"] = raw["dire_score"] = 0
+    for p in raw["players"]:
+        p.pop("teamfight_participation", None)
+        p["kills"], p["assists"] = (3, 1) if p["player_slot"] < 128 else (2, 4)
+    radiant = sum(1 for p in raw["players"] if p["player_slot"] < 128)
+    dire = len(raw["players"]) - radiant
+    match = _transform(raw)
+    assert (match.radiant_score, match.dire_score) == (3 * radiant, 2 * dire)
+    # ... and the kill participation of an unparsed match is measured against that score
+    assert match.players[0].teamfight_participation == pytest.approx((3 + 1) / (3 * radiant))
+    # (the API's own "0" for the first player of such a match contradicts his kills: computed too)
+    raw["players"][0]["teamfight_participation"] = 0
+    assert _transform(raw).players[0].teamfight_participation == pytest.approx((3 + 1) / (3 * radiant))
+    raw["players"][0].update(kills=0, assists=0)
+    assert _transform(raw).players[0].teamfight_participation == 0
+    raw["players"][0].update(kills=3, assists=1)
+    del raw["players"][0]["teamfight_participation"]
+    # scores the API does give are kept, also when they differ from the kills (denies, neutrals)
+    raw["radiant_score"], raw["dire_score"] = 14, 0
+    match = _transform(raw)
+    assert (match.radiant_score, match.dire_score) == (14, 0)
+    del raw["radiant_score"], raw["dire_score"]
+    assert (_transform(raw).radiant_score, _transform(raw).dire_score) == (3 * radiant, 2 * dire)
+
+
+def test_estimated_skill_times_end_with_the_match():
+    """Match 8762775364 (34:51): Invoker's last two steps were dated 34:56 and 35:56."""
+    xp_t = [350 * minute for minute in range(35)]            # 11900 XP at 34:00: level 14 is not on the curve
+    keys = ["invoker_quas"] * 7 + ["invoker_wex"] * 7 + ["invoker_exort"] * 6
+    free = parser._estimate_upgrade_times(keys, xp_t, separate_talents=True)
+    assert free[12] < 2091 < free[-1]                         # before: a minute per level the curve does not show
+    times = parser._estimate_upgrade_times(keys, xp_t, separate_talents=True, duration=2091)
+    assert times[:13] == free[:13] and times == sorted(times) and times[-1] == 2091
+    # no XP curve at all: one entry a minute, but still inside the match
+    assert parser._estimate_upgrade_times(keys[:4], [], duration=150) == [60, 120, 150, 150]
+    assert parser._estimate_upgrade_times(keys[:4], []) == [60, 120, 180, 240]

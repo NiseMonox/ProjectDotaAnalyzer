@@ -1194,7 +1194,9 @@ def _build_mock_match() -> MatchData:
         lane_efficiency, talent_names_patch,
     )
 
-    match_id = 8713267082
+    # 0 = no match id: the numbers are modelled on match 8713267082, but this
+    # generated game is not that match and must not be labelled (or linked) as it.
+    match_id = 0
     duration = 1913  # 31:53
     radiant_win = False
 
@@ -1505,8 +1507,8 @@ def _build_mock_match() -> MatchData:
         objectives=objectives,
         buildings=buildings,
         first_blood_time=FIRST_BLOOD_TIME,
-        cluster=152,
-        region=5,
+        cluster=0,     # a generated match was played on no server
+        region=0,
         patch="7.40",
         talent_names_patch=talent_names_patch(),
         **building_status_bitmasks(buildings, objectives),

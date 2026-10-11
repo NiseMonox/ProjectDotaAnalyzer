@@ -514,9 +514,12 @@ def test_rule_based_reports_are_not_held_to_the_llm_limit(coach_env, monkeypatch
     under the LLM limit (10 an hour) the 11th cold report was answered 429, retry in an hour."""
     c = coach_env.client
     assert security.RATE_LIMIT_DEFAULTS["ai_coach"] == "10/3600"
-    assert security.RATE_LIMIT_DEFAULTS["ai_coach_rules"] == "120/3600"
+    # 120 an hour was used up by looking through six matches in both languages, and the next
+    # report (0.1 s of work) was refused for up to an hour: now a short window with more room.
+    count, window = security.parse_rate_spec(security.RATE_LIMIT_DEFAULTS["ai_coach_rules"])
+    assert security.RATE_LIMIT_DEFAULTS["ai_coach_rules"] == "200/600" and count >= 200 and window <= 600
     monkeypatch.setenv("RATE_LIMIT_AI_COACH", "1/3600")
-    monkeypatch.delenv("RATE_LIMIT_AI_COACH_RULES")                 # the default: 120 an hour
+    monkeypatch.delenv("RATE_LIMIT_AI_COACH_RULES")                 # the default: 200 in ten minutes
     security.reset_rate_limits()
     cold = [(slot, lang) for lang in ("zh", "en") for slot in (0, 128)]     # every player of the test match
     for slot, lang in cold:

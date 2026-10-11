@@ -944,3 +944,73 @@ def test_decision_points_of_a_report_do_not_double_count(source_match):
         for fight_point in (d for d in decisions if d.point_type == "fight_engage"):
             tf = next(t for t in match.teamfights if t.start_time - 1 < fight_point.time < t.end_time + 1)
             assert not [m for m in multi if tf.start_time <= m.time <= tf.end_time], p.hero_name
+
+
+# ---------------------------------------------------------------------------
+# Frontend fix pass: report texts that contradicted the page around them
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("lang", ["en", "zh"])
+def test_cs_sentence_quotes_the_benchmark_the_table_shows(lang, mined_dir):
+    """Benchmark column "203", sentence under it "117 below benchmark (202)": the column was
+    rounded and the sentence truncated (113 of 188 rows of real reports)."""
+    payload = _mined(mined_dir)
+    payload["positions"]["3"]["cs_curve"]["10"].update(mean=58.6, p75=66.0)
+    payload["positions"]["3"]["cs_curve"]["20"].update(mean=150.5, p75=174.0)
+    (mined_dir / "_mining_aggregates.json").write_text(json.dumps(payload), encoding="utf-8")
+    players = default_players()
+    offlaner = players[2]
+    offlaner.lh_t = [round(4.5 * m) for m in range(0, 40)]          # 45 at 10:00, 90 at 20:00
+    rows = {c.metric: c for c in pro_patterns.compare_player(offlaner, make_match(players), lang=lang,
+                                                             position=3).comparisons}
+    ten, twenty = rows["cs_10min"], rows["cs_20min"]
+    assert (ten.benchmark_avg, ten.benchmark_text, twenty.benchmark_text) == (58.6, "59", "150")
+    if lang == "en":
+        assert ten.description == "45 CS at 10 min, 14 below benchmark (59)"
+        assert twenty.description == "90 CS at 20 min, 60 below benchmark (150)"
+    else:
+        assert ten.description == "10分钟补刀45，低于基准59约14刀"
+    for row in (ten, twenty):
+        quoted = [int(n) for n in re.findall(r"\d+", row.description)]
+        assert int(row.benchmark_text) in quoted and abs(row.actual_value - int(row.benchmark_text)) in quoted
+
+
+def test_a_scoreboard_only_match_has_no_phase_reviews():
+    """OpenDota match 271145478 (never parsed): five phase cards, each "Kills / deaths (est.) 0/0",
+    for a hero that finished 17/2/6."""
+    players = default_players()
+    for p in players:
+        p.gold_t, p.xp_t, p.lh_t = [], [], []
+    players[1].kills, players[1].deaths, players[1].assists = 17, 2, 6
+    bare = make_match(players, duration=2625)
+    assert not phases.has_timed_data(bare, players[1]) and not phases.has_timed_data(bare, players[1], [])
+    assert coach._phase_stats_step(bare, players[1], [], "en") == []
+    report = _report(bare, players[1].player_slot)
+    assert report["phase_reviews"] == [] and report["overall_grade"]
+    # anything with a time brings the phases back: a series, a located death, a kill log
+    assert phases.has_timed_data(bare, players[1], [700])
+    players[1].gold_t = [400 * m for m in range(45)]
+    assert phases.has_timed_data(bare, players[1])
+    assert [s.phase for s in coach._phase_stats_step(bare, players[1], [], "en")] == [
+        "laning", "early_mid", "mid_late", "late", "ultra_late"]
+    assert len(_report(bare, players[1].player_slot)["phase_reviews"]) == 5
+
+
+@pytest.mark.parametrize("lang,note", [("en", "Note: this match was played on patch 6.78"), ("zh", "这场比赛的版本是6.78")])
+def test_a_match_of_another_era_is_rated_with_a_caveat(lang, note):
+    """Match 271145478 (2013, patch 6.78): "GPM 535 ... below the OpenDota median 644" with no word
+    that the median is the one of today's game."""
+    from backend.app.ai import data_manager
+
+    current = data_manager.get_current_patch()
+    major, minor = (int(part) for part in current.split("."))
+    players = default_players()
+    old = make_match(players, patch="6.78")
+    summary = pro_patterns.compare_player(players[1], old, lang=lang, position=2).summary
+    assert note in summary and current in summary
+    for near in (current, f"{major}.{minor - 2}", ""):          # the same game, or a version nobody knows
+        match = make_match(players, patch=near)
+        assert pro_patterns._era_note(match, lang) == ""
+        assert "6.78" not in pro_patterns.compare_player(players[1], match, lang=lang, position=2).summary
+    assert pro_patterns._era_note(make_match(players, patch=f"{major}.{minor - 3}"), lang)
+    assert pro_patterns._era_note(make_match(players, patch="event build"), lang) == ""

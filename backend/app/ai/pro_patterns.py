@@ -569,6 +569,33 @@ def _mode_note(game_mode: str | None, lang: str) -> str:
     return f"本场为{label}比赛：基准数据只适用于常规比赛，因此不做对比。"
 
 
+# A match this many minor versions away from the benchmarks' (or of another
+# major version: 6.78) was played in a different game: GPM, damage and last
+# hits of 2013 are not what they are now.
+_ERA_MINOR_VERSIONS = 3
+
+
+def _era_note(match: MatchData, lang: str) -> str:
+    """Sentence for a match from a much older (or newer) game version than
+    the one the benchmarks describe; "" when the versions are close or one
+    of them is unknown."""
+    try:
+        from . import data_manager
+        played = data_manager.patch_major(match.patch) or data_manager.patch_for_time(match.start_time)
+        current = data_manager.get_current_patch()
+        ours, theirs = (tuple(int(part) for part in version.split(".")[:2]) for version in (current, played))
+    except Exception:   # unknown or unusual version text: no claim
+        return ""
+    if len(ours) != 2 or len(theirs) != 2:
+        return ""
+    if ours[0] == theirs[0] and abs(ours[1] - theirs[1]) < _ERA_MINOR_VERSIONS:
+        return ""
+    if lang == "en":
+        return (f"Note: this match was played on patch {played}, the benchmarks describe patch {current}: "
+                f"read the ratings as a rough guide.")
+    return f"注意：这场比赛的版本是{played}，而基准数据描述的是{current}版本的对局，评价仅供参考。"
+
+
 def _partial_note(match: MatchData, compared: list[str], lang: str) -> str:
     """Sentence saying what of a replay that ends early is compared (*compared*: row labels)."""
     clock = _clock(max(0, match.duration))
@@ -1093,17 +1120,22 @@ def compare_player(
                 poor_cs = round(expected * 0.6, 1)
 
                 rating = _rate_higher_is_better(actual_cs, good_cs, avg_cs, poor_cs)
-                diff = actual_cs - avg_cs
+                # The sentence quotes the benchmark as the table shows it
+                # (``benchmark_text``) and the difference to that number:
+                # truncating here gave "117 below benchmark (202)" under a
+                # column that read 203.
+                shown = f"{avg_cs:.0f}"
+                diff = actual_cs - int(shown)
                 if en:
                     if diff >= 0:
-                        desc = f"{actual_cs} CS at {target_min} min, {int(diff)} above benchmark ({int(avg_cs)})"
+                        desc = f"{actual_cs} CS at {target_min} min, {diff} above benchmark ({shown})"
                     else:
-                        desc = f"{actual_cs} CS at {target_min} min, {int(abs(diff))} below benchmark ({int(avg_cs)})"
+                        desc = f"{actual_cs} CS at {target_min} min, {abs(diff)} below benchmark ({shown})"
                 else:
                     if diff >= 0:
-                        desc = f"{target_min}分钟补刀{actual_cs}，高于基准{int(avg_cs)}约{int(diff)}刀"
+                        desc = f"{target_min}分钟补刀{actual_cs}，高于基准{shown}约{diff}刀"
                     else:
-                        desc = f"{target_min}分钟补刀{actual_cs}，低于基准{int(avg_cs)}约{int(abs(diff))}刀"
+                        desc = f"{target_min}分钟补刀{actual_cs}，低于基准{shown}约{abs(diff)}刀"
 
                 report.comparisons.append(PatternComparison(
                     metric=f"cs_{target_min}min",
@@ -1115,7 +1147,7 @@ def compare_player(
                     rating=rating,
                     description=desc,
                     value_text=str(actual_cs),
-                    benchmark_text=f"{avg_cs:.0f}",
+                    benchmark_text=shown,
                 ))
 
     # ------------------------------------------------------------------
@@ -1384,6 +1416,9 @@ def compare_player(
         report.summary = _partial_note(match, [c.metric_label for c in report.comparisons], lang)
         return report
     _compute_summary(report, lang=lang)
+    era = _era_note(match, lang)
+    if era and report.comparisons:
+        report.summary = f"{report.summary} {era}" if lang == "en" else report.summary + era
 
     return report
 

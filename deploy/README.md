@@ -67,7 +67,7 @@ All settings are environment variables, read from `/opt/dota-analyzer/.env`
 | `RATE_LIMIT_FETCH` | `30/600` | Per-IP OpenDota fetches (cache hits are free) |
 | `RATE_LIMIT_REQUEST_PARSE` | `10/600` | Per-IP OpenDota parse requests |
 | `RATE_LIMIT_AI_COACH` | `10/3600` | Per-IP cold AI-coach generations while an LLM is configured (cached reports are free) |
-| `RATE_LIMIT_AI_COACH_RULES` | `120/3600` | The same for rule-based reports (no `DEEPSEEK_API_KEY`): they cost milliseconds, and one match has ten players in two languages |
+| `RATE_LIMIT_AI_COACH_RULES` | `200/600` | The same for rule-based reports (no `DEEPSEEK_API_KEY`): they cost milliseconds, and one match has ten players in two languages; the short window keeps the wait after a refusal to minutes |
 | `MAX_UPLOAD_MB` | `300` | Replay size limit (HTTP 413 beyond it), for the upload as sent and for what a compressed upload unpacks to |
 | `UPLOAD_MAX_CONCURRENCY` / `UPLOAD_MAX_PER_CLIENT` | `3` / `1` | Uploads received at once in total (503 beyond) and per client IP (429 beyond) |
 | `UPLOAD_RECEIVE_TIMEOUT_S` / `UPLOAD_IDLE_TIMEOUT_S` | `900` / `60` | Seconds a client has to send the whole upload, and seconds it may send nothing in between, before it is dropped (HTTP 400 `upload_timeout`; its upload slot is free again) |
