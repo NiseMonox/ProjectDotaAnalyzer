@@ -775,7 +775,10 @@ def test_block_entries_are_numbered_with_their_source(kb_env, lang, curated, pri
             "id": ref.chunk_id, "title": ref.title, "source_type": ref.source_type,
             "patch": ref.patch, "cited": True}
     matchup = next(ref for ref in text.refs if ref.chunk_id == "matchup:drow_ranger_vs_viper")
-    assert matchup.title.startswith("Drow Ranger") and "Viper" in matchup.title
+    # The title a report shows names the heroes in its language; the entry itself (the handle
+    # line and the text checked above) keeps the English names of the knowledge base.
+    assert matchup.title == ("Drow Ranger vs Viper — matchup note" if lang == "en" else "卓尔游侠对冥界亚龙 — 对位要点")
+    assert store.get(matchup.chunk_id).title.startswith("Drow Ranger")
     assert matchup.source_type == "editorial" and matchup.to_payload()["cited"] is False
     # Fixed sections are not entries: checklist before the first handle, facts after the last entry
     assert text.index("###") < text.index("[K1] ")

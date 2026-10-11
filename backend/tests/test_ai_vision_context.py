@@ -687,7 +687,8 @@ def test_laning_damage_is_summed_named_and_never_against_oneself():
     assert en == ["Juggernaut dealt 110 damage to Phantom Assassin (Attack)",
                   "Juggernaut took 80 damage from Phantom Assassin (Attack)"]
     zh = [e.description for e in context_builder._build_event_timeline(match, players[0], 120, None, lang="zh")]
-    assert zh[0] == "Juggernaut 对 Phantom Assassin 造成了 110 点伤害（普通攻击）"
+    assert zh == ["主宰 对 幻影刺客 造成了 110 点伤害（普通攻击）",      # hero names in the report language
+                  "主宰 受到了来自 幻影刺客 的 80 点伤害（普通攻击）"]
     assert all("dota_unknown" not in d and "soul_ring" not in d for d in en + zh)
 
 
@@ -777,8 +778,10 @@ def test_buyback_is_in_the_timeline_and_in_the_aftermath():
     assert (second.match_context["player_kills"], second.match_context["player_deaths"]) == (1, 1)
     assert second.match_context["has_assists"] is True
     assert [(e.time, e.event_type, e.description) for e in second.event_timeline] == [
-        (1688, "death", "Lion 击杀了 Puck"), (1690, "buyback", "Puck 买活"),
-        (1703, "kill", "Puck 击杀了 Lina（助攻：Juggernaut）"), (1705, "death", "Lina 击杀了 Puck")]
+        (1688, "death", "莱恩 击杀了 帕克"), (1690, "buyback", "帕克 买活"),
+        (1703, "kill", "帕克 击杀了 莉娜（助攻：主宰）"), (1705, "death", "莉娜 击杀了 帕克")]
+    # the data behind the text keeps the English names every lookup uses
+    assert second.event_timeline[0].details["killer"] == "Lion" and second.event_timeline[0].details["victim"] == "Puck"
 
 
 def test_match_without_position_logs_says_so_and_names_no_place_for_the_player():
@@ -924,7 +927,7 @@ def test_hidden_enemy_coming_within_reach_did_not_leave_vision_just_now():
         assert step.time == 855
         assert step.description == (
             "Phantom Assassin, Axe, already out of sight (for up to 45s), were now within 5000 units of the player"
-            if lang == "en" else "Phantom Assassin、Axe此前就不在己方视野内（最长已45秒），此时距玩家已不足5000码")
+            if lang == "en" else "幻影刺客、斧王此前就不在己方视野内（最长已45秒），此时距玩家已不足5000码")
         assert "moved out of" not in chain.formatted_text and "脱离己方视野" not in chain.formatted_text
     assert causal_chain._classify_root_type(step) == "ignore_missing"
     assert "slipped out of vision" not in causal_chain._root_summary(step, [step], death_of(1, 900), "ignore_missing", "en")
@@ -1298,7 +1301,7 @@ def test_denied_death_is_not_reported_as_an_enemy_kill():
     chain = _chain(match, death)
     assert chain.steps[-1].description == "Denied by ally Juggernaut at Radiant jungle (bottom side)"
     assert "Killer:" not in chain.formatted_text
-    assert _chain(match, death, "zh").steps[-1].description.startswith("被队友Juggernaut反补")
+    assert _chain(match, death, "zh").steps[-1].description.startswith("被队友主宰反补")
     ctx = context_builder.build_context(match, death_point(death), lang="en")
     assert ctx.enemy_states == []                       # nobody is moved next to the victim
     kills = [e.description for e in ctx.event_timeline if e.event_type in ("kill", "death")]

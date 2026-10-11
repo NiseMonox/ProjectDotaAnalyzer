@@ -222,6 +222,27 @@ _FORMAT_LABELS = {
 }
 
 
+def hero_text(hero_name: str, lang: str) -> str:
+    """A hero's name as text of language ``lang`` (the tables are keyed by the English name)."""
+    if lang == "en" or not hero_name:
+        return hero_name
+    return data_manager.hero_display_name(hero_name, lang) or hero_name
+
+
+def ability_text(hero_name: str, ability_name: str, lang: str) -> str:
+    """An ability's name (a key of the hero's ability table) as text of language ``lang``."""
+    if lang == "en" or not ability_name:
+        return ability_name
+    return data_manager.ability_display_name(ability_name, lang, hero=hero_name) or ability_name
+
+
+def item_text(item_name: str, lang: str) -> str:
+    """An item's name (a key of the item table) as text of language ``lang``."""
+    if lang == "en" or not item_name:
+        return item_name
+    return data_manager.item_display_name(item_name, lang) or item_name
+
+
 def _num(value: Any) -> str:
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
@@ -265,14 +286,17 @@ def format_ability_at_level(
 
     ``level`` is 1-based; ``None`` (or <1) shows the values for every level
     ("CD 14/12/10/8s"), which suits enemy abilities whose level is unknown.
+    The name is written in ``lang`` (:func:`ability_text`); an ability
+    without data gives just that name.
     """
     data = get_ability_data(hero_name, ability_name)
+    shown = ability_text(hero_name, ability_name, lang)
     if not data:
-        return f"{ability_name}"
+        return shown
     if level is not None and level < 1:
         level = None
     lbl = _FORMAT_LABELS.get(lang, _FORMAT_LABELS["zh"])
-    head = f"{ability_name} (Lv{level})" if level is not None else ability_name
+    head = f"{shown} (Lv{level})" if level is not None else shown
     parts: list[str] = []
     cd = _level_value(data.get("cooldown"), level)
     if cd and cd not in ("0",):
@@ -325,14 +349,14 @@ def format_hero_abilities(
             lines = [f"### {hero_name} Available Skills (not yet skilled)",
                      "Note: The hero can choose to skill any ability at any time. Below are level 1 effects for each skill."]
         else:
-            lines = [f"### {hero_name} 可选技能（尚未加点）",
+            lines = [f"### {hero_text(hero_name, lang)} 可选技能（尚未加点）",
                      "注意：英雄在任何时刻可以选择技能加点，以下是1级各技能效果。"]
         for ability_name, data in abilities.items():
             if not is_learnable(data):
                 continue
             if data.get("is_ultimate"):
                 tag = "(requires level 6)" if lang == "en" else "(需要6级)"
-                lines.append(f"- {ability_name}: {tag}")
+                lines.append(f"- {ability_text(hero_name, ability_name, lang)}: {tag}")
             else:
                 tag = "(selectable)" if lang == "en" else "(可选)"
                 lines.append(f"- {tag} {format_ability_at_level(hero_name, ability_name, 1, lang=lang)}")
@@ -354,7 +378,7 @@ def format_hero_abilities(
         lines = [f"### {hero_name} Ability Details"]
         not_learned_label = "Not learned"
     else:
-        lines = [f"### {hero_name} 技能详情"]
+        lines = [f"### {hero_text(hero_name, lang)} 技能详情"]
         not_learned_label = "未学习"
     not_learned: list[str] = []
     for ability_name, data in abilities.items():
@@ -368,7 +392,7 @@ def format_hero_abilities(
             not_learned.append(ability_name)
     if not_learned:
         sep = ", " if lang == "en" else "、"
-        lines.append(f"- {not_learned_label}: {sep.join(not_learned)}")
+        lines.append(f"- {not_learned_label}: {sep.join(ability_text(hero_name, name, lang) for name in not_learned)}")
     return "\n".join(lines)
 
 
@@ -413,7 +437,8 @@ def format_player_items(items: list[str], lang: str = "zh") -> str:
         if lang == "en":
             head = f"{name} (Active, CD {cd_text}s)" if cd_text else f"{name} (Active)"
         else:
-            head = f"{name}（主动, CD {cd_text}秒）" if cd_text else f"{name}（主动）"
+            shown = item_text(name, lang)
+            head = f"{shown}（主动, CD {cd_text}秒）" if cd_text else f"{shown}（主动）"
         lines.append(f"- {head}: {desc}" if desc else f"- {head}")
         if tip:
             lines.append(tip)
@@ -423,7 +448,7 @@ def format_player_items(items: list[str], lang: str = "zh") -> str:
         if lang == "en":
             lines.append(f"- Other items: {', '.join(shown)}")
         else:
-            lines.append(f"- 其他装备: {'、'.join(shown)}")
+            lines.append(f"- 其他装备: {'、'.join(item_text(name, lang) for name in shown)}")
     return "\n".join(lines)
 
 
@@ -453,6 +478,9 @@ __all__ = [
     "get_hero_ultimate",
     "get_signature_ability",
     "is_learnable",
+    "hero_text",
+    "ability_text",
+    "item_text",
     "format_ability_at_level",
     "format_hero_abilities",
     "format_player_items",

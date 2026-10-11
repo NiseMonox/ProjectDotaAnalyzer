@@ -44,6 +44,7 @@ from .models import (
     normalize_grade,
     sources_payload,
 )
+from .positions import position_payload
 
 try:
     from .agent import AgentUnsupportedError, is_agent_enabled, run_decision_agent
@@ -139,7 +140,7 @@ def _find_player(match: MatchData, player_slot: int) -> PlayerData | None:
 # 4 jungle/roaming. OpenDota's "jungle" is essentially extinct in modern Dota
 # (~95% are roaming supports), so it is labelled as roaming.
 _LANE_NAMES: dict[str, dict[int, str]] = {
-    "zh": {1: "安全路", 2: "中路", 3: "劣势路", 4: "游走"},
+    "zh": {1: "优势路", 2: "中路", 3: "劣势路", 4: "游走"},
     "en": {1: "Safe Lane", 2: "Mid Lane", 3: "Off Lane", 4: "Roaming"},
 }
 
@@ -176,7 +177,7 @@ _IMPROVEMENT_SUGGESTIONS: dict[str, dict[str, str]] = {
         "laning_cs": "练习补刀，特别是塔下补刀。",
         "teamfight": "注意开团时机和站位。优先集火关键目标，注意保护己方核心。",
         "resources": "提高打野效率，减少游走等待时间。确保每分钟都有金币收入。",
-        "vision": "养成买眼插眼的习惯，特别是团战前和烟雾时。",
+        "vision": "养成买眼插眼的习惯，特别是团战前和开雾时。",
     },
     "en": {
         "map_awareness": "Check the minimap more frequently — aim for every 5 seconds. Watch for missing enemy heroes.",
@@ -1154,17 +1155,7 @@ async def generate_coaching_report(
     positions_map = await asyncio.to_thread(_derive_positions, match)
     my_pos = positions_map.get(player_slot)
     position_number = my_pos.number if my_pos is not None and my_pos.number else None
-    position_payload: dict = {}
-    position_label_text = _POSITION_FALLBACK_LABEL[lang]
-    if my_pos is not None and my_pos.number:
-        position_label_text = my_pos.label(lang)
-        position_payload = {
-            "number": my_pos.number,
-            "label_zh": my_pos.label_zh,
-            "label_en": my_pos.label_en,
-            "confidence": my_pos.confidence,
-            "method": my_pos.method,
-        }
+    position_label_text = my_pos.label(lang) if position_number else _POSITION_FALLBACK_LABEL[lang]
 
     # Step 1: decision points.
     await _emit("detect", 0, 1)
@@ -1296,10 +1287,11 @@ async def generate_coaching_report(
         strengths=strengths,
         pro_comparison=pro_comparison_data,
         phase_reviews=final_phases,
-        position=position_payload,
+        position=position_payload(my_pos),
         llm_used=llm_used,
         degraded=degraded,
         knowledge=knowledge_info,
+        lang=lang,
         report_version=REPORT_SCHEMA_VERSION,
     )
     logger.info(

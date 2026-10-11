@@ -427,12 +427,12 @@ def _build_general_coaching_chunks(lang: str = "zh") -> list[KnowledgeChunk]:
         chunks.append(KnowledgeChunk(
             chunk_id="coaching:smoke_gank",
             content=render_rules(
-                "## 烟雾Gank原则\n"
-                "- 烟雾使友方单位隐身且不会被守卫发现，靠近敌方英雄或建筑{smoke_break_radius}距离时自动消散\n"
+                "## 开雾Gank原则\n"
+                "- 诡计之雾使友方单位隐身且不会被守卫发现，靠近敌方英雄或建筑{smoke_break_radius}距离时自动消散\n"
                 "- 最佳开雾时机：打完一波兵线后、刚做好关键眼位后、对方核心位置被发现时\n"
                 "- 开雾人数建议3-4人，太多会让其他路暴露且浪费刷钱时间\n"
                 "- 开雾路线避开敌方可能的岗哨守卫位置\n"
-                "- 成功的烟雾gank可以转化为推塔或Roshan，不要只是杀人后回家"
+                "- 成功的开雾gank可以转化为推塔或Roshan，不要只是杀人后回家"
             ),
             tags=["mechanic:smoke", "mechanic:gank", "phase:mid_game"],
             priority=2,

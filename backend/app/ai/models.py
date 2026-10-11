@@ -14,7 +14,10 @@ from dataclasses import dataclass, field
 # puts it into the disk-cache file name so stale reports are never served.
 # 4: evaluations carry ``sources`` (knowledge entries behind a verdict) and the
 # report a ``knowledge`` object (how those entries were retrieved).
-REPORT_SCHEMA_VERSION: int = 4
+# 5: the report carries ``lang``; hero, item and ability names in its text
+# follow that language (Chinese names in a zh report); a field with nothing
+# to say is empty (no "None" / "Keep it up", no analysis repeating the brief).
+REPORT_SCHEMA_VERSION: int = 5
 
 VALID_GRADES: tuple[str, ...] = ("S", "A", "B", "C", "D")
 
@@ -467,6 +470,7 @@ class CoachingReport:
     # How the knowledge entries of this report were retrieved:
     # {mode: "hybrid" | "lexical", embedder: str | None, chunks: int, vectors: int}.
     knowledge: dict = field(default_factory=dict)
+    lang: str = "zh"         # the language the report was written in ("zh" | "en")
     report_version: int = REPORT_SCHEMA_VERSION
 
     def to_dict(self) -> dict:
@@ -508,5 +512,6 @@ class CoachingReport:
             "llm_used": bool(self.llm_used),
             "degraded": bool(self.degraded),
             "knowledge": _json_safe(self.knowledge),
+            "lang": "en" if self.lang == "en" else "zh",
             "report_version": int(self.report_version),
         }

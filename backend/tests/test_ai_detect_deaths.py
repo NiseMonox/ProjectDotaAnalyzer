@@ -91,12 +91,12 @@ def test_deaths_come_from_the_kill_log_with_real_killer_position_and_assists():
     # A unit is written as in the analysis ("was killed by a tower"), not as a label.
     assert briefs == ["Laning phase: killed by Lina (overextended)", "Killed by a tower"]
     zh = [d.brief for d in _points(match, 1, "zh", "death")]
-    assert zh == ["对线期被Lina击杀（位置过深）", "被防御塔击杀"]
+    assert zh == ["对线期被莉娜击杀（位置过深）", "被防御塔击杀"]   # hero names follow the report language
 
 
 @pytest.mark.parametrize("unit, en, zh", [
     ("npc_dota_neutral_kobold", "Killed by a neutral creep before the creeps met", "兵线接触前被野怪击杀"),
-    ("", "Killed by Lina before the creeps met", "兵线接触前被Lina击杀"),
+    ("", "Killed by Lina before the creeps met", "兵线接触前被莉娜击杀"),
 ])
 def test_death_before_the_creeps_meet_is_not_called_a_rune_contest(unit, en, zh):
     """The data has no rune information: "Killed by X during the bounty rune contest"."""
@@ -384,7 +384,7 @@ def test_teamfight_death_is_one_decision_point_with_a_factual_note():
     assert [d.point_type for d in in_fight] == ["death"]         # no fight_engage for the same moment
     assert in_fight[0].brief == "Killed by Lina in a teamfight (dealt only 120 hero damage in the fight)"
     zh = _points(match, 1, "zh", "death")[0].brief
-    assert zh == "团战中被Lina击杀（本次团战仅造成120点英雄伤害）"
+    assert zh == "团战中被莉娜击杀（本次团战仅造成120点英雄伤害）"
     # A real contribution: nothing to remark.
     plain = _points(_lost_fight_match(position_log=[], damage=900), 1, "en", "death")[0].brief
     assert plain == "Killed by Lina in a teamfight"
@@ -395,7 +395,7 @@ def test_killed_at_the_start_of_a_lost_fight_only_when_the_data_shows_it():
     brief = _points(_lost_fight_match(position_log=healthy), 1, "en", "death")[0].brief
     assert brief == "Killed by Lina in a teamfight (first to die in a lost fight, from 88% HP within seconds)"
     zh = _points(_lost_fight_match(position_log=healthy), 1, "zh", "death")[0].brief
-    assert zh == "团战中被Lina击杀（在这场输掉的团战中最先阵亡，数秒内从88%血量被击杀）"
+    assert zh == "团战中被莉娜击杀（在这场输掉的团战中最先阵亡，数秒内从88%血量被击杀）"
 
     worn_down = [[1205, 500, 500, 60], [1210, 500, 500, 35], [1215, 500, 500, 0]]
     assert "first to die" not in _points(_lost_fight_match(position_log=worn_down), 1, "en", "death")[0].brief
@@ -456,6 +456,23 @@ def test_announcement_counters_alone_give_finished_sequences_without_a_time():
     jugg.multi_kills = {"2": 1, "3": 1, "4": 1}
     assert sorted(d.brief for d in _points(make_match(players), 0, "en", "good_play")) == [
         "Achieved an Ultra Kill", "Achieved an Unstoppable streak (6 kills without dying)"]
+
+
+def test_chinese_briefs_use_the_announcements_of_the_game():
+    """The coach wrote 四杀 / 五杀（Rampage） and 超神 where the game announces (and the Combat tab of
+    the same match shows) 疯狂杀戮 / 暴走 and 超越神的杀戮."""
+    players = default_players()
+    jugg = players[0]
+    for multi, streaks, briefs in (
+            ({"2": 1}, {"3": 1}, ["完成双杀", "达成大杀特杀（连续3次击杀未阵亡）"]),
+            ({"2": 1, "3": 1}, {}, ["完成三杀"]),
+            ({"2": 1, "3": 1, "4": 1}, {str(n): 1 for n in range(3, 10)}, ["完成疯狂杀戮", "达成如同神一般（连续9次击杀未阵亡）"]),
+            ({"2": 1, "3": 1, "4": 1, "5": 1}, {str(n): 1 for n in range(3, 12)},
+             ["完成暴走", "达成超越神的杀戮（连续11次击杀未阵亡）"])):
+        jugg.multi_kills, jugg.kill_streaks = multi, streaks
+        points = _points(make_match(players), 0, "zh", "good_play")
+        assert sorted(d.brief for d in points) == sorted(briefs)
+        assert {d.subtype for d in points} <= {"multi_kill", "kill_streak"}
 
 
 def test_kill_log_dates_the_sequences_when_it_agrees_with_the_counters():

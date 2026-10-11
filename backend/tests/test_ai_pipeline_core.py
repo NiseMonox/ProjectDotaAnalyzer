@@ -167,7 +167,9 @@ def test_learned_overlay_rates_a_player_against_his_side_of_the_team(monkeypatch
         assert pro_patterns._population_ref(bench, "Techies", "x", lang) == text
     assert pro_patterns._population_ref(core, "Techies", "x", "zh") == "Techies打1/2/3号位时在OpenDota全分段中位数499"
     context = pro_patterns.get_benchmark_context("Techies", "support_5", 900, lang="zh")
-    assert "- Techies打4/5号位时在OpenDota全分段的GPM中位数（非职业数据）: 392" in context
+    assert "- 工程师打4/5号位时在OpenDota全分段的GPM中位数（非职业数据）: 392" in context
+    assert "- Techies as a support (positions 4-5): median GPM on OpenDota (all ranks, not pro): 392" in (
+        pro_patterns.get_benchmark_context("Techies", "support_5", 900, lang="en"))
 
     # A file of an earlier run has the mixed percentiles only: the role table is used, not the mix
     del learned["techies"]["roles"]
@@ -493,8 +495,8 @@ def test_rules_report_contract_fields():
     ])
     report = _rules_report(match, 1, "zh")
     data = report.to_dict()
-    assert coach.REPORT_SCHEMA_VERSION == REPORT_SCHEMA_VERSION == 4
-    assert data["report_version"] == 4
+    assert coach.REPORT_SCHEMA_VERSION == REPORT_SCHEMA_VERSION == 5
+    assert data["report_version"] == 5 and data["lang"] == "zh"      # schema 5: the language it was written in
     assert data["llm_used"] is False and data["degraded"] is False
     # Schema 4: how the knowledge sources of the report were retrieved.
     assert set(data["knowledge"]) == {"mode", "embedder", "chunks", "vectors"}

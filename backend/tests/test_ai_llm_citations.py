@@ -292,8 +292,8 @@ _ADVERSARIAL = {
            "Hold the wave under the tower until the missing hero shows on the minimap.",
            "A missing initiator is a reason to play one screen further back."),
     "zh": ("评分: C\n分析: {a}\n错误: {m}\n更好的做法: {b}\n教训: {l}{tail}",
-           "Puck 在下路河道继续前压时 Lina 不在视野内，随后被 Phantom Assassin 先手击杀。",
-           "不知道 Lina 位置的情况下越过了河道眼位。",
+           "帕克在下路河道继续前压时莉娜不在视野内，随后被幻影刺客先手击杀。",
+           "不知道莉娜位置的情况下越过了河道眼位。",
            "在敌方先手英雄露头之前，把兵线控在塔下。",
            "敌方先手英雄消失时，站位应当后撤一屏。"),
 }
@@ -698,7 +698,7 @@ def test_report_lists_sources_for_every_evaluation(monkeypatch, knowledge_env):
     report = asyncio.run(coach.generate_coaching_report(_report_match(), 1, lang="en"))
     data = report.to_dict()
     json.dumps(data, allow_nan=False)
-    assert data["report_version"] == 4 and set(data["knowledge"]) == {"mode", "embedder", "chunks", "vectors"}
+    assert data["report_version"] == 5 and set(data["knowledge"]) == {"mode", "embedder", "chunks", "vectors"}
     deaths, moments = data["death_analyses"], data["key_moments"]
     assert len(deaths) == 2 and all(d["llm_used"] for d in deaths) and moments
     for d in deaths:      # LLM verdicts: cited entries first, then the best of the rest, four at most
@@ -810,9 +810,9 @@ def test_no_game_to_review_is_refused():
         with pytest.raises(coach.NoGameError):
             asyncio.run(coach.generate_coaching_report(match, 1, lang="en"))
     match.duration = 600                       # truncated later: there is a game to review
-    assert asyncio.run(coach.generate_coaching_report(match, 1, lang="en")).to_dict()["report_version"] == 4
+    assert asyncio.run(coach.generate_coaching_report(match, 1, lang="en")).to_dict()["report_version"] == 5
     match.partial, match.duration = False, 133  # a complete match is never refused for its length
-    assert asyncio.run(coach.generate_coaching_report(match, 1, lang="en")).to_dict()["report_version"] == 4
+    assert asyncio.run(coach.generate_coaching_report(match, 1, lang="en")).to_dict()["report_version"] == 5
 
 
 def test_knowledge_object_describes_the_retrieval_of_this_report(monkeypatch):

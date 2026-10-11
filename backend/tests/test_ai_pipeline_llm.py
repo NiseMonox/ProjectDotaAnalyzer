@@ -342,7 +342,7 @@ def test_full_report_with_llm_sets_contract_flags(monkeypatch):
                                                         progress_callback=on_progress))
     data = report.to_dict()
     assert data["llm_used"] is True and data["degraded"] is False
-    assert data["report_version"] == REPORT_SCHEMA_VERSION == 4
+    assert data["report_version"] == REPORT_SCHEMA_VERSION == 5 and data["lang"] == "en"
     assert set(data["knowledge"]) == {"mode", "embedder", "chunks", "vectors"}
     assert all(isinstance(e["sources"], list) for e in data["death_analyses"] + data["key_moments"])
     assert any(d["llm_used"] for d in data["death_analyses"])

@@ -83,7 +83,9 @@ def test_missing_counts_cover_fog_only_and_unknown_is_listed_apart():
     assert "no position for 1 enemy hero(es)" in text
     assert not CJK_RE.search(text)
     zh = vision.analyze_vision(_four_state_match(), 0, 700, SPOT, lang="zh").formatted_text
-    assert "- Axe: 无位置数据（不计入消失）" in zh and "- Lion: 阵亡" in zh
+    assert "- 斧王: 无位置数据（不计入消失）" in zh and "- 莱恩: 阵亡" in zh
+    assert "- 莉娜: 在迷雾中已超过120秒" in zh
+    assert not any(name in zh for name in ("Axe", "Lion", "Lina", "Phantom Assassin"))
 
 
 def test_only_fog_enemies_within_reach_raise_the_danger():
@@ -317,7 +319,7 @@ def test_failed_to_retreat_is_only_said_about_a_death():
     assert "did not retreat" not in other
     assert "Still in the fog at this moment: Phantom Assassin, Lina." in other
     zh = vision.analyze_vision(match, 0, 700, SPOT, lang="zh").formatted_text
-    assert "未及时撤退" not in zh and "此刻仍在迷雾中的敌方英雄：Phantom Assassin、Lina" in zh
+    assert "未及时撤退" not in zh and "此刻仍在迷雾中的敌方英雄：幻影刺客、莉娜" in zh
 
 
 def test_enemy_leaving_vision_is_an_event_but_dying_is_not():

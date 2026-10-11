@@ -27,9 +27,12 @@ Every position 1-5 is assigned at most once per team.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from ..models import MatchData, PlayerData
+
+logger = logging.getLogger(__name__)
 
 # Position labels — single source of truth.
 _POSITION_LABELS_ZH = {
@@ -244,6 +247,44 @@ def derive_match_positions(players: list[PlayerData]) -> dict[int, Position]:
 def player_position(match: MatchData, player_slot: int) -> Position | None:
     """Derived position of one player of ``match`` (None when not found)."""
     return derive_match_positions(match.players).get(player_slot)
+
+
+def position_payload(position: Position | None) -> dict:
+    """The JSON form of a derived position ({} when there is none).
+
+    ``{number, label_zh, label_en, confidence, method}`` — what the coach
+    report carries in ``position`` and what the match payload shows per player.
+    """
+    if position is None or not position.number:
+        return {}
+    return {
+        "number": position.number,
+        "label_zh": position.label_zh,
+        "label_en": position.label_en,
+        "confidence": position.confidence,
+        "method": position.method,
+    }
+
+
+def match_positions_payload(match: MatchData | list[PlayerData]) -> dict[int, dict]:
+    """Every player's derived position for a match, as plain dicts. Never raises.
+
+    ``{player_slot: {number, label_zh, label_en, confidence, method}}`` — the
+    same result the coach report shows for the player. A player whose
+    position could not be derived is absent; any failure gives ``{}``.
+    Accepts the match or its list of players.
+    """
+    try:
+        players = match if isinstance(match, list) else match.players
+        derived = derive_match_positions(list(players or []))
+        return {
+            slot: payload
+            for slot, payload in ((slot, position_payload(pos)) for slot, pos in derived.items())
+            if payload
+        }
+    except Exception as exc:
+        logger.warning("Position derivation failed: %s", exc)
+        return {}
 
 
 def position_number_label(number: object, lang: str = "zh") -> str:

@@ -341,15 +341,15 @@ _TEXT: dict[str, dict[str, str]] = {
         "seconds_over": "超过{s}秒",
         "r_far_tower": "距离最近友方防御塔约{d}码",
         "r_mod_tower": "与友方防御塔距离较远（约{d}码）",
-        "r_no_ward": "当前区域没有观察守卫覆盖",
+        "r_no_ward": "当前区域没有侦察守卫覆盖",
         "r_no_allies": "附近没有友方英雄支援",
         "r_night": "夜间视野缩小，更容易被突袭",
         # timeline
         "ev_night": "进入夜间，所有单位视野缩小",
         "ev_day": "进入白天，视野恢复正常",
-        "ev_ward_destroyed": "{area}的观察守卫被摧毁，视野丢失",
-        "ev_ward_expired": "{area}的观察守卫到期，视野丢失",
-        "ev_ward_placed": "在{area}放置了观察守卫",
+        "ev_ward_destroyed": "{area}的侦察守卫被摧毁，视野丢失",
+        "ev_ward_expired": "{area}的侦察守卫到期，视野丢失",
+        "ev_ward_placed": "在{area}放置了侦察守卫",
         "ev_enemy_missing": "{hero}离开己方视野（最后出现在{area}）",
         "ev_enemy_seen": "{hero}出现在{area}",
         "ev_many_missing": "{n}名敌方英雄藏在附近迷雾中超过10秒，形势危险",
@@ -357,13 +357,13 @@ _TEXT: dict[str, dict[str, str]] = {
         "ev_entered_fog": "玩家离开守卫和防御塔的保护范围，进入{area}",
         "ev_group_move": "玩家与{n}名队友一起离开守卫和防御塔的保护范围，进入{area}",
         "crit_night": "夜间开始，视野缩小增加被gank风险",
-        "crit_ward_destroyed": "{area}观察守卫被摧毁后未补放新眼，失去该区域敌方动向",
-        "crit_ward_expired": "{area}观察守卫到期后未补放新眼，失去该区域敌方动向",
+        "crit_ward_destroyed": "{area}侦察守卫被摧毁后未补放新眼，失去该区域敌方动向",
+        "crit_ward_expired": "{area}侦察守卫到期后未补放新眼，失去该区域敌方动向",
         "crit_many_missing": "{n}名敌方英雄同时藏在附近迷雾中超过10秒，形势危险",
         "crit_tower_lost": "友方{tower}被摧毁，失去重要固定视野",
         "crit_entered_fog": "附近有多名敌方英雄藏在迷雾中时，玩家离开了守卫和防御塔的保护范围（{area}）",
         "sum_none": "此时间段内没有显著视野变化。",
-        "sum_ward": "{n}次视野丢失（观察守卫）",
+        "sum_ward": "{n}次视野丢失（侦察守卫）",
         "sum_tower": "{n}座防御塔被摧毁",
         "sum_enemy": "{n}次敌方英雄消失事件",
         "sum_prefix": "过去60秒内发生：{parts}。",
@@ -372,7 +372,7 @@ _TEXT: dict[str, dict[str, str]] = {
         # formatted text
         "h_vision": "## 视野分析",
         "cur_time": "当前时间: {t} ({dn})",
-        "obs_count": "己方活跃观察守卫: {n}个",
+        "obs_count": "己方活跃侦察守卫: {n}个",
         "danger": "来自迷雾中敌人的威胁（推算）: {lvl}",
         "danger_unknown": "来自迷雾中敌人的威胁（推算）: 无法判断（{n}名敌方英雄没有位置数据）",
         "player_pos": "玩家位置: {area}",
@@ -1553,6 +1553,15 @@ def _team_sources(match: MatchData, team: str, time_s: int) -> list[tuple[float,
     return sources
 
 
+def _hero(name: str, lang: str) -> str:
+    """A hero's name as text of language ``lang`` (the data keeps the English name)."""
+    try:
+        from . import data_manager
+        return data_manager.hero_display_name(name, lang) or name
+    except Exception:  # pragma: no cover - the helper never raises
+        return name
+
+
 def _hero_vision(hero_name: str) -> tuple[int, int]:
     """(day, night) vision of a hero from the game data (default 1800 / 800)."""
     try:
@@ -2014,7 +2023,7 @@ def _assess_danger(
     elif missing_count == 2:
         reasons.append(t["r_missing_two"].format(s=unseen, r=THREAT_RADIUS))
     elif missing_count == 1 and longest_missing > 30:
-        reasons.append(t["r_missing_one"].format(hero=missing[0].hero_name, s=unseen, r=THREAT_RADIUS))
+        reasons.append(t["r_missing_one"].format(hero=_hero(missing[0].hero_name, lang), s=unseen, r=THREAT_RADIUS))
 
     min_tower_dist = nearest_tower_distance(match, team, player_pos[0], player_pos[1], time_s)
     in_base = in_own_base(team, player_pos[0], player_pos[1])
@@ -2300,13 +2309,13 @@ def _build_vision_timeline(
                 area = describe_area(info.last_seen_x, info.last_seen_y, lang)
                 events.append(VisionEvent(
                     time=t, event_type="enemy_missing",
-                    description=tx["ev_enemy_missing"].format(hero=info.hero_name, area=area),
+                    description=tx["ev_enemy_missing"].format(hero=_hero(info.hero_name, lang), area=area),
                 ))
             elif before == "fog" and info.state == "visible":
                 area = describe_area(info.last_seen_x, info.last_seen_y, lang)
                 events.append(VisionEvent(
                     time=t, event_type="enemy_seen",
-                    description=tx["ev_enemy_seen"].format(hero=info.hero_name, area=area),
+                    description=tx["ev_enemy_seen"].format(hero=_hero(info.hero_name, lang), area=area),
                 ))
 
         long_missing = [e for e in threats if e.seconds_missing > 10]
@@ -2405,22 +2414,23 @@ def _visibility_line(
 ) -> str:
     """One line of the enemy visibility list."""
     tx = _tx(lang)
+    hero = _hero(ev.hero_name, lang)
     seen_known = has_position((ev.last_seen_x, ev.last_seen_y))
     if ev.state == "dead":
-        return tx["vis_dead"].format(hero=ev.hero_name)
+        return tx["vis_dead"].format(hero=hero)
     if ev.state == "visible" or (ev.state not in ("fog", "unknown") and ev.is_visible):
         if not seen_known:
-            return tx["vis_visible_fight"].format(hero=ev.hero_name)
+            return tx["vis_visible_fight"].format(hero=hero)
         return tx["vis_visible"].format(
-            hero=ev.hero_name, area=describe_area(ev.last_seen_x, ev.last_seen_y, lang))
+            hero=hero, area=describe_area(ev.last_seen_x, ev.last_seen_y, lang))
     seen = ""
     if seen_known and ev.last_seen_source not in ("", "unknown"):
         seen = tx["vis_seen"].format(
             area=describe_area(ev.last_seen_x, ev.last_seen_y, lang),
             t=_format_game_time(ev.last_seen_time))
     if ev.state == "unknown":
-        return tx["vis_unknown"].format(hero=ev.hero_name) + seen
-    line = tx["vis_fog"].format(hero=ev.hero_name, s=_fog_seconds(ev.seconds_missing, lang)) + seen
+        return tx["vis_unknown"].format(hero=hero) + seen
+    line = tx["vis_fog"].format(hero=hero, s=_fog_seconds(ev.seconds_missing, lang)) + seen
     if is_smoked(match, ev.player_slot, time_s):
         line += tx["vis_smoked"]
     # The replay knows where the hidden hero really was: say so, it tells
@@ -2509,7 +2519,7 @@ def _format_vision_text(
         # The enemies that mattered: hidden within reach of the player.
         in_fog = fog_threats(match, state.enemy_visibility, player_pos, time_s)
         if in_fog:
-            heroes = tx["name_sep"].join(e.hero_name for e in in_fog[:3])
+            heroes = tx["name_sep"].join(_hero(e.hero_name, lang) for e in in_fog[:3])
             suffix = (tx["crit_suffix"].format(n=len(in_fog), extra=len(in_fog) - 3)
                       if len(in_fog) > 3 else "")
             lines.append(tx["crit_after" if died else "crit_still"].format(heroes=heroes, suffix=suffix))

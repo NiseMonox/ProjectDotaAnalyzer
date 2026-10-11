@@ -79,6 +79,9 @@ _TOOL_OUTPUT_LIMIT = 6000      # chars per tool result
 # knowledge_base.SEARCH_MAX_CHARS; both cut between entries. Cutting again
 # here would lose the block's tail or leave half an entry under its handle.
 _UNCAPPED_TOOLS = frozenset({"retrieve_coaching_knowledge"})
+# Tools whose result is reference material, partly written in English: a zh
+# run gets the Chinese names of what it mentions appended (evaluator.names_glossary).
+_REFERENCE_TOOLS = frozenset({"retrieve_coaching_knowledge", "get_hero_matchup"})
 # Arguments that turn retrieve_coaching_knowledge into a free-text search.
 _SEARCH_ARGS = ("query", "heroes", "items", "topic")
 _SEARCH_TOPICS = ("matchup", "laning", "teamfight", "vision", "items", "farming", "objectives", "general")
@@ -166,6 +169,11 @@ def _player_of(tc: _ToolCtx):
         slot = tc.context.decision_point.player_slot
         tc._player = next((p for p in tc.match.players if p.player_slot == slot), None)
     return tc._player
+
+
+def _match_heroes(tc: _ToolCtx) -> list[str]:
+    """English names of the ten heroes of the match (the keys of every hero lookup)."""
+    return [p.hero_name for p in tc.match.players if p.hero_name]
 
 
 def _no_data(lang: str) -> str:
@@ -324,7 +332,7 @@ def _knowledge_search(tc: _ToolCtx, args: dict, limit: int) -> str:
         heroes=_names(args.get("heroes")), items=_names(args.get("items")),
         topic=topic if topic in _SEARCH_TOPICS else "", top_k=top_k,
         # Every hero of the match, not only the ones near the player.
-        match_heroes=[p.hero_name for p in tc.match.players],
+        match_heroes=_match_heroes(tc),
         first_ref=tc.next_ref, shown=dict(tc.shown),
     )
     found = list(getattr(result, "refs", None) or ())
@@ -409,14 +417,14 @@ _TOOL_DESCRIPTIONS = {
             "教练知识库中的参考资料。不带参数：返回已为这个决策点挑选好的条目（英雄、对位、局面），通常先调用这一种。"
             "带 query：用你自己的问题做一次定向检索，只有在已挑选的条目没有覆盖你需要的内容时才值得调用"
             "（例如某个敌方英雄的技能、某件装备、某个机制）；query 请用英文书写，每次只问一个主题，"
-            "英雄和物品名称照抄简报中的写法。每个决策点最多检索{limit}次。"
+            "英雄名用简报“各英雄本场位置”括号里的英文名。每个决策点最多检索{limit}次。"
             "条目以 [K1]、[K2]… 编号，这些编号只是代号：实际用到的条目可以填进 submit_evaluation 的 references。"
         ),
         "retrieve_coaching_knowledge_plain": "从教练知识库取回为当前英雄/对局/局面挑选好的参考条目。",
         "get_hero_matchup": "获取本方英雄针对指定敌方英雄的对线/对位建议。",
         "get_pro_benchmarks": "获取该英雄/位置在当前时间点的基准数据（补刀/GPM/伤害/死亡数等）。",
         "submit_evaluation": "提交对该决策点的最终评价（会直接展示给玩家）。完成调查后必须调用本工具来结束，所有字段都要填写针对这个决策的真实内容。",
-        "p_opponent": "敌方英雄名称（与上下文中显示的英雄名一致）。",
+        "p_opponent": "敌方英雄名称（简报中的中文名或括号里的英文名均可）。",
         "p_score": "评分：S=完美, A=很好, B=合理但有改进空间, C=较差有明显错误, D=严重失误。",
         "p_analysis": "写给玩家看的详细分析（至少两句话，用中文）：这个时间点发生了什么，这个决策好在哪里或错在哪里。不要出现工具名称或内部标签。",
         "p_mistake": "如果有错误，具体指出错在哪；操作正确则填\"无\"。",
@@ -424,8 +432,8 @@ _TOOL_DESCRIPTIONS = {
         "p_lesson": "可以从该决策中提炼的一般性教训。",
         "p_references": "可选。你的评价实际用到的知识条目编号（如 \"K2\"），只能填工具返回给你的编号；没有用到就留空或不填。不要把编号写进其他字段。",
         "p_query": "用英文写的检索问题（不超过300个字符），每次只问一个主题。",
-        "p_heroes": "只检索与这些英雄有关的条目（最多3个，必须是本场比赛中的英雄）。",
-        "p_items": "只检索与这些物品有关的条目（最多3个）。",
+        "p_heroes": "只检索与这些英雄有关的条目（最多3个，必须是本场比赛中的英雄；中文名或英文名均可）。",
+        "p_items": "只检索与这些物品有关的条目（最多3个；中文名或英文名均可）。",
         "p_topic": "把检索限定在一个主题上。",
         "p_top_k": "返回的条目数，1到6，默认4。",
     },
@@ -644,7 +652,9 @@ def _system_prompt(lang: str, is_death: bool) -> str:
         "“位置数据缺失”的队友可能就在玩家身边，不能据此说玩家孤身一人。\n"
         "- 数据中没有技能和物品的冷却状态，也没有消耗品（吃树、药膏、回城卷轴等）：不要断言某个技能"
         "“已就绪”或“在冷却”、魔法值够不够、身上有没有补给，除非工具明确给出了数字。\n"
-        "- 英雄、技能、物品的名称一律照抄简报和工具中的写法（保持英文原名），不要自行翻译成中文译名或俗称。\n"
+        "- 英雄、技能、物品一律写中文名，照抄简报和工具结果中的写法；简报里括号中的英文名只用来对照和调用工具，"
+        "评价里不要写。参考资料中用英文写的名称，按该结果末尾的“名称对照”写成中文；没有给出中文名的名称保留英文原名，"
+        "不要自行翻译，也不要用俗称。\n"
         "- 分析、错误、更好的做法、教训的正文里不要出现 [K#] 这样的编号：编号只写在 references 字段里。\n"
         "- submit_evaluation 的每个文字字段都要填写针对这个决策的真实内容，绝不能提交占位文字。\n"
         "- 提到分路位置时使用“1号位…5号位”的说法。\n\n"
@@ -683,7 +693,7 @@ def _user_brief(context: DecisionContext, lang: str) -> str:
         f"- 类型：{_ev.point_type_label(dp, lang)}\n"
         f"- 严重程度：{_ev.severity_label(dp, lang)}\n"
         f"- 阶段：{phase_str}\n"
-        f"- 英雄：{dp.hero_name}\n"
+        f"- 英雄：{_ev._hero_both(dp.hero_name, lang)}\n"
         f"- 简述：{dp.brief}{_ev.decision_extras(context, lang, sep='：')}\n\n"
         f"玩家状态：\n{player_line}\n\n"
         f"比赛局势：\n{situation}\n\n"
@@ -807,7 +817,12 @@ def _execute(name: str, tc: _ToolCtx, args: dict) -> str:
     try:
         out = handler(tc, args)
         text = (out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)) or _no_data(tc.lang)
-        return text if name in _UNCAPPED_TOOLS else _cap_output(text)
+        text = text if name in _UNCAPPED_TOOLS else _cap_output(text)
+        if name in _REFERENCE_TOOLS:
+            glossary = _ev.names_glossary(text, tc.lang, _match_heroes(tc))
+            if glossary:
+                text = f"{text}\n{glossary}"
+        return text
     except Exception as exc:
         logger.warning("Agent tool %s failed: %s", name, exc)
         return _no_data(tc.lang)
@@ -887,8 +902,8 @@ def _submit_problem(args: dict, lang: str) -> str:
     """
     if not args:
         return "format"
-    # A stock "None" / "无" of the other language is localized, not a language error.
-    optional = [_ev.localize_stock_answer(v, lang) if isinstance(v, str) else v
+    # A stock "None" / "无" (in either language) is an empty field, not a language error.
+    optional = [_ev.drop_stock_answer(v) if isinstance(v, str) else v
                 for v in (args.get(k) for k in ("mistake", "better_play", "lesson")) if v is not None]
     problem = _ev.verdict_problem(args.get("score"), args.get("analysis"), *optional, lang=lang, templates=_SCHEMA_TEXTS)
     if not problem and _leaks_internals(args.get("analysis"), *optional):
@@ -910,10 +925,11 @@ def _evaluation_from_submit(args: dict, context: DecisionContext, lang: str) -> 
         if not isinstance(value, str):
             return ""
         cleaned, leaked = _ev.split_handles(value.strip())
+        cleaned = cleaned.strip()
         cited.extend(leaked)
-        return _ev.localize_stock_answer(cleaned, lang) if stock else cleaned
+        return _ev.drop_stock_answer(cleaned, whole=key == "mistake") if stock else cleaned
 
-    return Evaluation(
+    return _ev.localize_verdict(Evaluation(
         decision_point=context.decision_point,
         score=_ev.strict_grade(args.get("score")) or "C",
         analysis=text("analysis", stock=False),
@@ -923,7 +939,7 @@ def _evaluation_from_submit(args: dict, context: DecisionContext, lang: str) -> 
         _parsed_ok=True,
         used_llm=True,
         cited_refs=list(dict.fromkeys(cited)),
-    )
+    ), _ev.context_heroes(context), lang)
 
 
 async def _call(kwargs: dict, *, model: str, step: int, forced: bool):
@@ -1119,8 +1135,10 @@ async def _investigate(
         elif not tool_calls and text:
             parsed = _ev._parse_evaluation_response(text, dp, lang=lang, strict=True)
             if parsed._parsed_ok:
-                parsed.mistake = _ev.localize_stock_answer(parsed.mistake, lang)
-                parsed.better_play = _ev.localize_stock_answer(parsed.better_play, lang)
+                _ev.localize_verdict(parsed, _match_heroes(tc), lang)
+                parsed.mistake = _ev.drop_stock_answer(parsed.mistake, whole=True)
+                parsed.better_play = _ev.drop_stock_answer(parsed.better_play)
+                parsed.lesson = _ev.drop_stock_answer(parsed.lesson)
                 problem = _ev.verdict_problem(
                     parsed.score, parsed.analysis, parsed.mistake, parsed.better_play, parsed.lesson, lang=lang)
                 if not problem and _leaks_internals(

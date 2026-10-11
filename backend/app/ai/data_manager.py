@@ -38,7 +38,14 @@ such as "bkb"): see :func:`resolve_hero_name`, :func:`hero_slug`,
 :func:`resolve_item_name` and :func:`item_key`. Code that only needs text
 for a prompt or a report uses the never-raising :func:`hero_display_name`,
 :func:`item_display_name`, :func:`ability_display_name`,
-:func:`unit_display_name` and :func:`display_name`.
+:func:`unit_display_name` and :func:`display_name`. They follow the report
+language: ``lang="zh"`` gives the game's Simplified Chinese name from the
+committed catalogs (``name_zh``, what the UI shows) and the English name
+where the catalog has none. Everything else stays keyed by the English
+names and slugs; the lookups also resolve a Chinese name back to them.
+Text that is not written through the helpers (the English reference
+knowledge of a zh prompt, an LLM answer) is handled by
+:func:`name_glossary`, :func:`localize_names` and :func:`strip_names`.
 
 Every loader returns a shared, cached object that callers must treat as
 read-only. :func:`invalidate_all_caches` atomically drops all caches (this
@@ -61,7 +68,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from .. import config, game_constants
 
@@ -260,7 +267,7 @@ _ITEM_ALIASES: dict[str, str] = {
 # Damage inflictor of a plain attack (parsers map their own spellings to it).
 ATTACK_INFLICTOR = "attack"
 _ATTACK_LABELS = {"zh": "普通攻击", "en": "Attack"}
-_RECIPE_LABELS = {"zh": "{} 图纸", "en": "{} Recipe"}
+_RECIPE_LABELS = {"zh": "图纸（{}）", "en": "{} Recipe"}
 
 # Non-hero units by a substring of their npc name -> (zh, en); first match wins.
 _UNIT_LABELS: tuple[tuple[str, tuple[str, str]], ...] = (
@@ -649,6 +656,11 @@ def _squash_item(name: Any) -> str:
     return _NON_ALNUM.sub("", text)
 
 
+def _zh_text(name: Any) -> str:
+    """A Chinese catalog name as a lookup key: one line, no outer blanks."""
+    return " ".join(str(name or "").split())
+
+
 _NAME_LINE_BREAK = re.compile(r"\\n|[\r\n]")
 
 
@@ -675,9 +687,11 @@ def display_slug(name: Any) -> str:
 def _build_hero_index() -> dict:
     """Merge every hero catalog we have into one alias index.
 
-    Returns ``{"by_internal": {internal: entry}, "alias": {squashed: internal}}``
-    where entry is ``{"id", "name", "internal", "roles", "attack_type", "attr"}``
-    plus ``day_vision`` / ``night_vision`` when a source states them.
+    Returns ``{"by_internal": {internal: entry}, "alias": {squashed: internal},
+    "alias_zh": {Chinese name: internal}}`` where entry is ``{"id", "name",
+    "internal", "roles", "attack_type", "attr"}`` plus ``day_vision`` /
+    ``night_vision`` when a source states them and ``name_zh`` (the game's
+    Simplified Chinese name) when the committed catalog has it.
     Display names come from the committed frontend catalog first (what the
     parsers emit), then fetched game data, then editorial data. The facts of
     a hero (attribute, attack type, roles, vision) are per-patch: there the
@@ -685,6 +699,7 @@ def _build_hero_index() -> dict:
     """
     by_internal: dict[str, dict] = {}
     alias: dict[str, str] = {}
+    alias_zh: dict[str, str] = {}
 
     def add(internal: str, name: str, replace: bool = False, **fields: Any) -> None:
         internal = str(internal or "").strip().lower()
@@ -718,7 +733,8 @@ def _build_hero_index() -> dict:
             attack_type=str(info.get("attack_type") or "").lower(),
             attr=_ATTR_MAP.get(str(info.get("attr") or ""), str(info.get("attr") or "")),
             day_vision=_vision_range(info.get("day_vision")),
-            night_vision=_vision_range(info.get("night_vision")))
+            night_vision=_vision_range(info.get("night_vision")),
+            name_zh=_zh_text(info.get("name_zh")))
 
     gamedata = _load_dict(GAMEDATA_DIR / "heroes.json")
     for localized, info in gamedata.items():
@@ -743,7 +759,10 @@ def _build_hero_index() -> dict:
         if squashed and squashed not in alias:
             add(squashed, name)
 
-    return {"by_internal": by_internal, "alias": alias}
+    for internal, entry in by_internal.items():
+        if entry.get("name_zh"):
+            alias_zh.setdefault(entry["name_zh"], internal)
+    return {"by_internal": by_internal, "alias": alias, "alias_zh": alias_zh}
 
 
 def _hero_index() -> dict:
@@ -752,15 +771,20 @@ def _hero_index() -> dict:
 
 def _hero_entry(name: Any) -> dict | None:
     squashed = _squash_hero(name)
-    if not squashed:
-        return None
     index = _hero_index()
-    internal = index["alias"].get(squashed)
+    internal = index["alias"].get(squashed) if squashed else None
+    if internal is None:  # the game's Chinese name ("斧王"), as zh reports and prompts write it
+        internal = index.get("alias_zh", {}).get(_zh_text(name))
     return index["by_internal"].get(internal) if internal else None
 
 
 def resolve_hero_name(name: Any) -> str | None:
-    """Canonical display name for any hero identifier (None if unknown)."""
+    """Canonical (English) display name for any hero identifier (None if unknown).
+
+    Also resolves the game's Chinese name ("斧王" -> "Axe") and the bilingual
+    form prompts use ("斧王 (Axe)"), so a name copied from a zh report or
+    sent back by the LLM still finds its hero.
+    """
     entry = _hero_entry(name)
     return entry["name"] if entry else None
 
@@ -819,13 +843,17 @@ def hero_vision(identifier: Any) -> tuple[int, int]:
 
 
 def _build_item_index() -> dict:
-    """Alias index for items: ``{"by_key": {key: name}, "alias": {squashed: key}}``.
+    """Alias index for items: ``{"by_key": {key: name}, "alias": {squashed: key},
+    "zh": {key: Chinese name}, "alias_zh": {Chinese name: key}}``.
 
     Fetched game data comes first, so its names win; the committed catalog
-    then adds what the fetch does not store (recipes, items of older patches).
+    then adds what the fetch does not store (recipes, items of older patches)
+    and the game's Simplified Chinese names.
     """
     by_key: dict[str, str] = {}
     alias: dict[str, str] = {}
+    zh: dict[str, str] = {}
+    alias_zh: dict[str, str] = {}
 
     def add(key: str, name: str) -> None:
         key = str(key or "").strip().lower()
@@ -856,6 +884,12 @@ def _build_item_index() -> dict:
     for key, info in by_key_static.items():
         if isinstance(info, dict):
             add(key, str(info.get("name") or ""))
+            name_zh = _zh_text(info.get("name_zh"))
+            if name_zh:
+                zh[str(key).lower()] = name_zh
+    # A Chinese name shared by several keys ("远行鞋": both levels) is the first one's.
+    for key, name_zh in zh.items():
+        alias_zh.setdefault(name_zh, key)
     # Then names: fetched, the catalog's preferred mapping, its other names.
     for name, info in fetched:
         add_name(name, str(info["key"]).lower())
@@ -881,7 +915,7 @@ def _build_item_index() -> dict:
     for squashed, key in _ITEM_ALIASES.items():
         if key in by_key:
             alias.setdefault(squashed, key)
-    return {"by_key": by_key, "alias": alias}
+    return {"by_key": by_key, "alias": alias, "zh": zh, "alias_zh": alias_zh}
 
 
 def _item_index() -> dict:
@@ -889,11 +923,17 @@ def _item_index() -> dict:
 
 
 def resolve_item_key(name: Any) -> str | None:
-    """Internal item key for a display name / key / ``item_`` name (None if unknown)."""
+    """Internal item key for a display name / key / ``item_`` name (None if unknown).
+
+    The game's Chinese name ("黑皇杖") and the bilingual form of the prompts
+    ("黑皇杖 (Black King Bar)") resolve as well.
+    """
     squashed = _squash_item(name)
-    if not squashed:
-        return None
-    return _item_index()["alias"].get(squashed)
+    index = _item_index()
+    key = index["alias"].get(squashed) if squashed else None
+    if key is None:
+        key = index.get("alias_zh", {}).get(_zh_text(name))
+    return key
 
 
 def item_key(name: Any) -> str:
@@ -932,18 +972,29 @@ def _prettify(identifier: Any) -> str:
     return " ".join(w.capitalize() for w in words) or text
 
 
+def _is_zh(lang: Any) -> bool:
+    """Whether display names are wanted in Chinese (every language but "en",
+    like the rest of the coach: an unknown language gives the zh report)."""
+    return lang != "en"
+
+
 def hero_display_name(identifier: Any, lang: str = "en") -> str:
     """Display name of a hero for any identifier form. Never raises.
 
     Accepts display names, heroes.json slugs, internal / npc names and the
     aliases in ``_HERO_ALIASES`` ("skeleton_king", "npc_dota_hero_zuus",
-    "wk" ...). Unknown identifiers come back prettified ("new_hero" ->
-    "New Hero"), an empty one as "". Hero names are proper nouns that the
-    project shows untranslated, so *lang* does not change the result today;
-    it is part of the signature so callers already pass it.
+    "wk" ...). ``lang="zh"`` gives the game's Simplified Chinese name from
+    the committed catalog ("冥魂大帝") and the English name when the catalog
+    has none. Unknown identifiers come back prettified ("new_hero" -> "New
+    Hero"), an empty one as "". The result is for text only: lookups keep
+    using the English name or the slug (:func:`resolve_hero_name`,
+    :func:`hero_slug`).
     """
     try:
-        return resolve_hero_name(identifier) or _prettify(identifier)
+        entry = _hero_entry(identifier)
+        if entry is None:
+            return _prettify(identifier)
+        return (_is_zh(lang) and entry.get("name_zh")) or entry["name"]
     except Exception:  # pragma: no cover - defensive
         return _prettify(identifier)
 
@@ -954,18 +1005,24 @@ def item_display_name(identifier: Any, lang: str = "en") -> str:
     Accepts display names, item keys with or without ``item_``, the replay
     class-name leftovers ("boots_of_travel", "dustof_appearance",
     "invisibility_edge", "empty_bottle") and common abbreviations ("bkb").
-    A key missing from every catalog is kept and prettified ("new_item" ->
-    "New Item"); a recipe key is named after its item ("recipe_dagon" ->
-    "Dagon Recipe" / "Dagon 图纸"). Item names themselves are not translated
-    (see :func:`hero_display_name`).
+    ``lang="zh"`` gives the catalog's Chinese name ("黑皇杖", "图纸（达贡之神力）")
+    and the English one when there is none. A key missing from every catalog
+    is kept and prettified ("new_item" -> "New Item"); a recipe the catalog
+    does not name is named after its item ("recipe_new_item" -> "New Item
+    Recipe" / "图纸（New Item）", the wording of the game's own recipe names).
     """
     try:
         key = resolve_item_key(identifier) or str(identifier or "").strip().lower()
         if key.startswith("item_"):
             key = key[len("item_"):]
-        # Before the catalog name: the catalog lists recipes in English only.
+        if _is_zh(lang):
+            name_zh = _item_index().get("zh", {}).get(key)
+            if name_zh:
+                return name_zh
+        # Before the catalog name: the catalog lists recipes in English only
+        # where the game has no Chinese name for them.
         if key.startswith("recipe_") and len(key) > len("recipe_"):
-            label = _RECIPE_LABELS["en" if lang == "en" else "zh"]
+            label = _RECIPE_LABELS["zh" if _is_zh(lang) else "en"]
             return label.format(item_display_name(key[len("recipe_"):], lang))
         return resolve_item_name(identifier) or _prettify(identifier)
     except Exception:  # pragma: no cover - defensive
@@ -980,9 +1037,8 @@ def unit_display_name(identifier: Any, lang: str = "en") -> str:
     "小兵", towers, Roshan, neutrals ...); anything else is prettified.
     """
     try:
-        name = resolve_hero_name(identifier)
-        if name:
-            return name
+        if resolve_hero_name(identifier):
+            return hero_display_name(identifier, lang)
         text = str(identifier or "").strip().lower()
         if text.startswith("npc_dota_"):
             for needle, (zh, en) in _UNIT_LABELS:
@@ -1158,7 +1214,79 @@ def resolve_ability_name(key: Any) -> str | None:
     return _cached("ability_index", _build_ability_index).get(text)
 
 
-def ability_display_name(identifier: Any, lang: str = "en") -> str:
+def _build_ability_zh_index() -> dict:
+    """Chinese ability / talent names of the committed catalog:
+    ``{"by_key": {key: (English name, Chinese name)}, "by_name": {english
+    name, lowercase: Chinese name}}``.
+
+    A display name several abilities share takes the Chinese name most of
+    them have, the first one on a tie (:func:`ability_display_name` asks
+    the hero's own abilities first when it is told the hero). A talent is
+    found under its full name, numbers included.
+    """
+    by_key: dict[str, tuple[str, str]] = {}
+    votes: dict[str, dict[str, int]] = {}
+    static = _load_dict(STATIC_DATA_DIR / "abilities.json", "by_key")
+    for key, info in static.items():
+        if not isinstance(info, dict):
+            continue
+        name, name_zh = clean_ability_name(info.get("name")), _zh_text(info.get("name_zh"))
+        if not name or not name_zh or "{s:" in name_zh:
+            continue
+        key = str(key).lower()
+        by_key[key] = (name, name_zh)
+        counts = votes.setdefault(name.lower(), {})
+        counts[name_zh] = counts.get(name_zh, 0) + 1
+    by_name = {name: max(counts, key=counts.get) for name, counts in votes.items()}
+    return {"by_key": by_key, "by_name": by_name}
+
+
+_NUMBER_IN_NAME = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _ability_name_zh(key: str, name: str) -> str:
+    """Chinese name of ability *key* whose English name is *name* ("" = none).
+
+    Talent keys are reused between patches with other numbers, and the
+    fetched game data can be newer than the committed catalog: when the
+    English names differ only in their numbers, the Chinese name takes the
+    numbers of *name* ("+30 Counter Helix Damage" with the catalog's "+40
+    ..." / "+40 反击螺旋伤害" gives "+30 反击螺旋伤害"); when they differ in
+    wording it is another talent by now and has no Chinese name here.
+    """
+    entry = _cached("ability_zh_index", _build_ability_zh_index)["by_key"].get(key)
+    if not entry:
+        return ""
+    catalog_name, name_zh = entry
+    if not name or name == catalog_name:
+        return name_zh
+    if _NUMBER_IN_NAME.sub("#", name) != _NUMBER_IN_NAME.sub("#", catalog_name):
+        return ""
+    # The Chinese wording can state the numbers in another order: match them by value.
+    pairs = list(zip(_NUMBER_IN_NAME.findall(catalog_name), _NUMBER_IN_NAME.findall(name)))
+    complete = True
+
+    def swap(match: re.Match) -> str:
+        nonlocal complete
+        for index, (ours, theirs) in enumerate(pairs):
+            if ours == match.group(0):
+                del pairs[index]
+                return theirs
+        complete = False
+        return match.group(0)
+
+    text = _NUMBER_IN_NAME.sub(swap, name_zh)
+    return text if complete and not pairs else ""
+
+
+def _hero_ability_key(hero: Any, name: str) -> str:
+    """Key of the ability *hero* has under the English display name *name* ("" = none)."""
+    abilities = load_abilities().get(resolve_hero_name(hero) or "") or {}
+    data = abilities.get(name)
+    return str(data.get("key") or "").lower() if isinstance(data, dict) else ""
+
+
+def ability_display_name(identifier: Any, lang: str = "en", hero: Any = None) -> str:
     """Display name of an ability key or damage inflictor. Never raises.
 
     ``"attack"`` (the plain-attack inflictor) is localized ("Attack" /
@@ -1168,18 +1296,43 @@ def ability_display_name(identifier: Any, lang: str = "en") -> str:
     :func:`clean_ability_name`); a talent no catalog knows is named after
     its key ("special_bonus_unique_lion_11" -> "Lion 11"). The map actions
     in :data:`BUILTIN_ABILITY_LABELS` ("ability_capture" -> "Capture
-    Outpost" / "占领前哨") are localized as well.
+    Outpost" / "占领前哨") are localized as well. ``lang="zh"`` gives the
+    catalog's Chinese name of the ability ("lion_impale" / "Earth Spike" ->
+    "裂地尖刺"), the English one when the catalog has none; an English
+    display name is accepted in place of the key. With *hero* (any
+    identifier form) such a display name is looked up among that hero's
+    abilities first, then among all abilities and talents: "Blink" is
+    Anti-Mage's "闪烁" there, not the item an inflictor of that name
+    would be.
     """
     try:
         text = str(identifier or "").strip()
-        if text.lower() == ATTACK_INFLICTOR:
-            return _ATTACK_LABELS["en" if lang == "en" else "zh"]
-        if lang != "en" and text.lower() in BUILTIN_ABILITY_LABELS:
-            return BUILTIN_ABILITY_LABELS[text.lower()][0]
-        name = resolve_ability_name(text) or resolve_item_name(text)
+        low = text.lower()
+        zh = _is_zh(lang)
+        if low == ATTACK_INFLICTOR:
+            return _ATTACK_LABELS["zh" if zh else "en"]
+        if zh and hero:
+            key = _hero_ability_key(hero, text)
+            if key:
+                return _ability_name_zh(key, text) or text
+            # A display name the hero's table does not have (a talent, a name of
+            # another patch): an ability of that name before an item of that name.
+            name_zh = _cached("ability_zh_index", _build_ability_zh_index)["by_name"].get(" ".join(low.split()))
+            if name_zh and resolve_ability_name(text) is None:
+                return name_zh
+        if zh and low in BUILTIN_ABILITY_LABELS:
+            return BUILTIN_ABILITY_LABELS[low][0]
+        name = resolve_ability_name(text)
         if name:
-            return name
-        if text.lower().startswith(TALENT_PREFIX):
+            return (zh and _ability_name_zh(low, name)) or name
+        item_name = resolve_item_name(text)
+        if item_name:
+            return item_display_name(text, lang) if zh else item_name
+        if zh:  # an English display name instead of a key
+            name_zh = _cached("ability_zh_index", _build_ability_zh_index)["by_name"].get(" ".join(low.split()))
+            if name_zh:
+                return name_zh
+        if low.startswith(TALENT_PREFIX):
             return _talent_fallback_name(text)
         return _prettify(text)
     except Exception:  # pragma: no cover - defensive
@@ -1191,20 +1344,245 @@ def display_name(identifier: Any, lang: str = "en") -> str:
 
     Tries hero, then ability / attack, then item, then other units; falls
     back to a prettified form. Use the specific helpers when the kind is
-    known (a few item keys are also hero abbreviations).
+    known (a few item keys are also hero abbreviations). Like them it
+    follows *lang*.
     """
     try:
         text = str(identifier or "").strip()
         if text.lower() == ATTACK_INFLICTOR:
-            return _ATTACK_LABELS["en" if lang == "en" else "zh"]
-        name = resolve_hero_name(text) or resolve_ability_name(text) or resolve_item_name(text)
-        if name:
-            return name
-        if text.lower().startswith("npc_dota_"):
+            return _ATTACK_LABELS["zh" if _is_zh(lang) else "en"]
+        if resolve_hero_name(text):
+            return hero_display_name(text, lang)
+        if resolve_ability_name(text):
+            return ability_display_name(text, lang)
+        if not resolve_item_name(text) and text.lower().startswith("npc_dota_"):
             return unit_display_name(text, lang)
         return item_display_name(text, lang)  # also names recipes; prettifies the rest
     except Exception:  # pragma: no cover - defensive
         return _prettify(identifier)
+
+
+# ---------------------------------------------------------------------------
+# Names in running text (English reference material, LLM answers)
+# ---------------------------------------------------------------------------
+#
+# Text this code writes takes its names from the helpers above. Two kinds of
+# text are not written here: the English reference knowledge shown to the
+# model, and what the model writes back. For those the names are found in
+# the text itself.
+
+def _build_text_names() -> dict:
+    """English display names as they stand in text, with their Chinese names.
+
+    ``{"heroes": {name: zh}, "items": {name: zh}, "abilities": {hero name:
+    {ability name: zh}}, "all": frozenset of every English name}``. Only
+    names with a Chinese catalog entry are in the three tables. Items are
+    the ones a shop sells plus every name of two or more words: the
+    one-word names of enchantments and other drops ("Wise", "Vast",
+    "Tough") are English words first.
+    """
+    heroes: dict[str, str] = {}
+    everything: set[str] = set()
+    index = _hero_index()
+    for entry in index["by_internal"].values():
+        everything.add(entry["name"])
+        if entry.get("name_zh"):
+            heroes[entry["name"]] = entry["name_zh"]
+    # Earlier spellings of renamed heroes ("Outworld Devourer") are still written.
+    static_heroes = _load_json(STATIC_DATA_DIR / "heroes.json")
+    for name in (static_heroes.get("name_to_id") if isinstance(static_heroes, dict) else None) or {}:
+        entry = _hero_entry(name)
+        if entry is not None:
+            everything.add(str(name))
+            if entry.get("name_zh"):
+                heroes.setdefault(str(name), entry["name_zh"])
+
+    items: dict[str, str] = {}
+    item_index = _item_index()
+    costs = {str(key).lower(): info.get("cost") for key, info in
+             _load_dict(STATIC_DATA_DIR / "items.json", "by_key").items() if isinstance(info, dict)}
+    for key, name in item_index["by_key"].items():
+        if not name:
+            continue
+        everything.add(name)
+        name_zh = item_index["zh"].get(key)
+        sold = isinstance(costs.get(key), (int, float)) and costs[key] > 0
+        if name_zh and name_zh != name and (sold or " " in name):
+            items.setdefault(name, name_zh)
+
+    abilities: dict[str, dict[str, str]] = {}
+    for hero, table in load_abilities().items():
+        named: dict[str, str] = {}
+        for name, data in table.items():
+            everything.add(str(name))
+            key = str(data.get("key") or "").lower() if isinstance(data, dict) else ""
+            name_zh = _ability_name_zh(key, str(name)) if key else ""
+            if name_zh and name_zh != name:
+                named[str(name)] = name_zh
+        if named:
+            abilities[hero] = named
+    return {"heroes": heroes, "items": items, "abilities": abilities,
+            "all": frozenset(name for name in everything if len(name) >= 3)}
+
+
+_CJK_CHARS = "\u3400-\u4dbf\u4e00-\u9fff\u3000-\u303f\uff00-\uffef"
+
+
+def _names_regex(names: Iterable[str]) -> re.Pattern | None:
+    """Matches any of *names* as a whole name (the longest one first), with
+    an English possessive when it has one ("Lina's"): group 1 is the name,
+    group 2 the possessive."""
+    ordered = sorted({name for name in names if name}, key=lambda name: (-len(name), name))
+    if not ordered:
+        return None
+    return re.compile(r"(?<![A-Za-z])(" + "|".join(re.escape(name) for name in ordered) + r")('s)?(?![A-Za-z])")
+
+
+# A replaced name is marked while the blanks around it are tidied up: a blank
+# sets a Latin name apart from Chinese text ("被 Lina 击杀") and has no place
+# next to the Chinese name; two names with only a blank between them are a
+# list. Private-use characters: no text contains them.
+_NAME_START, _NAME_END = "\ue000", "\ue001"
+# "冥魂大帝（Wraith King）" / "Wraith King（冥魂大帝）": both names of one thing, once the
+# English one is replaced. One is enough.
+_NAME_TWICE_RE = re.compile(
+    rf"([^\s（）(){_NAME_START}{_NAME_END}]{{2,}}?)\s*[（(]\s*{_NAME_START}\1{_NAME_END}\s*[)）]"
+    rf"|{_NAME_START}([^{_NAME_END}]+){_NAME_END}\s*[（(]\s*\2\s*[)）]")
+_BLANK_BETWEEN_NAMES_RE = re.compile(rf"(?<={_NAME_END}) +(?={_NAME_START})")
+_BLANK_BEFORE_NAME_RE = re.compile(rf"(?<=[{_CJK_CHARS}]) +(?={_NAME_START})")
+_BLANK_AFTER_NAME_RE = re.compile(rf"(?<={_NAME_END}) +(?=[{_CJK_CHARS}])")
+
+
+# Patterns kept per set of heroes (one per match being coached; compiling one takes ~30 ms).
+_TEXT_NAME_PATTERNS_MAX = 64
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]{2}")
+
+
+def _text_names(heroes: Iterable[Any] | None) -> tuple[re.Pattern | None, dict[str, str]]:
+    """``(pattern, {English name: Chinese name})`` for text about *heroes*.
+
+    Every hero and item name is looked for; ability names only of *heroes*
+    (any identifier form): among all 780 of them are too many English words
+    ("Rage", "Return", "Fire Remnant" is fine, "Leap" is not) to replace
+    them in a text that is not about their hero.
+    """
+    table = _cached("text_names", _build_text_names)
+    scope = tuple(sorted({name for name in (resolve_hero_name(h) for h in heroes or ()) if name}))
+    patterns = _cached("text_name_patterns", dict)
+    hit = patterns.get(scope)
+    if hit is None:
+        names = dict(table["items"])
+        for hero in scope:
+            names.update(table["abilities"].get(hero) or {})
+        names.update(table["heroes"])     # a hero's name wins over an ability of the same name
+        hit = (_names_regex(names), names)
+        with _cache_lock:
+            while len(patterns) >= _TEXT_NAME_PATTERNS_MAX:   # the oldest one goes
+                patterns.pop(next(iter(patterns)), None)
+            patterns[scope] = hit
+    return hit
+
+
+_HAN_NAME_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]{2}")
+
+
+def find_zh_names(text: Any) -> tuple[list[str], list[str]]:
+    """``(hero slugs, item keys)`` whose Chinese catalog name is written in *text*.
+
+    For a question or a tool argument that names heroes and items the way a
+    zh report does ("冥界亚龙的毒怎么解", "黑皇杖"). The longest name wins
+    where two overlap ("图纸（远行鞋）" is the recipe). Never raises.
+    """
+    try:
+        text = str(text or "")
+        if not _HAN_NAME_RE.search(text):
+            return [], []
+        candidates = [(name, "hero", internal) for name, internal in _hero_index().get("alias_zh", {}).items()]
+        candidates += [(name, "item", key) for name, key in _item_index().get("alias_zh", {}).items()]
+        found: list[tuple[int, str, str]] = []
+        for name, kind, value in sorted(candidates, key=lambda c: (-len(c[0]), c[0])):
+            at = text.find(name)
+            if at < 0 or not _HAN_NAME_RE.search(name):
+                continue
+            found.append((at, kind, value))
+            text = text.replace(name, " " * len(name))
+        found.sort()
+        return ([v for _at, kind, v in found if kind == "hero"], [v for _at, kind, v in found if kind == "item"])
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Chinese name lookup failed: %s", exc)
+        return [], []
+
+
+def name_glossary(text: Any, lang: str = "zh", heroes: Iterable[Any] | None = None) -> list[tuple[str, str]]:
+    """``[(English name, Chinese name)]`` of the hero, item and ability names
+    written in English in *text*, in order of appearance. Never raises.
+
+    For a zh prompt: the reference knowledge is partly English, and the
+    model is told to write the Chinese names. Ability names are only looked
+    for among the abilities of *heroes* (see :func:`_text_names`). [] for
+    ``lang="en"``.
+    """
+    try:
+        text = str(text or "")
+        if not _is_zh(lang) or not _LATIN_WORD_RE.search(text):
+            return []
+        pattern, names = _text_names(heroes)
+        if pattern is None:
+            return []
+        found = dict.fromkeys(match.group(1) for match in pattern.finditer(text))
+        return [(name, names[name]) for name in found]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Name glossary failed: %s", exc)
+        return []
+
+
+def localize_names(text: Any, lang: str = "zh", heroes: Iterable[Any] | None = None) -> str:
+    """*text* with the English hero, item and ability names it contains
+    replaced by their Chinese names (``lang="zh"``; unchanged for "en").
+    Never raises.
+
+    For text that was not written through the display-name helpers: an LLM
+    answer of a zh report, a title taken from a data file. A name without a
+    Chinese catalog entry stays as it is, and so does every other English
+    word. "冥魂大帝（Wraith King）" becomes "冥魂大帝", and the blanks that
+    set an English name apart from Chinese text go with it ("被 Lina 击杀"
+    -> "被莉娜击杀"). Ability names are only replaced for *heroes* (see
+    :func:`_text_names`).
+    """
+    try:
+        if not isinstance(text, str) or not _is_zh(lang) or not _LATIN_WORD_RE.search(text):
+            return text if isinstance(text, str) else str(text or "")
+        pattern, names = _text_names(heroes)
+        if pattern is None or _NAME_START in text or _NAME_END in text:
+            return text
+        marked = pattern.sub(
+            lambda match: _NAME_START + names[match.group(1)] + _NAME_END + ("的" if match.group(2) else ""), text)
+        if marked == text:
+            return text
+        marked = _NAME_TWICE_RE.sub(lambda m: _NAME_START + (m.group(1) or m.group(2)) + _NAME_END, marked)
+        marked = _BLANK_BETWEEN_NAMES_RE.sub("、", marked)
+        marked = _BLANK_AFTER_NAME_RE.sub("", _BLANK_BEFORE_NAME_RE.sub("", marked))
+        return marked.replace(_NAME_START, "").replace(_NAME_END, "")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Name localisation failed: %s", exc)
+        return text if isinstance(text, str) else str(text or "")
+
+
+def strip_names(text: Any) -> str:
+    """*text* without the English hero, item and ability names of the catalogs.
+
+    What is left tells the language a text is written in: a Chinese
+    sentence about "Aghanim's Scepter" is not half English. Never raises.
+    """
+    try:
+        text = str(text or "")
+        if not _LATIN_WORD_RE.search(text):
+            return text
+        pattern = _cached("all_names_pattern", lambda: _names_regex(_cached("text_names", _build_text_names)["all"]))
+        return pattern.sub(" ", text) if pattern is not None else text
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Name stripping failed: %s", exc)
+        return str(text or "")
 
 
 # ---------------------------------------------------------------------------

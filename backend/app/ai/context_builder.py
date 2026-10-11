@@ -93,6 +93,20 @@ from .vision import (
 
 logger = logging.getLogger(__name__)
 
+
+def _hero(name: str | None, lang: str) -> str:
+    """A hero's name as text of language ``lang`` (the data keeps the English
+    name: it is the key of every lookup). Anything that is not a hero of the
+    catalog is returned as it is."""
+    if not name or not data_manager.is_known_hero(name):
+        return name or ""
+    return data_manager.hero_display_name(name, lang)
+
+
+def _heroes(names, lang: str) -> list[str]:
+    return [_hero(name, lang) for name in names]
+
+
 # How far back to look for the event timeline (seconds)
 _EVENT_WINDOW = 60
 # Events further than this from the player are not about this decision.
@@ -361,18 +375,18 @@ def _vision_summary(vs, lang: str) -> str:
     if lang == "en":
         parts = [f"{vs.allied_observer_count} allied observer wards", f"{visible} enemies visible"]
         if vs.missing_enemy_count:
-            parts.append(f"{vs.missing_enemy_count} in the fog ({', '.join(vs.missing_enemy_names)})")
+            parts.append(f"{vs.missing_enemy_count} in the fog ({', '.join(_heroes(vs.missing_enemy_names, lang))})")
         if vs.unknown_enemy_count:
             parts.append(f"no position data for {vs.unknown_enemy_count} "
-                         f"({', '.join(vs.unknown_enemy_names)})")
+                         f"({', '.join(_heroes(vs.unknown_enemy_names, lang))})")
         if dead:
             parts.append(f"{dead} dead")
         return ", ".join(parts)
-    parts = [f"己方{vs.allied_observer_count}个观察守卫", f"敌方{visible}人可见"]
+    parts = [f"己方{vs.allied_observer_count}个侦察守卫", f"敌方{visible}人可见"]
     if vs.missing_enemy_count:
-        parts.append(f"{vs.missing_enemy_count}人在迷雾中（{'、'.join(vs.missing_enemy_names)}）")
+        parts.append(f"{vs.missing_enemy_count}人在迷雾中（{'、'.join(_heroes(vs.missing_enemy_names, lang))}）")
     if vs.unknown_enemy_count:
-        parts.append(f"{vs.unknown_enemy_count}人无位置数据（{'、'.join(vs.unknown_enemy_names)}）")
+        parts.append(f"{vs.unknown_enemy_count}人无位置数据（{'、'.join(_heroes(vs.unknown_enemy_names, lang))}）")
     if dead:
         parts.append(f"{dead}人阵亡")
     return "，".join(parts)
@@ -881,7 +895,7 @@ def _build_event_timeline(
             if isinstance(when, (int, float)) and start <= when <= end:
                 ranked.append((_PRIORITY_KILL, EventEntry(
                     time=int(when), event_type="buyback",
-                    description=f"{p.hero_name} bought back" if en else f"{p.hero_name} 买活",
+                    description=f"{p.hero_name} bought back" if en else f"{_hero(p.hero_name, lang)} 买活",
                     details={"player_slot": p.player_slot},
                 )))
 
@@ -928,22 +942,23 @@ def _cast_entries(casts: list[tuple[int, object]], lang: str) -> list[tuple[int,
         if previous is not None and ae.time - previous.details["last_time"] <= _REPEAT_CAST_WINDOW:
             previous.details["count"] += 1
             previous.details["last_time"] = ae.time
-            previous.description = _cast_text(previous.details, en)
+            previous.description = _cast_text(previous.details, lang)
             continue
         details = {"ability": ability, "hero": ae.hero_name, "player_slot": ae.player_slot,
                    "target": ae.target or "", "x": ae.x, "y": ae.y, "count": 1, "last_time": ae.time}
         entry = EventEntry(time=ae.time, event_type="ability_cast",
-                           description=_cast_text(details, en), details=details)
+                           description=_cast_text(details, lang), details=details)
         last[(ae.player_slot, ability)] = entry
         out.append((priority, entry))
     return out
 
 
-def _cast_text(details: dict, en: bool) -> str:
+def _cast_text(details: dict, lang: str) -> str:
     hero, ability, target = details["hero"], details["ability"], details["target"]
     times = f" ×{details['count']}" if details["count"] > 1 else ""
-    if en:
+    if lang == "en":
         return f"{hero} cast {ability}{times}" + (f" on {target}" if target else "")
+    hero, target = _hero(hero, lang), _hero(target, lang)
     return f"{hero} 使用了 {ability}{times}" + (f"（目标：{target}）" if target else "")
 
 
@@ -966,18 +981,20 @@ def _add_kill_events(
             side = k.killer_team if k.killer_team in ("radiant", "dire") else (
                 "" if k.deny else "dire" if victim.team == "radiant" else "radiant")
             unit = unit_text(k.killer_unit, lang, team=side)
+            victim_name = _hero(victim.hero_name, lang)
+            killer_name = _hero(killer.hero_name, lang) if killer is not None else ""
             if killer is not None and k.deny:
-                desc = (f"{victim.hero_name} was denied by {killer.hero_name}" if en
-                        else f"{victim.hero_name} 被队友 {killer.hero_name} 反补")
+                desc = (f"{victim_name} was denied by {killer_name}" if en
+                        else f"{victim_name} 被队友 {killer_name} 反补")
             elif killer is not None:
-                desc = (f"{killer.hero_name} killed {victim.hero_name}" if en
-                        else f"{killer.hero_name} 击杀了 {victim.hero_name}")
+                desc = (f"{killer_name} killed {victim_name}" if en
+                        else f"{killer_name} 击杀了 {victim_name}")
             elif unit:
-                desc = (f"{victim.hero_name} died to {unit}" if en
-                        else f"{victim.hero_name} 被{unit}击杀")
+                desc = (f"{victim_name} died to {unit}" if en
+                        else f"{victim_name} 被{unit}击杀")
             else:
-                desc = f"{victim.hero_name} died" if en else f"{victim.hero_name} 阵亡"
-            assists = [by_slot[s].hero_name for s in k.assist_slots if s in by_slot]
+                desc = f"{victim_name} died" if en else f"{victim_name} 阵亡"
+            assists = [_hero(by_slot[s].hero_name, lang) for s in k.assist_slots if s in by_slot]
             if assists:
                 desc += (f" (assists: {', '.join(assists)})" if en
                          else f"（助攻：{'、'.join(assists)}）")
@@ -1005,7 +1022,7 @@ def _add_kill_events(
                         time=int(death_abs),
                         event_type="death",
                         description=(f"{tp.hero_name} died in the teamfight" if en
-                                     else f"{tp.hero_name} 在团战中阵亡"),
+                                     else f"{_hero(tp.hero_name, lang)} 在团战中阵亡"),
                         details={"hero": tp.hero_name, "player_slot": tp.player_slot,
                                  "teamfight_start": tf.start_time},
                     )))
@@ -1019,7 +1036,7 @@ def _add_kill_events(
                         time=int(kill_abs),
                         event_type="kill",
                         description=(f"{tp.hero_name} killed {target}" if en
-                                     else f"{tp.hero_name} 击杀了 {target}"),
+                                     else f"{_hero(tp.hero_name, lang)} 击杀了 {_hero(target, lang)}"),
                         details={"killer": tp.hero_name, "target": kt.get("target", ""),
                                  "killer_slot": tp.player_slot},
                     )))
@@ -1088,7 +1105,8 @@ def _add_laning_damage_events(
             desc = f"{player.hero_name} dealt {bucket['damage']} damage to {target_name} ({_how(bucket)})"
         else:
             target_name = target_player.hero_name if target_player else f"玩家{target_idx}"
-            desc = f"{player.hero_name} 对 {target_name} 造成了 {bucket['damage']} 点伤害（{_how(bucket)}）"
+            desc = (f"{_hero(player.hero_name, lang)} 对 {_hero(target_name, lang)} "
+                    f"造成了 {bucket['damage']} 点伤害（{_how(bucket)}）")
         ranked.append((_PRIORITY_OTHER, EventEntry(
             time=bucket["time"],
             event_type="damage_dealt",
@@ -1107,7 +1125,7 @@ def _add_laning_damage_events(
                 desc = (f"{player.hero_name} took {bucket['damage']} damage from "
                         f"{other.hero_name} ({_how(bucket)})")
             else:
-                desc = (f"{player.hero_name} 受到了来自 {other.hero_name} 的 "
+                desc = (f"{_hero(player.hero_name, lang)} 受到了来自 {_hero(other.hero_name, lang)} 的 "
                         f"{bucket['damage']} 点伤害（{_how(bucket)}）")
             ranked.append((_PRIORITY_PLAYER, EventEntry(
                 time=bucket["time"],

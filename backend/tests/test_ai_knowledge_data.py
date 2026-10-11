@@ -169,7 +169,7 @@ def test_get_matchup_info_en_uses_editorial(kb_env):
     reverse = knowledge_base.get_matchup_info("Viper", "Drow Ranger", lang="en")
     assert reverse.startswith("(From Drow Ranger's perspective)") and tip in reverse
     reverse_zh = knowledge_base.get_matchup_info("Viper", "Drow Ranger", lang="zh")
-    assert reverse_zh.startswith("（从Drow Ranger视角") and tip in reverse_zh
+    assert reverse_zh.startswith("（从卓尔游侠视角") and tip in reverse_zh     # the hero in the report language
     # A hero with two spellings ("Outworld Devourer" is what dotaconstants still calls him)
     od = tips["Outworld Destroyer:Silencer"]["tip"]
     assert knowledge_base.get_matchup_info("Outworld Devourer", "Silencer", lang="en") == od
@@ -381,7 +381,7 @@ def test_killer_abilities_and_active_items_render(kb_env):
 
     fight = _ctx(hero="Axe", point_type="fight_engage", items=["Blink Dagger", "Tango"])
     fight_text = knowledge_base.get_ability_item_knowledge(fight, lang="zh")
-    assert "可用主动道具" in fight_text and "Blink Dagger（CD 15秒）" in fight_text
+    assert "可用主动道具" in fight_text and "闪烁匕首（CD 15秒）" in fight_text and "Blink Dagger（" not in fight_text
 
 
 # ---------------------------------------------------------------------------
@@ -689,7 +689,7 @@ def test_damage_over_time_is_not_printed_as_plain_damage(kb_env, monkeypatch):
     assert (game_data.format_ability_at_level("Viper", "Viper Strike", 2, lang="en")
             == "Viper Strike (Lv2): CD 40s, Mana 150, Magical 110 damage/s, Duration 6s")
     assert (game_data.format_ability_at_level("Viper", "Poison Attack", None, lang="zh")
-            == "Poison Attack: 魔耗20, 每秒魔法伤害4/8/12/16, 持续4秒")
+            == "毒性攻击: 魔耗20, 每秒魔法伤害4/8/12/16, 持续4秒")
     assert "damage" not in game_data.format_ability_at_level("Drow Ranger", "Frost Arrows", 1, lang="en")
 
     # A file written before the headers were read stores the per-second list as "damage"
@@ -719,14 +719,15 @@ def test_format_omits_zero_damage_and_unknown_cooldown(kb_env, monkeypatch):
             ["Hand of Midas", "Black King Bar", "Boots of Travel", "Butterfly"], lang=lang)
         assert "Boots of Travel (" not in items and "Butterfly (" not in items  # listed, not "active"
         assert "?" not in items
-        assert ("Hand of Midas (Active):" if lang == "en" else "Hand of Midas（主动）:") in items
-        assert ("Black King Bar (Active, CD 95s)" if lang == "en" else "Black King Bar（主动, CD 95秒）") in items
+        assert ("Hand of Midas (Active):" if lang == "en" else "迈达斯之手（主动）:") in items
+        assert ("Black King Bar (Active, CD 95s)" if lang == "en" else "黑皇杖（主动, CD 95秒）") in items
+        assert ("Other items: Boots of Travel, Butterfly" if lang == "en" else "其他装备: 远行鞋、蝴蝶") in items
     # A stored all-zero list never becomes a "0 damage" fact, a cooldown of 0 never "CD 0s"
     monkeypatch.setitem(game_data.get_ability_table()["Meepo"]["Poof"], "damage", [0, 0, 0, 0])
     assert "damage" not in game_data.format_ability_at_level("Meepo", "Poof", 2, lang="en")
     monkeypatch.setitem(game_data.get_item_table()["Black King Bar"], "cooldown", 0)
     assert "- Black King Bar (Active):" in game_data.format_player_items(["Black King Bar"], lang="en")
-    assert "- Black King Bar（主动）:" in game_data.format_player_items(["Black King Bar"], lang="zh")
+    assert "- 黑皇杖（主动）:" in game_data.format_player_items(["Black King Bar"], lang="zh")
 
 
 def test_innate_and_hidden_abilities_are_not_listed_as_unlearned(kb_env, monkeypatch):
@@ -736,7 +737,9 @@ def test_innate_and_hidden_abilities_are_not_listed_as_unlearned(kb_env, monkeyp
     assert line == "- Not learned: Breathe Fire, Wyrm's Wrath, Elder Dragon Form"
     # An innate that does carry a level is still shown as learned
     levelled = game_data.format_hero_abilities("Dragon Knight", {"Dragon Blood": 2}, lang="zh")
-    assert "- Dragon Blood (Lv2)" in levelled and "Fireball" not in levelled
+    assert "- 龙族血统 (Lv2)" in levelled and "Fireball" not in levelled and "火球" not in levelled
+    assert levelled.splitlines()[0] == "### 龙骑士 技能详情"
+    assert levelled.splitlines()[-1] == "- 未学习: 火焰气息、神龙摆尾、飞龙之怒、古龙形态"
     unskilled = game_data.format_hero_abilities("Void Spirit", {}, lang="en")
     assert "Intrinsic Edge" not in unskilled and "Astral Step: (requires level 6)" in unskilled
     # Invoker's placeholder slots are neither Hidden nor innate
@@ -811,7 +814,7 @@ def test_fetched_facts_win_over_editorial(kb_env, monkeypatch, tmp_path):
     # ... which only fill a gap (this slice of the constants says nothing about Butterfly)
     assert game_data.get_item_data("Butterfly")["description"] == fallback_items["butterfly"]["description"]
     assert midas["coaching_tip"] == editorial_items["hand_of_midas"]["coaching_tip"]
-    line = "- Black King Bar（主动, CD 95秒）: Active: Applies a basic dispel. Grants 60% magic resistance"
+    line = "- 黑皇杖（主动, CD 95秒）: Active: Applies a basic dispel. Grants 60% magic resistance"
     assert line in game_data.format_player_items(["Black King Bar"], lang="zh")
     # The description goes with a coaching tip: an active without one is listed by name and cooldown
     monkeypatch.delitem(bkb, "coaching_tip")
@@ -990,37 +993,46 @@ def test_skipped_editorial_abilities_are_logged_once(kb_env, monkeypatch, caplog
 # Alias index + display-name helpers (every identifier form the parsers emit)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("identifier, key, name", [
-    ("Boots of Travel", "travel_boots", "Boots of Travel"),
-    ("travel_boots", "travel_boots", "Boots of Travel"),
-    ("item_travel_boots", "travel_boots", "Boots of Travel"),
-    ("boots_of_travel", "travel_boots", "Boots of Travel"),       # entity class names
-    ("dustof_appearance", "dust", "Dust of Appearance"),
-    ("invisibility_edge", "invis_sword", "Shadow Blade"),
-    ("empty_bottle", "bottle", "Bottle"),
-    ("bkb", "black_king_bar", "Black King Bar"),                  # abbreviations
-    ("Midas", "hand_of_midas", "Hand of Midas"),
-    ("aghs", "ultimate_scepter", "Aghanim's Scepter"),
-    ("dagon_3", "dagon", "Dagon"),                                # upgrade levels
+@pytest.mark.parametrize("identifier, key, name, name_zh", [
+    ("Boots of Travel", "travel_boots", "Boots of Travel", "远行鞋"),
+    ("travel_boots", "travel_boots", "Boots of Travel", "远行鞋"),
+    ("item_travel_boots", "travel_boots", "Boots of Travel", "远行鞋"),
+    ("boots_of_travel", "travel_boots", "Boots of Travel", "远行鞋"),       # entity class names
+    ("dustof_appearance", "dust", "Dust of Appearance", "显影之尘"),
+    ("invisibility_edge", "invis_sword", "Shadow Blade", "影刃"),
+    ("empty_bottle", "bottle", "Bottle", "魔瓶"),
+    ("bkb", "black_king_bar", "Black King Bar", "黑皇杖"),                  # abbreviations
+    ("Midas", "hand_of_midas", "Hand of Midas", "迈达斯之手"),
+    ("aghs", "ultimate_scepter", "Aghanim's Scepter", "阿哈利姆神杖"),
+    ("dagon_3", "dagon", "Dagon", "达贡之神力"),                            # upgrade levels
+    ("黑皇杖", "black_king_bar", "Black King Bar", "黑皇杖"),               # the game's Chinese name
+    ("黑皇杖 (Black King Bar)", "black_king_bar", "Black King Bar", "黑皇杖"),
 ])
-def test_item_alias_index(kb_env, identifier, key, name):
+def test_item_alias_index(kb_env, identifier, key, name, name_zh):
     assert data_manager.resolve_item_key(identifier) == key
     assert data_manager.item_key(identifier) == key
-    assert data_manager.item_display_name(identifier, "zh") == name
+    assert data_manager.resolve_item_name(identifier) == name       # lookups stay English
+    assert data_manager.item_display_name(identifier) == data_manager.item_display_name(identifier, "en") == name
+    assert data_manager.item_display_name(identifier, "zh") == name_zh
     assert data_manager.is_known_item(identifier)
 
 
-@pytest.mark.parametrize("identifier, name", [
-    ("Wraith King", "Wraith King"), ("skeleton_king", "Wraith King"),
-    ("npc_dota_hero_skeleton_king", "Wraith King"), ("wk", "Wraith King"),
-    ("zuus", "Zeus"), ("SF", "Shadow Fiend"), ("queenofpain", "Queen of Pain"),
+@pytest.mark.parametrize("identifier, name, name_zh", [
+    ("Wraith King", "Wraith King", "冥魂大帝"), ("skeleton_king", "Wraith King", "冥魂大帝"),
+    ("npc_dota_hero_skeleton_king", "Wraith King", "冥魂大帝"), ("wk", "Wraith King", "冥魂大帝"),
+    ("zuus", "Zeus", "宙斯"), ("SF", "Shadow Fiend", "影魔"), ("queenofpain", "Queen of Pain", "痛苦女王"),
     # the game's names, also for the spellings of dotaconstants
-    ("Outworld Destroyer", "Outworld Destroyer"), ("Outworld Devourer", "Outworld Destroyer"),
-    ("OD", "Outworld Destroyer"), ("Ring Master", "Ringmaster"), ("npc_dota_hero_ringmaster", "Ringmaster"),
+    ("Outworld Destroyer", "Outworld Destroyer", "殁境神蚀者"), ("Outworld Devourer", "Outworld Destroyer", "殁境神蚀者"),
+    ("OD", "Outworld Destroyer", "殁境神蚀者"), ("Ring Master", "Ringmaster", "百戏大王"),
+    ("npc_dota_hero_ringmaster", "Ringmaster", "百戏大王"),
+    # the game's Chinese name and the bilingual form of a zh prompt find the hero as well
+    ("冥魂大帝", "Wraith King", "冥魂大帝"), ("冥魂大帝（Wraith King）", "Wraith King", "冥魂大帝"),
 ])
-def test_hero_alias_index(kb_env, identifier, name):
+def test_hero_alias_index(kb_env, identifier, name, name_zh):
     assert data_manager.resolve_hero_name(identifier) == name
-    assert data_manager.hero_display_name(identifier, "en") == name
+    assert data_manager.hero_display_name(identifier) == data_manager.hero_display_name(identifier, "en") == name
+    assert data_manager.hero_display_name(identifier, "zh") == name_zh
+    assert data_manager.hero_slug(identifier) == data_manager.hero_slug(name)   # tags never get a Chinese name
     assert data_manager.is_known_hero(identifier)
 
 
@@ -1033,8 +1045,10 @@ def test_display_name_helpers_never_raise(kb_env):
     assert not dm.is_known_hero("brand_new") and not dm.is_known_item("shiny_new_thing")
     # A recipe is named after its item; other units get a localized generic label
     assert dm.item_display_name("recipe_black_king_bar", "en") == "Black King Bar Recipe"
-    assert dm.item_display_name("item_recipe_black_king_bar", "zh") == "Black King Bar 图纸"
-    assert dm.unit_display_name("npc_dota_hero_skeleton_king", "zh") == "Wraith King"
+    assert dm.item_display_name("item_recipe_black_king_bar", "zh") == "图纸（黑皇杖）"
+    assert dm.item_display_name("recipe_shiny_new_thing", "zh") == "图纸（Shiny New Thing）"
+    assert dm.unit_display_name("npc_dota_hero_skeleton_king", "zh") == "冥魂大帝"
+    assert dm.unit_display_name("npc_dota_hero_skeleton_king", "en") == "Wraith King"
     assert dm.unit_display_name("npc_dota_creep_badguys_melee", "zh") == "小兵"
     assert dm.unit_display_name("npc_dota_goodguys_tower1_mid", "en") == "Tower"
     assert dm.unit_display_name("npc_dota_roshan", "zh") == "肉山"
@@ -1045,20 +1059,24 @@ def test_display_name_helpers_never_raise(kb_env):
         for junk in (None, "", 0, 3.5, [], {"a": 1}, object()):
             assert isinstance(helper(junk, "zh"), str)
         assert helper("", "en") == "" and helper(None) == ""
-    # The plain-attack inflictor is the one name that is translated
+    # Names follow the language; without one they are English
     assert dm.ability_display_name("attack", "zh") == "普通攻击"
     assert dm.ability_display_name("attack", "en") == dm.display_name("attack", "en") == "Attack"
-    assert dm.ability_display_name("lion_impale", "en") == "Earth Spike"
-    assert dm.ability_display_name("item_dagon", "zh") == "Dagon"
-    assert dm.display_name("npc_dota_hero_zuus") == "Zeus"
-    assert dm.display_name("travel_boots") == "Boots of Travel"
-    assert dm.display_name("some_new_thing") == "Some New Thing"
+    assert (dm.ability_display_name("lion_impale", "en"), dm.ability_display_name("lion_impale", "zh")) == (
+        "Earth Spike", "裂地尖刺")
+    assert (dm.ability_display_name("item_dagon"), dm.ability_display_name("item_dagon", "zh")) == ("Dagon", "达贡之神力")
+    assert (dm.display_name("npc_dota_hero_zuus"), dm.display_name("npc_dota_hero_zuus", "zh")) == ("Zeus", "宙斯")
+    assert (dm.display_name("travel_boots"), dm.display_name("travel_boots", "zh")) == ("Boots of Travel", "远行鞋")
+    assert dm.display_name("lion_impale", "zh") == "裂地尖刺"
+    assert dm.display_name("some_new_thing") == dm.display_name("some_new_thing", "zh") == "Some New Thing"
 
 
 def test_killer_section_uses_display_name(kb_env):
     ctx = _ctx(hero="Drow Ranger", killer="skeleton_king")
     text = knowledge_base.get_ability_item_knowledge(ctx, lang="zh")
-    assert "击杀者关键技能（Wraith King）" in text and "skeleton_king" not in text
+    assert "击杀者关键技能（冥魂大帝）" in text and "skeleton_king" not in text and "Wraith King" not in text
+    en = knowledge_base.get_ability_item_knowledge(ctx, lang="en")
+    assert "Killer Key Abilities (Wraith King)" in en and "skeleton_king" not in en
 
 
 # ---------------------------------------------------------------------------

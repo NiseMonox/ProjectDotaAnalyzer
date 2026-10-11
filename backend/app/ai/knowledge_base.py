@@ -43,12 +43,14 @@ logger = logging.getLogger(__name__)
 
 try:
     from .game_data import (
+        ability_text,
         format_ability_at_level,
         format_hero_abilities,
         format_player_items,
         get_hero_ultimate,
         get_item_data,
         get_signature_ability,
+        item_text,
     )
     _HAS_GAME_DATA = True
 except ImportError:  # pragma: no cover - game_data ships with this package
@@ -341,7 +343,12 @@ def _assign_index_text(store, lang: str, english) -> None:
 
 
 def _learned_title(category: str, tags: set[str], source: str, lang: str) -> str:
-    """Title of a learned chunk, built from its tags (never from its third-party text)."""
+    """Title of a learned chunk, built from its tags (never from its third-party text).
+
+    Hero and item names are the English ones in both stores, like in the
+    titles and texts of the editorial chunks; :func:`_knowledge_ref` puts
+    the title a report shows into the report language.
+    """
     from .knowledge_chunks import _PHASE_LABELS, _ROLE_LABELS
 
     names: list[str] = []
@@ -349,12 +356,12 @@ def _learned_title(category: str, tags: set[str], source: str, lang: str) -> str
     if matchups:
         _, hero, opponent = matchups[0].split(":", 2)
         versus = " vs " if lang == "en" else " 对 "
-        names.append(data_manager.hero_display_name(hero, lang) + versus
-                     + data_manager.hero_display_name(opponent, lang))
+        names.append(data_manager.hero_display_name(hero, "en") + versus
+                     + data_manager.hero_display_name(opponent, "en"))
     else:
-        names.extend(data_manager.hero_display_name(t.split(":", 1)[1], lang)
+        names.extend(data_manager.hero_display_name(t.split(":", 1)[1], "en")
                      for t in sorted(tags) if t.startswith("hero:") and t != "hero:all")
-        names.extend(data_manager.item_display_name(t.split(":", 1)[1], lang)
+        names.extend(data_manager.item_display_name(t.split(":", 1)[1], "en")
                      for t in sorted(tags) if t.startswith("item:"))
     if not names:
         roles = _ROLE_LABELS["en" if lang == "en" else "zh"]
@@ -589,14 +596,14 @@ _PHASE_OBJECTIVES: dict[str, dict[str, str]] = {
         "carry": "加速刷钱或参与关键团战。出核心装备后可以积极打架。推塔拿地图控制权。注意带TP随时准备支援。",
         "mid": "积极参与团战和推进。利用等级和装备优势带节奏。控制Roshan时间点。帮助队伍建立视野控制。",
         "offlane": "先手开团是主要职责。出跳刀等先手道具后积极寻找机会。保护后排的同时创造空间。",
-        "support_4": "做好视野控制。关键团战提供控制和技能输出。帮助核心入侵敌方野区。Smoke配合队友找机会击杀。",
+        "support_4": "做好视野控制。关键团战提供控制和技能输出。帮助核心入侵敌方野区。开雾配合队友找机会击杀。",
         "support_5": "维持视野网络。团战中保护核心存活。购买团队道具（秘法、梅肯等）。控制Roshan入口视野。",
     },
     "late_game": {
         "carry": "团战输出核心。注意买活时间窗口。不要独自在危险区域。保持刷钱节奏但别错过关键团战。",
         "mid": "提供关键技能输出。保护高地或配合推高地。买活时机非常关键。注意BKB剩余时间管理。",
         "offlane": "先手开团决定胜负。保护高地时寻找反打机会。光环装备为团队提供增益。注意敌方核心位置再开团。",
-        "support_4": "关键控制决定团战。Smoke开雾找机会。保持视野压制。注意保护后排防止被跳脸。",
+        "support_4": "关键控制决定团战。开雾找机会。保持视野压制。注意保护后排防止被跳脸。",
         "support_5": "维持视野是最后的防线。团战中控制和保护核心。买活金准备好。关键物品使用（风杖、推推、莲花宝珠）。",
     },
 }
@@ -685,8 +692,8 @@ _VISION_SECTIONS: list[dict] = [
         "priority": 2,
         "zh": (
             "### 视野基础机制\n"
-            "- 观察守卫（Observer Ward）：提供{observer_ward_vision}距离的地面视野，持续{observer_ward_duration}秒（{observer_ward_minutes}分钟），无数量限制但商店补货有冷却时间\n"
-            "- 岗哨守卫（Sentry Ward）：不提供地面视野，仅提供{sentry_ward_true_sight}距离的真视（反隐/排眼），与观察守卫配合使用\n"
+            "- 侦察守卫（Observer Ward）：提供{observer_ward_vision}距离的地面视野，持续{observer_ward_duration}秒（{observer_ward_minutes}分钟），无数量限制但商店补货有冷却时间\n"
+            "- 岗哨守卫（Sentry Ward）：不提供地面视野，仅提供{sentry_ward_true_sight}距离的真视（反隐/排眼），与侦察守卫配合使用\n"
             "- 英雄视野：白天{hero_day_vision}距离，夜间{hero_night_vision}距离。部分英雄例外（如夜魇猎人夜间视野1800）\n"
             "- 防御塔：白天提供{tower_day_vision}距离视野；夜间一塔{tower_t1_night_vision}距离，其余防御塔{tower_night_vision}距离。塔被摧毁后该区域永久失去固定视野\n"
             "- 昼夜交替：每{day_night_minutes}分钟交替一次（0:00-5:00白天，5:00-10:00夜间，以此类推）\n"
@@ -713,7 +720,7 @@ _VISION_SECTIONS: list[dict] = [
         "zh": (
             "### 视野安全原则\n"
             "- 当3名以上敌方英雄从地图消失超过15秒时，应立即撤退到安全区域（塔下或有视野覆盖区）\n"
-            "- 观察守卫到期后应在10秒内补放新眼，特别是河道、肉山坑、己方野区入口等关键位置\n"
+            "- 侦察守卫到期后应在10秒内补放新眼，特别是河道、肉山坑、己方野区入口等关键位置\n"
             "- 夜间在没有视野的区域移动极其危险——视野仅800意味着敌方可以从极近距离发动突袭\n"
             "- 推进前必须确保侧翼有视野覆盖，至少提前30秒在推进路线两侧插眼\n"
             "- 如果不知道敌方位置，默认假设他们在最危险的位置（你当前位置的gank路线上）\n"
@@ -791,8 +798,8 @@ _VISION_SECTIONS: list[dict] = [
         "priority": 2,
         "zh": (
             "### 不同位置的视野责任\n"
-            "- 5号位（硬辅助）：主要买眼责任，维持关键区域视野网络。目标：地图上始终有3-4个观察守卫存活\n"
-            "- 4号位（游走辅助）：补充买眼，负责侵略性视野（深入敌方区域插眼、反眼）。Smoke后优先放置深入眼\n"
+            "- 5号位（硬辅助）：主要买眼责任，维持关键区域视野网络。目标：地图上始终有3-4个侦察守卫存活\n"
+            "- 4号位（游走辅助）：补充买眼，负责侵略性视野（深入敌方区域插眼、反眼）。开雾后优先放置深入眼\n"
             "- 核心位（1/2/3号位）：不需要主动买眼，但必须读取视野信息做出安全决策。看到敌方消失必须有反应\n"
             "- 所有位置：路过岗哨守卫覆盖区域时有义务排除敌方视野（反眼），这是团队责任"
         ),
@@ -819,7 +826,7 @@ _VISION_SECTIONS: list[dict] = [
             "4. 当前是白天还是夜间？（夜间危险系数翻倍）\n"
             "5. 附近是否有友方英雄可以支援？（TP距离内？走路距离内？）\n"
             "6. 距离最近的安全区域（塔/泉水）有多远？（>10秒路程 = 危险）\n"
-            "7. 敌方是否有烟雾可用？（烟雾可以绕过守卫视野）"
+            "7. 敌方是否有诡计之雾可用？（开雾可以绕过守卫视野）"
         ),
         "en": (
             "### Vision and Death Correlation\n"
@@ -876,7 +883,7 @@ _DEATH_SECTIONS: list[dict] = [
             "### 死亡分析：视野与信息维度\n"
             "- 死亡前周围是否有己方眼位？如果没有，属于视野缺失导致的死亡\n"
             "- 小地图上是否能看到敌方英雄位置？缺失几个敌人的信息？\n"
-            "- 敌方是否使用了烟雾（Smoke）？如果是，属于高质量gank，减轻玩家责任\n"
+            "- 敌方是否使用了诡计之雾（Smoke）？如果是，属于高质量gank，减轻玩家责任\n"
             "\n"
             "#### 视野维度评分标准\n"
             "- S：在完整视野覆盖下操作，即使夜间也有守卫覆盖，利用视野信息主动规避了潜在危险\n"
@@ -997,7 +1004,7 @@ _DEATH_SECTIONS: list[dict] = [
         "priority": 1,
         "zh": (
             "### 死亡分析评分标准\n"
-            "- S（完美）：不可避免的死亡，或有价值的主动牺牲。例如：被烟雾gank且无逃生手段，或4号位、5号位牺牲保核心后赢下团战\n"
+            "- S（完美）：不可避免的死亡，或有价值的主动牺牲。例如：被开雾gank且无逃生手段，或4号位、5号位牺牲保核心后赢下团战\n"
             "- A（良好）：只有小失误，基本操作正确。例如：走位稍有偏差但整体决策合理\n"
             "- B（一般）：有明显的判断失误但非致命习惯。例如：没有注意到敌方消失信号但使用了可用的逃生手段\n"
             "- C（较差）：明显的位置或决策错误。例如：在缺乏视野的情况下独自深入敌方区域\n"
@@ -1091,7 +1098,7 @@ def get_hero_info(hero_name: str, lang: str = "zh") -> dict:
     if lang == "en":
         note = f"No detailed laning info available for {hero_name}."
     else:
-        note = f"暂无{hero_name}的详细对线信息。"
+        note = f"暂无{_hero_text(hero_name, lang)}的详细对线信息。"
     return {
         "role": "unknown",
         "attribute": "unknown",
@@ -1100,6 +1107,13 @@ def get_hero_info(hero_name: str, lang: str = "zh") -> dict:
         "weaknesses": [],
         "laning_tips": note,
     }
+
+
+def _hero_text(name: str, lang: str) -> str:
+    """A hero's name as text of language ``lang`` (lookups keep the name they were given)."""
+    if not name or not data_manager.is_known_hero(name):
+        return name
+    return data_manager.hero_display_name(name, lang)
 
 
 def _find_matchup(hero_name: str, opponent_name: str) -> tuple[str, bool] | None:
@@ -1129,6 +1143,7 @@ def _generic_matchup(hero_name: str, opponent_name: str, lang: str) -> str | Non
         if opp_info.get("weaknesses"):
             parts.append(f"{opponent_name} weaknesses: {', '.join(opp_info['weaknesses'][:2])}")
         return ". ".join(parts) + "." if parts else None
+    hero_name, opponent_name = _hero_text(hero_name, lang), _hero_text(opponent_name, lang)
     if hero_info["attack_type"] == "melee" and opp_info["attack_type"] == "ranged":
         parts.append(f"{hero_name}是近战英雄，对线{opponent_name}（远程）时注意被消耗")
     elif hero_info["attack_type"] == "ranged" and opp_info["attack_type"] == "melee":
@@ -1151,13 +1166,14 @@ def get_matchup_info(hero_name: str, opponent_name: str, lang: str = "zh") -> st
             return tip
         if lang == "en":
             return f"(From {opponent_name}'s perspective) {tip}"
-        return f"（从{opponent_name}视角的对位信息）{tip}"
+        return f"（从{_hero_text(opponent_name, lang)}视角的对位信息）{tip}"
     generic = _generic_matchup(hero_name, opponent_name, lang)
     if generic:
         return generic
     if lang == "en":
         return f"No detailed matchup info for {hero_name} vs {opponent_name}. Play based on hero characteristics."
-    return f"暂无{hero_name}对阵{opponent_name}的详细对位信息。根据双方英雄特性合理对线。"
+    return (f"暂无{_hero_text(hero_name, lang)}对阵{_hero_text(opponent_name, lang)}的详细对位信息。"
+            f"根据双方英雄特性合理对线。")
 
 
 _ROLE_ALIASES = {
@@ -1273,7 +1289,8 @@ def get_ability_item_knowledge(ctx: DecisionContext, lang: str = "zh", *, compac
             formatted = format_ability_at_level(killer_hero, name, None, lang=lang)
             line = f"{label}{formatted}"
             tip = data.get("coaching_tip")
-            if tip and (formatted == name or not compact):  # no stats known: the tip is the info
+            bare = formatted == ability_text(killer_hero, name, lang)
+            if tip and (bare or not compact):  # no stats known: the tip is the info
                 line += f" — {_short(tip, 140)}"
             lines.append(line)
         if lines:
@@ -1302,9 +1319,10 @@ def get_ability_item_knowledge(ctx: DecisionContext, lang: str = "zh", *, compac
             if data and data.get("is_active"):
                 cd = data.get("cooldown")
                 if isinstance(cd, (int, float)) and not isinstance(cd, bool) and cd > 0:
-                    actives.append(f"{item_name} (CD {cd:g}s)" if en else f"{item_name}（CD {cd:g}秒）")
+                    actives.append(f"{item_name} (CD {cd:g}s)" if en
+                                   else f"{item_text(item_name, lang)}（CD {cd:g}秒）")
                 else:
-                    actives.append(item_name)
+                    actives.append(item_text(item_name, lang))
         if actives:
             header = "### Available Active Items" if en else "### 可用主动道具"
             sep = ", " if en else "、"
@@ -1551,12 +1569,15 @@ def _entry_overhead(chunk, lang: str) -> int:
 def _knowledge_ref(number: int, chunk, score: float, lang: str):
     from .rag.types import KnowledgeRef
 
+    # A learned chunk always has a title built from its tags; its own
+    # (third-party) first line is never used as one.
+    title = chunk.display_title if (chunk.trusted or chunk.title) else _source_label(chunk.source, lang)
     return KnowledgeRef(
         ref=f"K{number}",
         chunk_id=chunk.chunk_id,
-        # A learned chunk always has a title built from its tags; its own
-        # (third-party) first line is never used as one.
-        title=chunk.display_title if (chunk.trusted or chunk.title) else _source_label(chunk.source, lang),
+        # The report shows this title: hero and item names follow its
+        # language ("冥魂大帝 — 对线要点"), whatever the chunk itself writes.
+        title=data_manager.localize_names(title, lang),
         source_type=chunk.source_type,
         source_label=_source_label(chunk.source, lang),
         patch=chunk.patch_version,
@@ -1653,6 +1674,36 @@ def related_refs(ctx: DecisionContext, lang: str = "zh", k: int = 3) -> list:
     except Exception as exc:
         logger.warning("Related knowledge lookup failed: %s", exc)
         return RefList()
+
+
+def knowledge_entry(chunk_id: str, lang: str = "zh") -> dict | None:
+    """One knowledge entry by the ``id`` a report lists under ``sources``.
+
+    ``{id, title, source_type, source_label, patch, text}``: title, type and
+    patch as ``sources[]`` shows them, the localized source label
+    ("Curated note" / "编辑整理") and ``text``, the entry as retrieval hands
+    it to the model (the store of *lang*; curated hero and item notes are
+    English in both). None when the knowledge base holds no entry with this
+    id: an unknown id, or a learned entry a later learning run dropped.
+    Never raises.
+    """
+    try:
+        store = _get_knowledge_store(lang=lang)
+        chunk = store.get(str(chunk_id or "")) if store is not None else None
+        if chunk is None:
+            return None
+        ref = _knowledge_ref(1, chunk, 0.0, lang)
+        return {
+            "id": ref.chunk_id,
+            "title": ref.title,
+            "source_type": ref.source_type,
+            "source_label": ref.source_label,
+            "patch": ref.patch,
+            "text": _neutralise_handles(chunk.content),
+        }
+    except Exception as exc:
+        logger.warning("Knowledge entry lookup failed: %s", exc)
+        return None
 
 
 # A search result is a tool message of the agent: capped on its own.
@@ -1792,7 +1843,7 @@ def _legacy_knowledge(context: DecisionContext, lang: str = "zh",
         )
     else:
         sections.append(
-            f"## 玩家英雄：{hero_name}\n"
+            f"## 玩家英雄：{_hero_text(hero_name, lang)}\n"
             f"- 通常位置：{role_labels.get(hero_info['role'], role_labels['unknown'])}\n"
             f"- 属性：{hero_info['attribute']}（{hero_info['attack_type']}）\n"
             f"- 强势时间点：{spikes.join(hero_info.get('power_spikes', []))}\n"
@@ -1813,7 +1864,7 @@ def _legacy_knowledge(context: DecisionContext, lang: str = "zh",
                 )
             else:
                 enemy_parts.append(
-                    f"### {enemy.hero_name}\n"
+                    f"### {_hero_text(enemy.hero_name, lang)}\n"
                     f"- 通常位置：{role_labels.get(e_info['role'], role_labels['unknown'])}，{e_info['attack_type']}\n"
                     f"- 强势点：{'、'.join(e_info.get('power_spikes', [])[:2])}\n"
                     f"- 弱点：{'、'.join(e_info.get('weaknesses', [])[:2])}"
@@ -1884,6 +1935,7 @@ __all__ = [
     "get_ability_item_knowledge",
     "get_knowledge_for_context",
     "related_refs",
+    "knowledge_entry",
     "search_knowledge",
     "KnowledgeText",
     "SEARCH_MAX_CHARS",

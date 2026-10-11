@@ -956,7 +956,7 @@ def _detect_good_plays(match: MatchData, player: PlayerData, lang: str = "zh") -
     multi_kill_names = (
         {2: "Double Kill", 3: "Triple Kill", 4: "Ultra Kill", 5: "Rampage"}
         if en else
-        {2: "双杀", 3: "三杀", 4: "四杀", 5: "五杀（Rampage）"}
+        {2: "双杀", 3: "三杀", 4: "疯狂杀戮", 5: "暴走"}     # the game's own announcements
     )
     def a(name: str) -> str:
         return f"an {name}" if name[:1] in "AEIOU" else f"a {name}"
@@ -970,7 +970,7 @@ def _detect_good_plays(match: MatchData, player: PlayerData, lang: str = "zh") -
          7: "Wicked Sick", 8: "Monster Kill", 9: "Godlike", 10: "Beyond Godlike"}
         if en else
         {3: "大杀特杀", 4: "主宰比赛", 5: "杀人如麻", 6: "无人能挡",
-         7: "变态杀戮", 8: "妖怪般的杀戮", 9: "如同神一般", 10: "超神"}
+         7: "变态杀戮", 8: "妖怪般的杀戮", 9: "如同神一般", 10: "超越神的杀戮"}
     )
     for streak, time_s in _sequence_points(streaks, player.kill_streaks, 3, has_counters):
         name = streak_names[min(streak, 10)]
@@ -989,10 +989,10 @@ def _detect_good_plays(match: MatchData, player: PlayerData, lang: str = "zh") -
         if smoke.result == "kill" and smoke.kills_gained > 0:
             n = smoke.kills_gained
             brief = (f"Successful smoke gank: {n} {'kill' if n == 1 else 'kills'}" if en
-                     else f"烟雾突袭成功，击杀{n}人")
+                     else f"开雾抓人成功，击杀{n}人")
         elif smoke.result == "objective" and smoke.objective_taken:
             obj = obj_names.get(smoke.objective_taken, smoke.objective_taken)
-            brief = f"Smoke play secured {obj}" if en else f"烟雾行动成功拿下{obj}"
+            brief = f"Smoke play secured {obj}" if en else f"开雾后拿下{obj}"
         else:
             continue
         add(brief, smoke.time, "smoke")

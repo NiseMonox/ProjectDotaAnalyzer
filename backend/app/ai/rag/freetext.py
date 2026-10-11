@@ -99,7 +99,8 @@ def find_entities(query: str) -> tuple[list[str], list[str]]:
 
     Looks at runs of one to three words. A run shorter than four letters
     only counts when it is a capitalised hero name ("Axe", "Io"): the short
-    aliases ("am", "tp", "pa") are English words.
+    aliases ("am", "tp", "pa") are English words. Names written in Chinese
+    the way a zh report writes them ("冥界亚龙", "黑皇杖") count as well.
     """
     from .. import data_manager
 
@@ -125,7 +126,8 @@ def find_entities(query: str) -> tuple[list[str], list[str]]:
             if key:
                 items.append(key)
                 used[start:start + size] = [True] * size
-    return _dedupe(heroes), _dedupe(items)
+    zh_heroes, zh_items = data_manager.find_zh_names(query)
+    return _dedupe(heroes + zh_heroes), _dedupe(items + zh_items)
 
 
 def _is_english(text: str) -> bool:

@@ -45,6 +45,7 @@ import weakref
 from dataclasses import dataclass
 from typing import Any, Iterable, Iterator
 
+from . import data_manager
 from .models import (
     DecisionContext,
     DecisionPoint,
@@ -171,6 +172,30 @@ _semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, tuple[int, as
 
 def _new_client(api_key: str, base_url: str):
     return AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=PER_CALL_TIMEOUT_S, max_retries=1)
+
+
+_sdk_loaded = False
+
+
+def preload_sdk() -> None:
+    """Import the SDK modules a chat request needs (blocking).
+
+    ``client.chat`` loads the SDK's whole resource tree, several hundred
+    modules, on first access. That takes a second or more, and minutes on a
+    cold or slow disk, so it must never happen on the event loop.
+    """
+    global _sdk_loaded
+    if _sdk_loaded or not _HAS_OPENAI:
+        return
+    import openai.resources.chat  # noqa: F401
+
+    _sdk_loaded = True
+
+
+async def _ensure_sdk_loaded() -> None:
+    """Run :func:`preload_sdk` in a worker thread unless it already ran."""
+    if not _sdk_loaded:
+        await asyncio.to_thread(preload_sdk)
 
 
 def _drop_closed_loops(cache: "weakref.WeakKeyDictionary") -> None:
@@ -399,6 +424,7 @@ def _log_call(purpose: str, request: dict, response: Any, started: float, error:
 
 async def _send(request: dict, purpose: str, remaining: float | None):
     timeout = PER_CALL_TIMEOUT_S if remaining is None else min(PER_CALL_TIMEOUT_S, remaining)
+    await _ensure_sdk_loaded()
     client = get_shared_client()
     started = time.monotonic()
     try:
@@ -500,7 +526,7 @@ _PROMPT_TEMPLATES: dict[str, dict[str, str]] = {
             "2. 消失的敌方英雄是否构成了威胁？\n"
             "3. 玩家是否利用了可用的视野信息？\n"
             "4. 在当时的视野条件下，玩家的位置是否安全？\n"
-            "5. 玩家是否有可用的技能或物品可以改变局面？（如BKB、Blink、关键控制技能）\n"
+            "5. 玩家是否有可用的技能或物品可以改变局面？（如黑皇杖、闪烁匕首、关键控制技能）\n"
             "6. 敌方关键技能的冷却时间是否被考虑在内？\n"
             "7. 如果提供了死亡因果链，请重点分析根本原因（标记为[根因]的步骤），而非仅仅分析死亡本身。建议应该针对最早可以改变的决策点。\n"
             "8. 结合比赛局势（经济/经验差、塔、人数）判断这次决策的风险是否值得。\n"
@@ -517,7 +543,8 @@ _PROMPT_TEMPLATES: dict[str, dict[str, str]] = {
             "- 只使用上文给出的事实。凡是标注为未知或数据缺失的内容（英雄位置、击杀者、时间点），就写未知或者不提，绝不要猜测补全。\n"
             "- “位置数据缺失”的敌方英雄不等于“消失”：我们并不知道他当时在哪里，不能据此批评玩家。同样，“位置数据缺失”的队友可能就在玩家身边，不能据此说玩家孤身一人。\n"
             "- 数据中没有技能和物品的冷却状态，也没有消耗品（吃树、药膏、回城卷轴等）：不要断言某个技能“已就绪”或“在冷却”、魔法值够不够、身上有没有补给，除非上文明确给出了数字。\n"
-            "- 英雄、技能、物品的名称一律照抄上文的写法（保持英文原名），不要自行翻译成中文译名或俗称。\n"
+            "- 英雄、技能、物品一律写中文名，照抄上文的写法；上文括号里的英文名只用来对照，回答里不要写。"
+            "参考知识中用英文写的名称，按其后的“名称对照”写成中文；没有给出中文名的名称保留英文原名，不要自行翻译，也不要用俗称。\n"
             "- 提到分路位置时使用“1号位…5号位”的说法。"
         ),
         "role_rule": "- 参考知识里写的英雄“定位”只是该英雄常见的打法；这名玩家本场打的位置以上文的“本场位置”为准。",
@@ -611,6 +638,7 @@ _PROMPT_TEMPLATES: dict[str, dict[str, str]] = {
         "ms_team": "玩家队伍: {team}",
         "ms_positions": "各英雄本场位置（按分路和经济推算）: 己方 {ours}；敌方 {theirs}",
         "ms_position": "{hero} {n}号位",
+        "names_glossary": "名称对照（以上资料中的英文名称 = 回答里要写的中文名）：{pairs}",
         "ms_gold": "经济: {state}",
         "ms_xp": "经验: {state}",
         "ms_ahead": "己方领先{v}",
@@ -865,19 +893,8 @@ _RESPONSE_LABELS: dict[str, dict[str, str]] = {
     },
 }
 
-_PHASE_NAMES = {
-    "zh": {"pregame": "开局", "laning": "对线期", "mid_game": "中期", "late_game": "后期"},
-    "en": {"pregame": "pregame", "laning": "laning", "mid_game": "mid game", "late_game": "late game"},
-}
-
-
 def _t(lang: str) -> dict[str, str]:
     return _PROMPT_TEMPLATES.get(lang, _PROMPT_TEMPLATES["zh"])
-
-
-def phase_name(phase: str, lang: str) -> str:
-    names = _PHASE_NAMES.get(lang, _PHASE_NAMES["zh"])
-    return names.get(phase, "unknown" if lang == "en" else "未知")
 
 
 # ---------------------------------------------------------------------------
@@ -889,6 +906,110 @@ _PRE_DEATH_MAX_AGE_S = 15
 # Largest gap (percentage points) between a snapshot's HP and the position
 # log's HP percentage for both to be about the same moment.
 _HP_SOURCES_TOLERANCE = 10
+
+
+def _hero(name: str | None, lang: str) -> str:
+    """A hero's name as text of language ``lang``.
+
+    States, death events and decision points keep the English name (it is
+    the key of every lookup); text takes the name from here, so a zh report
+    and a zh prompt read "冥魂大帝", not "Wraith King".
+    """
+    if not name:
+        return name or ""
+    return data_manager.hero_display_name(name, lang) or name
+
+
+def _heroes(names: Iterable[str], lang: str) -> list[str]:
+    return [_hero(name, lang) for name in names]
+
+
+def _hero_both(name: str, lang: str) -> str:
+    """A hero's name with its English name in brackets for a zh prompt:
+    "冥魂大帝（Wraith King）". The model writes the first; the second is what
+    the English reference material calls the hero and what a search query uses."""
+    shown = _hero(name, lang)
+    return shown if lang == "en" or shown == name else f"{shown}（{name}）"
+
+
+def context_heroes(context: DecisionContext) -> list[str]:
+    """English names of the heroes of the match, as far as a context knows them."""
+    names = [context.player_state.hero_name]
+    names += [state.hero_name for state in list(context.ally_states) + list(context.enemy_states)]
+    map_state = context.map_state or {}
+    for key in ("distant_allies", "distant_enemies", "unknown_position_allies", "unknown_position_enemies"):
+        names += [item.get("hero_name") for item in map_state.get(key) or [] if isinstance(item, dict)]
+    for key in ("dead_allies", "dead_enemies"):
+        names += [name for name in map_state.get(key) or [] if isinstance(name, str)]
+    positions = (context.match_context or {}).get("positions")
+    for side in (positions.values() if isinstance(positions, dict) else ()):
+        names += [entry[0] for entry in side or () if entry]
+    death = context.decision_point.related_death
+    if death is not None and death.killer_hero:
+        names.append(death.killer_hero)
+    return list(dict.fromkeys(name for name in names if name))
+
+
+# The longest glossary a prompt gets (a knowledge block names 20-40 things).
+_GLOSSARY_MAX = 60
+
+
+def names_glossary(text: str, lang: str, heroes: Iterable[str]) -> str:
+    """The line that maps the English names of a reference text to Chinese ("" = nothing to map).
+
+    The knowledge base is partly written in English. A zh verdict names
+    heroes, items and abilities in Chinese, as the rest of the report does,
+    so the model is given the pairs instead of being left to translate.
+    """
+    if lang == "en":
+        return ""
+    pairs = data_manager.name_glossary(text, lang, heroes)[:_GLOSSARY_MAX]
+    if not pairs:
+        return ""
+    return _t(lang)["names_glossary"].format(pairs="；".join(f"{en} = {zh}" for en, zh in pairs))
+
+
+# "一号位" ... "五号位": the report writes positions with digits (1号位 ... 5号位).
+_ZH_POSITION_RE = re.compile("([一二三四五])号位")
+_ZH_DIGITS = {"一": "1", "二": "2", "三": "3", "四": "4", "五": "5"}
+
+
+def report_wording(text: str, heroes: Iterable[str], lang: str) -> str:
+    """A text an LLM wrote, in the wording of the rest of a zh report.
+
+    The prompt asks for Chinese names and for "1号位 ... 5号位". A hero, item
+    or ability the model still named in English ("Wraith King", "Black King
+    Bar") gets the catalog's Chinese name, and a position written with a
+    Chinese numeral ("一号位") its digit. Names without a Chinese catalog
+    entry and every other word stay untouched; an en text is returned as it is.
+    """
+    if lang == "en" or not isinstance(text, str) or not text:
+        return text
+    text = data_manager.localize_names(text, lang, heroes)
+    return _ZH_POSITION_RE.sub(lambda match: _ZH_DIGITS[match.group(1)] + "号位", text)
+
+
+def localize_verdict(ev: Evaluation, heroes: Iterable[str], lang: str) -> Evaluation:
+    """Put the text fields of an LLM verdict into the wording of the report (:func:`report_wording`)."""
+    if lang != "en":
+        heroes = list(heroes)
+        for field_name in ("analysis", "mistake", "better_play", "lesson"):
+            setattr(ev, field_name, report_wording(getattr(ev, field_name), heroes, lang))
+    return ev
+
+
+def _item(name: str, lang: str) -> str:
+    """An item's name as text of language ``lang`` (see :func:`_hero`)."""
+    if lang == "en" or not name:
+        return name
+    return data_manager.item_display_name(name, lang) or name
+
+
+def _ability(name: str, lang: str, hero: str | None = None) -> str:
+    """An ability's name (as the states hold it) as text of language ``lang``."""
+    if lang == "en" or not name:
+        return name
+    return data_manager.ability_display_name(name, lang, hero=hero) or name
 
 
 def _team_label(team: str, lang: str) -> str:
@@ -945,10 +1066,12 @@ def _format_hero_state(
     prefix = f"[{label}] " if label else ""
     sep = ", " if lang == "en" else "、"
 
+    hero = state.hero_name
     if state.ability_levels:
-        abilities_str = sep.join(f"{name}(Lv{lvl})" for name, lvl in state.ability_levels.items())
+        abilities_str = sep.join(
+            f"{_ability(name, lang, hero)}(Lv{lvl})" for name, lvl in state.ability_levels.items())
     elif state.abilities_available:
-        abilities_str = sep.join(state.abilities_available)
+        abilities_str = sep.join(_ability(name, lang, hero) for name in state.abilities_available)
     elif state.level == 1:
         abilities_str = t["skills_unskilled"]
     else:
@@ -963,9 +1086,9 @@ def _format_hero_state(
             except Exception:
                 info = None
         if info and info.get("is_active"):
-            item_parts.append(f"{item_name}({t['label_active']})")
+            item_parts.append(f"{_item(item_name, lang)}({t['label_active']})")
         else:
-            item_parts.append(item_name)
+            item_parts.append(_item(item_name, lang))
     if item_parts:
         items_str = sep.join(item_parts)
     else:
@@ -991,7 +1114,7 @@ def _format_hero_state(
     if show_status:
         status = f"{t['label_status']}: {t['label_dead'] if dead else t['label_alive']}, "
     level = state.level if state.level > 0 else "?"
-    head = f"{prefix}{state.hero_name} (Lv{level}, {_team_label(state.team, lang)}{distance})"
+    head = f"{prefix}{_hero(hero, lang)} (Lv{level}, {_team_label(state.team, lang)}{distance})"
     if note:
         head += f" [{note}]"
     return (
@@ -1048,7 +1171,7 @@ def format_player_state(context: DecisionContext, lang: str = "zh") -> str:
     if is_time_unknown(dp):
         if (context.match_context or {}).get("state_is_final"):
             return _format_hero_state(ps, label, lang, note=t["state_final"], show_status=False)
-        return f"[{label}] {ps.hero_name} ({_team_label(ps.team, lang)}) - {t['state_time_unknown']}"
+        return f"[{label}] {_hero(ps.hero_name, lang)} ({_team_label(ps.team, lang)}) - {t['state_time_unknown']}"
     note = t["items_note"]
     if (context.match_context or {}).get("inventory_exact") is False:
         note += f"\n{t['items_note_components']}"
@@ -1103,7 +1226,7 @@ def _format_other_heroes(map_state: dict, lang: str, located: bool = True) -> st
         entries = []
         for kind in ("distant", "unknown_position"):
             for item in (map_state or {}).get(f"{kind}_{group_key}", []):
-                hero = item.get("hero_name", "?")
+                hero = _hero(item.get("hero_name"), lang) or "?"
                 level = item.get("level") or "?"
                 dist = item.get("distance")
                 if not item.get("is_alive", True):
@@ -1143,15 +1266,14 @@ def _aftermath_line(after: dict, lang: str) -> str:
     t = _t(lang)
     sep = ", " if lang == "en" else "、"
 
-    def counted(names: list[str]) -> list[str]:
+    def counted(names: list[str], marked: set[str] = frozenset()) -> list[str]:
         """Each hero once; one that died twice (a buyback) as "Warlock×2"."""
-        return [name if names.count(name) == 1 else f"{name}×{names.count(name)}" for name in dict.fromkeys(names)]
+        return [_hero(name, lang) + ("" if names.count(name) == 1 else f"×{names.count(name)}")
+                + (t["ms_after_own"] if name in marked else "") for name in dict.fromkeys(names)]
 
     found = []
-    own = set(after.get("own_kills") or ())
     if after.get("enemy_deaths"):
-        names = [name + (t["ms_after_own"] if name.split("×")[0] in own else "")
-                 for name in counted(after["enemy_deaths"])]
+        names = counted(after["enemy_deaths"], set(after.get("own_kills") or ()))
         found.append(t["ms_after_kills"].format(names=sep.join(names)))
     if after.get("allied_deaths"):
         found.append(t["ms_after_deaths"].format(names=sep.join(counted(after["allied_deaths"]))))
@@ -1209,7 +1331,7 @@ def format_match_situation(context: DecisionContext, lang: str = "zh") -> str:
         # Only the hidden enemies that could reach the player are named; the
         # rest are somewhere else on the map.
         from .vision import THREAT_RADIUS
-        names = _name_list(vs.threat_enemy_names, lang, limit=5)
+        names = _name_list(_heroes(vs.threat_enemy_names, lang), lang, limit=5)
         if names:
             names = f" ({names})" if lang == "en" else f"（{names}）"
         # "0 hidden nearby" is only a fact when every enemy's position is known.
@@ -1222,7 +1344,7 @@ def format_match_situation(context: DecisionContext, lang: str = "zh") -> str:
         parts.append(t["ms_missing"].format(n=mc["enemies_missing"]))
     located = mc.get("has_positions") is not False
     if vs is not None and vs.unknown_enemy_count > 0 and located:
-        names = _name_list(vs.unknown_enemy_names, lang)
+        names = _name_list(_heroes(vs.unknown_enemy_names, lang), lang)
         if names:
             names = f" ({names})" if lang == "en" else f"（{names}）"
         parts.append(t["ms_unknown"].format(n=vs.unknown_enemy_count, names=names))
@@ -1552,7 +1674,9 @@ def positions_text(context: DecisionContext, lang: str) -> str:
     sep = ", " if lang == "en" else "、"
 
     def listed(side: str) -> str:
-        return sep.join(t["ms_position"].format(hero=hero, n=number) for hero, number in by_team.get(side) or ())
+        # (no blank behind the closing bracket of a bilingual name: "斧王（Axe）3号位")
+        return sep.join(t["ms_position"].format(hero=_hero_both(hero, lang), n=number).replace("） ", "）")
+                        for hero, number in by_team.get(side) or ())
 
     ours, theirs = listed(team), listed("dire" if team == "radiant" else "radiant")
     if not ours and not theirs:
@@ -1647,6 +1771,7 @@ def _build_evaluation_prompt(context: DecisionContext, knowledge: str, lang: str
         )
 
     block = format_knowledge(knowledge, lang)
+    glossary = names_glossary(block, lang, context_heroes(context))
     writing_rules, response_format = t["writing_rules"], t["response_format"]
     if role_text(context, lang):
         # A hero note says "Axe: position 3" also when this Axe played mid.
@@ -1687,7 +1812,7 @@ def _build_evaluation_prompt(context: DecisionContext, knowledge: str, lang: str
 
 {causal_chain_section}
 ## {t['section_knowledge']}
-{block}
+{block}{chr(10) + glossary if glossary else ''}
 
 ## {t['section_task']}
 {t['task_intro']}
@@ -1827,8 +1952,9 @@ _LATIN_RE = re.compile(r"[A-Za-z]")
 _GRADE_RE = re.compile(r"\s*([SABCD])\s*[+-]?\s*", re.IGNORECASE)
 # Shortest analysis that can be a real one (live verdicts run to 300+ characters).
 _MIN_ANALYSIS_CHARS = {"en": 30, "zh": 12}
-# A Chinese verdict keeps hero / item / ability names in English, so only a
-# clear majority of Latin letters means the answer is in the wrong language.
+# A Chinese verdict has English in it (GPM, KDA, a name the catalog has no
+# Chinese for), so only a clear majority of Latin letters means the answer
+# is in the wrong language. Catalog names are not counted at all.
 _MIN_HAN_SHARE = 0.1
 _MIN_LATIN_SENTENCE = 12
 _PLACEHOLDER_RE = re.compile(
@@ -1842,11 +1968,13 @@ _TEMPLATE_TEXTS = [
     part.strip("[]\"“”") for templates in _PROMPT_TEMPLATES.values()
     for part in re.findall(r"\[[^\]\n]{12,}\]", templates["response_format"])
 ]
-# "Nothing wrong" answers of the other language, mapped to this one.
-_STOCK_ANSWERS = {
-    "zh": {"none": "无", "n/a": "无", "no mistake": "无", "keep it up": "继续保持"},
-    "en": {"无": "None", "没有": "None", "继续保持": "Keep it up"},
-}
+# What a model writes into a field it has nothing to say in, in either
+# language: the answer formats ask for exactly these words when the play was
+# correct. The report leaves such a field empty.
+_STOCK_ANSWERS = frozenset({
+    "none", "n/a", "no mistake", "no mistakes", "nothing", "keep it up",
+    "无", "没有", "没有错误", "继续保持",
+})
 
 _PROBLEM_TEXT = {
     "score": ("the grade must be exactly one of S, A, B, C, D", "评分必须是 S、A、B、C、D 之一"),
@@ -1888,7 +2016,9 @@ def _language_ok(text: str, lang: str) -> bool:
     han = len(_HAN_RE.findall(text))
     if lang == "en":
         return han == 0
-    latin = len(_LATIN_RE.findall(text))
+    # Hero, item and ability names are not the language of a sentence: one
+    # without a Chinese name in the catalog stays English in a zh verdict.
+    latin = len(_LATIN_RE.findall(data_manager.strip_names(text)))
     if han == 0 and latin < _MIN_LATIN_SENTENCE:
         return True  # a number or a proper name, not an English sentence
     return han >= _MIN_HAN_SHARE * (han + latin)
@@ -1905,10 +2035,27 @@ def quotes_labels(*texts: object) -> bool:
     return any(label in text.lower() for text in texts if isinstance(text, str) for label in _INTERNAL_LABELS)
 
 
-def localize_stock_answer(text: str, lang: str) -> str:
-    """Map a stock "nothing wrong" answer of the other language to ``lang``."""
-    stock = _STOCK_ANSWERS["en" if lang == "en" else "zh"]
-    return stock.get(text.strip().rstrip(".。").lower(), text)
+# A field that opens with a stock answer as a clause of its own: "无。低血量继续接团是合理的。"
+_STOCK_LEAD_RE = re.compile(
+    r"\s*[\"“”']?(?:" + "|".join(re.escape(word) for word in sorted(_STOCK_ANSWERS, key=len, reverse=True))
+    + r")[\"“”']?\s*(?:[.。!！,，;；:：—–-]+\s*|$)", re.IGNORECASE)
+
+
+def drop_stock_answer(text: str, whole: bool = False) -> str:
+    """A text field without a stock "nothing to say" answer ("None", "无", "Keep it up", "继续保持").
+
+    A good play has no mistake and nothing to do better; "Mistake: None" on
+    its card is filler, and the report hides empty fields. A field that only
+    opens with the stock answer ("继续保持。后续仍然紧贴大部队。") loses that
+    opening. With ``whole=True`` the opening speaks for the whole field: what
+    follows "None." under "mistake" is the reason why there was none, and
+    would read as the mistake.
+    """
+    lead = _STOCK_LEAD_RE.match(text)
+    if lead is None:
+        return text
+    rest = text[lead.end():].strip()
+    return "" if whole else rest
 
 
 def verdict_problem(
@@ -1980,7 +2127,8 @@ async def evaluate_decision(
     Returns the rule-based evaluation when no API is configured. An answer
     that was cut off (``finish_reason`` "length"), cannot be parsed or fails
     :func:`verdict_problem` is asked for once more (a cut-off answer with a
-    larger budget and without hidden reasoning); if that fails too, or on API
+    larger budget and without hidden reasoning, an answer without any text
+    without hidden reasoning as well); if that fails too, or on API
     errors / timeouts, this raises so the caller falls back to rules and
     marks the evaluation degraded. A usable verdict that only quotes a label
     of the analysis data (:func:`quotes_labels`) is asked for once more as
@@ -2016,6 +2164,7 @@ async def evaluate_decision(
             raise
         text = _message_text(response)
         ev = apply_citations(_parse_evaluation_response(text, dp, lang=lang), refs)
+        localize_verdict(ev, context_heroes(context), lang)
         # An endpoint that reports no (or its own) finish_reason still gives a
         # cut-off answer away: the last field of the format is missing.
         cut = is_truncated(response) or (not ended_normally(response) and ev._parsed_ok and not ev.lesson)
@@ -2024,8 +2173,9 @@ async def evaluate_decision(
             budget, thinking = retry_max_tokens(budget), False
         else:
             if ev._parsed_ok:
-                ev.mistake = localize_stock_answer(ev.mistake, lang)
-                ev.better_play = localize_stock_answer(ev.better_play, lang)
+                ev.mistake = drop_stock_answer(ev.mistake, whole=True)
+                ev.better_play = drop_stock_answer(ev.better_play)
+                ev.lesson = drop_stock_answer(ev.lesson)
                 problem = verdict_problem(ev.score, ev.analysis, ev.mistake, ev.better_play, ev.lesson, lang=lang)
                 if not problem and attempt == 1 and quotes_labels(
                         ev.analysis, ev.mistake, ev.better_play, ev.lesson):
@@ -2039,6 +2189,12 @@ async def evaluate_decision(
                     {"role": "assistant", "content": text},
                     {"role": "user", "content": verdict_retry_note(problem, lang)},
                 ]
+            else:
+                # The model ended its turn after reasoning, without an answer
+                # (live: 890 reasoning tokens, no text). Asked the same way
+                # again it reasoned into the token budget; it gets the one
+                # re-ask without hidden reasoning, which answers in seconds.
+                thinking = False
         logger.debug("LLM evaluation attempt %d unusable (t=%s): %s (finish=%s)",
                      attempt, dp.time, problem, finish_reason(response) or "-")
     if kept is not None:
@@ -2254,7 +2410,7 @@ def evaluate_decision_fallback(context: DecisionContext, lang: str = "zh") -> Ev
         result = ("B", dp.brief or f"{dp.hero_name} made a decision at minute {dp.time // 60}.",
                   "", "", "Keep reviewing replays to improve game sense")
     else:
-        result = ("B", dp.brief or f"{dp.hero_name}在{dp.time // 60}分钟做出了一个决策。",
+        result = ("B", dp.brief or f"{_hero(dp.hero_name, lang)}在{dp.time // 60}分钟做出了一个决策。",
                   "", "", "持续复盘提高比赛理解")
 
     score, analysis, mistake, better_play, lesson = result
@@ -2277,20 +2433,19 @@ def evaluate_decision_fallback(context: DecisionContext, lang: str = "zh") -> Ev
 def _evaluate_missed_cs(
     dp: DecisionPoint, ps: HeroState, ctx: DecisionContext, lang: str = "zh",
 ) -> tuple[str, str, str, str, str]:
-    # A point at 10:00 sums up the laning stage, not the first second of the mid game.
-    from .phases import game_phase
-    phase = phase_name(game_phase(dp.time - 1) if dp.time > 0 else ctx.game_phase, lang)
+    """Last hits below the expected number: the brief has the numbers, and
+    there is nothing to add to them (the analysis stays empty)."""
     if lang == "en":
         return (
             "C",
-            f"{dp.hero_name} had low CS efficiency during the {phase} phase. {_sentence(dp.brief, 'en')}",
+            "",
             "Missed a significant number of last hits",
             "Watch creep HP closely and start attack animations earlier",
             "Last-hitting is the foundation of farming — every missed creep is lost gold",
         )
     return (
         "C",
-        f"{dp.hero_name}在{phase}补刀效率偏低。{_sentence(dp.brief, 'zh')}",
+        "",
         "漏补了较多小兵",
         "注意小兵血量，提前准备攻击动画",
         "补刀是经济的基础，每个漏掉的兵都是金币损失",
@@ -2324,7 +2479,7 @@ def _evaluate_pregame_death(
             )
         return (
             "C",
-            f"{dp.hero_name}在1级的战斗中{verb}，此前已有{heads.fallen_allies}名队友在这场战斗中阵亡"
+            f"{_hero(dp.hero_name, lang)}在1级的战斗中{verb}，此前已有{heads.fallen_allies}名队友在这场战斗中阵亡"
             f"{heads.left('zh')}。开局阵亡会损失100+金并耽误上线。",
             "",
             "",
@@ -2344,7 +2499,7 @@ def _evaluate_pregame_death(
             )
         return (
             "C",
-            f"{dp.hero_name}在人数劣势（{numbers}）的1级战斗中{verb}。开局阵亡会损失100+金并耽误上线。",
+            f"{_hero(dp.hero_name, lang)}在人数劣势（{numbers}）的1级战斗中{verb}。开局阵亡会损失100+金并耽误上线。",
             "1级时在人数劣势下接战",
             "兵线到达前看到敌方人多时应后撤，不要接战",
             "1级的小规模冲突不值得用命去换，阵亡会损失金钱和前几波兵的经验",
@@ -2364,7 +2519,7 @@ def _evaluate_pregame_death(
             )
         return (
             "C",
-            f"{dp.hero_name}在第一波兵线到达前的战斗中{verb}，当时人数并不吃亏（{numbers}）。开局阵亡会损失100+金并耽误上线。",
+            f"{_hero(dp.hero_name, lang)}在第一波兵线到达前的战斗中{verb}，当时人数并不吃亏（{numbers}）。开局阵亡会损失100+金并耽误上线。",
             "",
             "尊重敌方1级的伤害和控制，保持满血并与队友抱团，不要贸然探脸",
             "人数相当的1级团战取决于站位，以及谁先被控制住",
@@ -2380,7 +2535,7 @@ def _evaluate_pregame_death(
         )
     return (
         "C",
-        f"{dp.hero_name}在第一波兵线交汇前{verb}。开局阵亡会损失100+金并耽误上线。",
+        f"{_hero(dp.hero_name, lang)}在第一波兵线交汇前{verb}。开局阵亡会损失100+金并耽误上线。",
         "",
         "兵线到达前与队友待在一起，看到敌方人多时应后撤",
         "1级的小规模冲突不值得用命去换，阵亡会损失金钱和前几波兵的经验",
@@ -2423,7 +2578,7 @@ def _missing_remark(vs: VisionState, lang: str) -> str:
         return ""
     from .vision import THREAT_RADIUS
 
-    names = _name_list(vs.threat_enemy_names, lang)
+    names = _name_list(_heroes(vs.threat_enemy_names, lang), lang)
     longest = vs.threat_longest_seconds
     if lang == "en":
         text = (f" At that moment {_count_en(n, 'enemy hero was', 'enemy heroes were')} out of sight "
@@ -2487,7 +2642,7 @@ def _evaluate_death(
 
     impl = _evaluate_death_en if en else _evaluate_death_zh
     score, analysis, mistake, better_play, lesson = impl(
-        dp.hero_name, verb, is_tf, heads, enemies_healthy, laning, hp_before, defending)
+        _hero(dp.hero_name, lang), verb, is_tf, heads, enemies_healthy, laning, hp_before, defending)
 
     # Overextension (died far from allied towers on the enemy side).
     overextended = death_event is not None and death_event.overextended and not is_tf
@@ -2507,7 +2662,7 @@ def _evaluate_death(
             if info and info.get("is_active") and info.get("category") == "defense":
                 defensive.append(item)
         if defensive:
-            items_text = (", " if en else "、").join(defensive)
+            items_text = (", " if en else "、").join(_item(item, lang) for item in defensive)
             analysis += (f" The player had defensive active items ({items_text}); whether they were used "
                          f"in time is worth checking in the replay." if en
                          else f"玩家当时拥有{items_text}等防御性主动装备，复盘时值得确认是否及时使用。")
@@ -2592,7 +2747,7 @@ def _evaluate_fountain_death(
                     "", "", lesson)
         return ("C", analysis, "Went into the attack range of the enemy fountain",
                 "Let a hero that reached its fountain go, and turn around before the fountain starts hitting", lesson)
-    analysis = f"{dp.hero_name}{verb}：英雄走进了敌方基地内泉水的攻击范围。"
+    analysis = f"{_hero(dp.hero_name, lang)}{verb}：英雄走进了敌方基地内泉水的攻击范围。"
     lesson = "在敌方泉水下换来的击杀很少值得用一次阵亡去换"
     if free:
         return ("B", f"{analysis}比赛在{end['seconds']}秒后以胜利结束，这次阵亡没有造成损失。", "", "", lesson)
@@ -2881,18 +3036,19 @@ def _evaluate_death_en(
 def _evaluate_bad_trade(
     dp: DecisionPoint, ps: HeroState, ctx: DecisionContext, lang: str = "zh",
 ) -> tuple[str, str, str, str, str]:
-    """A trade where the player took far more damage than dealt."""
+    """A trade where the player took far more damage than dealt (the brief
+    names the opponents and both numbers; the analysis has nothing to add)."""
     if lang == "en":
         return (
             "C",
-            f"{dp.hero_name} came out behind in a trade. {_sentence(dp.brief, 'en')}",
+            "",
             "Poor trade timing or execution — took unnecessary damage",
             "Choose better trade windows, such as when the opponent is last-hitting, or exploit cooldown advantages",
             "Good trades should be taken when you have an advantage — avoid getting counter-traded",
         )
     return (
         "C",
-        f"{dp.hero_name}在换血中吃了亏。{_sentence(dp.brief, 'zh')}",
+        "",
         "换血的时机或方式不佳，承受了不必要的伤害",
         "选择更好的换血时机，比如对手正在补刀时进行消耗，或利用技能CD差进行有利交换",
         "好的换血应该是在自己有优势的条件下进行，避免被反打",
@@ -2906,8 +3062,8 @@ def _evaluate_overextend(
 
     What made the spot dangerous is only said when the context shows it: no
     ward covering it, no ally near the player, enemies hidden in the fog
-    within reach. Without any of these the fact stands on its own and no
-    mistake is named.
+    within reach. Without any of these the brief stands on its own: no
+    mistake is named and the analysis, which could only repeat it, is empty.
     """
     en = lang == "en"
     mc = ctx.match_context or {}
@@ -2920,7 +3076,7 @@ def _evaluate_overextend(
              and not mc.get("unknown_position_allies"))
 
     if en:
-        analysis = f"{dp.hero_name} was at low HP far from the allied towers. {_sentence(dp.brief, 'en')}"
+        analysis = ""
         facts = []
         if alone:
             facts.append("no ally nearby")
@@ -2930,11 +3086,11 @@ def _evaluate_overextend(
             facts.append(f"{_count_en(hidden, 'enemy hero', 'enemy heroes')} out of sight within reach")
         mistake = f"Stayed forward at low HP with {', '.join(facts)}" if alone or (hidden >= 2 and no_ward) else ""
         if hidden and not mistake:
-            analysis += f" {_count_en(hidden, 'enemy hero was', 'enemy heroes were')} out of sight within reach."
+            analysis = f"{_count_en(hidden, 'enemy hero was', 'enemy heroes were')} out of sight within reach."
         better_play = "Back off and heal up before returning; a hero at low HP far from the tower is the first target of a gank or a dive"
         lesson = "Trade HP for farm only as long as you can still get away"
     else:
-        analysis = f"{dp.hero_name}在远离友方防御塔的位置血量偏低。{_sentence(dp.brief, 'zh')}"
+        analysis = ""
         facts = []
         if alone:
             facts.append("附近没有队友")
@@ -2944,7 +3100,7 @@ def _evaluate_overextend(
             facts.append(f"有{hidden}名敌方英雄藏在附近的迷雾中")
         mistake = f"残血时仍停留在靠前的位置，而{'、'.join(facts)}" if alone or (hidden >= 2 and no_ward) else ""
         if hidden and not mistake:
-            analysis += f"当时有{hidden}名敌方英雄藏在附近的迷雾中。"
+            analysis = f"当时有{hidden}名敌方英雄藏在附近的迷雾中。"
         better_play = "先后撤补充状态再回到线上；远离防御塔的残血英雄是被抓或被越塔的首选目标"
         lesson = "用血量换补刀的前提是自己还走得掉"
 
@@ -2957,13 +3113,19 @@ def _evaluate_overextend(
     return score, analysis, mistake, better_play, lesson
 
 
-_MULTI_KILL_WORDS = ("Double", "Triple", "Ultra", "Rampage", "combo", "双杀", "三杀", "四杀", "五杀", "连杀")
+_MULTI_KILL_WORDS = ("Double", "Triple", "Ultra", "Rampage", "combo",
+                     "双杀", "三杀", "疯狂杀戮", "暴走", "四杀", "五杀", "连杀")
 
 
 def _evaluate_good_play(
     dp: DecisionPoint, ps: HeroState, ctx: DecisionContext, lang: str = "zh",
 ) -> tuple[str, str, str, str, str]:
-    """A positive play (multi-kill, streak, successful smoke)."""
+    """A positive play (multi-kill, streak, successful smoke).
+
+    The brief says what happened; the rules know nothing more about it, so
+    there is a grade and a lesson and the other fields stay empty (no
+    "None" under "mistake", no praise that repeats the brief).
+    """
     subtype = getattr(dp, "subtype", "")
     if subtype:
         has_multi_kill = subtype == "multi_kill"
@@ -2972,65 +3134,60 @@ def _evaluate_good_play(
             "multi" in evt.event_type.lower() for evt in ctx.event_timeline
         )
     streak = subtype == "kill_streak"  # a run of kills is not one decision
-    if lang == "en":
-        if has_multi_kill:
-            return ("S", f"{dp.hero_name} pulled off an outstanding play! {_sentence(dp.brief, 'en')}", "None", "Keep it up",
-                    "Capitalizing on enemy mistakes for maximum impact is the mark of a skilled player")
-        if streak:
-            return ("A", f"{dp.hero_name} kept getting kills without dying. {_sentence(dp.brief, 'en')}", "None",
-                    "Keep it up", "Staying alive between kills is what turns a lead into a won game")
-        return ("A", f"{dp.hero_name} made an excellent decision. {_sentence(dp.brief, 'en')}", "None", "Keep it up",
-                "Good decisions come from accurate reads on the game state")
+    en = lang == "en"
     if has_multi_kill:
-        return ("S", f"{dp.hero_name}打出了一次精彩的操作！{_sentence(dp.brief, 'zh')}", "无", "继续保持",
-                "抓住敌方失误的机会进行最大化收益是高手的标志")
+        return ("S", "", "", "", "Capitalizing on enemy mistakes for maximum impact is the mark of a skilled player"
+                if en else "抓住敌方失误的机会进行最大化收益是高手的标志")
     if streak:
-        return ("A", f"{dp.hero_name}在没有阵亡的情况下连续拿到击杀。{_sentence(dp.brief, 'zh')}", "无", "继续保持",
-                "在击杀之间保住性命，才能把优势变成胜利")
-    return ("A", f"{dp.hero_name}做出了一个很好的决策。{_sentence(dp.brief, 'zh')}", "无", "继续保持",
-            "好的决策来自于对局势的准确判断")
+        return ("A", "", "", "", "Staying alive between kills is what turns a lead into a won game"
+                if en else "在击杀之间保住性命，才能把优势变成胜利")
+    return ("A", "", "", "", "Good decisions come from accurate reads on the game state"
+            if en else "好的决策来自于对局势的准确判断")
 
 
 def _evaluate_fight_engage(
     dp: DecisionPoint, ps: HeroState, ctx: DecisionContext, lang: str = "zh",
 ) -> tuple[str, str, str, str, str]:
-    """A notable teamfight engagement."""
+    """A notable teamfight engagement.
+
+    The brief has the player's kills and deaths in the fight. The analysis
+    adds the one thing the rules know beyond it, the head count, and is
+    empty when that is unknown; a good fight names no mistake.
+    """
     en = lang == "en"
     heads = _head_counts(ctx)
     numbers = heads.text(lang) if heads is not None else ""
     shown = (f" ({numbers})" if en else f"（{numbers}）") if numbers else ""
-    brief = _sentence(dp.brief, lang)
     if dp.severity == "positive":
-        if en:
-            return ("A", f"{dp.hero_name} had a strong teamfight{shown}. {brief}".rstrip(),
-                    "None", "Keep it up", "Fighting with good positioning and timing wins games")
-        return ("A", f"{dp.hero_name}在团战中表现出色{shown}。{brief}",
-                "无", "继续保持", "合理的站位和进场时机是赢下团战的关键")
+        analysis = (f"Head count: {numbers}." if en else f"人数：{numbers}。") if numbers else ""
+        return ("A", analysis, "", "",
+                "Fighting with good positioning and timing wins games" if en else "合理的站位和进场时机是赢下团战的关键")
     if heads is not None and heads.outnumbered and numbers:
         if en:
-            return ("C", f"{dp.hero_name} fought while outnumbered{shown}. {brief}".rstrip(),
+            return ("C", f"{dp.hero_name} fought while outnumbered{shown}.",
                     "Should not have committed while outnumbered",
                     "Wait for teammates to regroup, or retreat to defend objectives",
                     "Avoid fighting at a numbers disadvantage unless you have a big lead in farm or levels")
-        return ("C", f"{dp.hero_name}在人数劣势下参与战斗{shown}。{brief}",
+        return ("C", f"{_hero(dp.hero_name, lang)}在人数劣势下参与战斗{shown}。",
                 "不应该在人数劣势时接团", "等待队友汇合，或选择撤退保塔",
                 "除非有极大优势（装备/等级/位置），否则不要打人数劣势的团")
     if heads is not None and heads.not_outnumbered and numbers:
         if en:
-            return ("B", f"{dp.hero_name} took a teamfight with even or better numbers{shown}. {brief}".rstrip(),
+            return ("B", f"{dp.hero_name} took a teamfight with even or better numbers{shown}.",
                     "Engagement timing or positioning could be better",
                     "Make sure key abilities are off cooldown before committing",
                     "Engage when you have advantages in numbers, health, and cooldowns")
-        return ("B", f"{dp.hero_name}在人数不吃亏的情况下参与团战{shown}。{brief}",
+        return ("B", f"{_hero(dp.hero_name, lang)}在人数不吃亏的情况下参与团战{shown}。",
                 "进场时机或站位可以更好", "确保关键技能都准备好再进场",
                 "开团要选择人数和状态都有优势的时机")
     # No side is known to have had the numbers: no claim about them.
+    analysis = (f"Head count: {numbers}." if en else f"人数：{numbers}。") if numbers else ""
     if en:
-        return ("B", f"{dp.hero_name} took part in a teamfight{shown}. {brief}".rstrip(),
+        return ("B", analysis,
                 "Engagement timing or positioning could be better",
                 "Make sure key abilities are off cooldown before committing",
                 "Engage when you have advantages in numbers, health, and cooldowns")
-    return ("B", f"{dp.hero_name}参与了一场团战{shown}。{brief}",
+    return ("B", analysis,
             "进场时机或站位可以更好", "确保关键技能都准备好再进场",
             "开团要选择人数和状态都有优势的时机")
 
@@ -3151,7 +3308,7 @@ def _build_phase_prompt(
     team_label = "天辉" if radiant else "夜魇"
     return (
         f"你是一名 Dota 2 高分教练。请评价一名玩家在一场比赛的某个阶段的表现。\n\n"
-        f"玩家信息：英雄={hero_name}，位置={position_label}，队伍={team_label}\n"
+        f"玩家信息：英雄={_hero(hero_name, lang)}，位置={position_label}，队伍={team_label}\n"
         f"阶段：{phase_label}（{s.get('time_range', '')}）\n\n"
         f"该阶段统计（均为本阶段时间窗口内的变化量，不是累计值）：\n"
         f"{_phase_kda_line(s, 'zh')}\n"
@@ -3170,7 +3327,7 @@ def _build_phase_prompt(
         f"只使用上面的数字，不要编造没有列出的事件，也不要根据某个数字去猜测玩家当时在做什么（例如“在刷钱而不是参团”）。\n\n"
         f"请严格只输出下列 JSON 格式（不要 markdown 代码块、不要解释）：\n"
         f'{{"score":"S|A|B|C|D","summary":"1-2 句中文","highlights":["..."],"issues":["..."],"suggestions":["..."]}}'
-        f"\n\n每条列表项不超过 30 字。空列表用 []。全部使用中文，位置用“1号位…5号位”的说法。"
+        f"\n\n每条列表项不超过 30 字。空列表用 []。全部使用中文，英雄名照抄上面的中文写法，位置用“1号位…5号位”的说法。"
     )
 
 
@@ -3253,12 +3410,16 @@ async def evaluate_phase(
             parsed = _parse_phase_response(_message_text(response).strip())
             # A phase prompt has no knowledge block, but a handle the model
             # made up must not reach the player either.
+            def named(text: str) -> str:
+                """The hero's name in the report language, should the model have written the English one."""
+                return report_wording(text, [hero_name], lang)
+
             summary = parsed.get("summary")
             if isinstance(summary, str):
-                summary = strip_handles(summary)
-            highlights = _str_list(parsed.get("highlights"))
-            issues = _str_list(parsed.get("issues"))
-            suggestions = _str_list(parsed.get("suggestions"))
+                summary = named(strip_handles(summary))
+            highlights = [named(line) for line in _str_list(parsed.get("highlights"))]
+            issues = [named(line) for line in _str_list(parsed.get("issues"))]
+            suggestions = [named(line) for line in _str_list(parsed.get("suggestions"))]
             reason = "format" if not parsed else verdict_problem(
                 parsed.get("score"), summary, *highlights, *issues, *suggestions,
                 lang=lang, templates=_PHASE_TEMPLATE_TEXTS, one_liner=True,

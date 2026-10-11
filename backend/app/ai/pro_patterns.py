@@ -96,6 +96,16 @@ def _hero_text(name: str, lang: str) -> str:
         return name
 
 
+def _item_text(name: str, lang: str) -> str:
+    """An item name as written in text of language ``lang`` (the benchmark
+    tables and metric codes keep the English name)."""
+    try:
+        from .data_manager import item_display_name
+        return item_display_name(name, lang) or name
+    except Exception:
+        return name
+
+
 def get_patch_version() -> str:
     """Current game patch from data_manager ("" when unknown)."""
     try:
@@ -845,7 +855,7 @@ _METRIC_LABELS: dict[str, dict[str, str]] = {
         "gpm": "每分钟金钱（GPM）",
         "damage_per_min": "每分钟英雄伤害",
         "kill_participation": "击杀参与率",
-        "obs_wards": "观察守卫放置",
+        "obs_wards": "侦察守卫放置",
         "sen_wards": "岗哨守卫放置",
         "item_timing_suffix": "出装时间",
     },
@@ -1301,7 +1311,7 @@ def compare_player(
             )
         else:
             obs_desc = (
-                f"放置{player.obs_placed}个观察守卫"
+                f"放置{player.obs_placed}个侦察守卫"
                 f"（换算30分钟{obs_scaled:.1f}个），"
                 f"基准{ward_bench['obs_avg']}+，评价：{obs_rating_disp}"
             )
@@ -1385,13 +1395,14 @@ def compare_player(
             )
             item_metric_label = f"{item_name} {mlabels['item_timing_suffix']}"
         else:
+            item_text = _item_text(item_name, lang)
             desc = (
-                f"{item_name}在{_clock(actual_time)}完成，"
+                f"{item_text}在{_clock(actual_time)}完成，"
                 f"参考时间{_clock(good_t)}（优秀）/"
                 f"{_clock(avg_t)}（一般），"
                 f"评价：{rating_disp}"
             )
-            item_metric_label = f"{item_name}{mlabels['item_timing_suffix']}"
+            item_metric_label = f"{item_text}{mlabels['item_timing_suffix']}"
 
         report.comparisons.append(PatternComparison(
             metric=_item_metric(item_name),

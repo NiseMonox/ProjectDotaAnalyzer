@@ -171,17 +171,20 @@ def test_death_prompt_shows_the_state_before_the_kill():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("killer, unit, en_text, zh_text", [
-    ("skeleton_king", "", "was killed by Wraith King", "被Wraith King击杀"),
-    ("npc_dota_hero_zuus", "", "was killed by Zeus", "被Zeus击杀"),
-    ("Lina", "", "was killed by Lina", "被Lina击杀"),
+    ("skeleton_king", "", "was killed by Wraith King", "被冥魂大帝击杀"),
+    ("npc_dota_hero_zuus", "", "was killed by Zeus", "被宙斯击杀"),
+    ("Lina", "", "was killed by Lina", "被莉娜击杀"),
     ("", "npc_dota_badguys_tower1_mid", "was killed by a tower", "被防御塔击杀"),
     ("", "npc_dota_creep_badguys_melee", "was killed by a lane creep", "被小兵击杀"),
-    ("", "", "Legion Commander died", "Legion Commander阵亡"),
+    ("", "", "Legion Commander died", "军团指挥官阵亡"),
 ])
 def test_killer_is_a_display_name_or_left_out(killer, unit, en_text, zh_text):
+    """A display name in the report language: English in an en report, the game's Chinese name in a zh one."""
     en = rules(death_ctx(killer=killer, killer_unit=unit, phase="mid_game", time=900))
     zh = rules(death_ctx(killer=killer, killer_unit=unit, phase="mid_game", time=900, lang="zh"), "zh")
     assert en_text in en.analysis and zh_text in zh.analysis
+    assert zh.analysis.startswith("军团指挥官") and en.analysis.startswith("Legion Commander")
+    assert not re.search(r"[A-Za-z]", zh.analysis) and not CJK_RE.search(en.analysis)
     for raw in ("skeleton_king", "zuus", "npc_dota", "an enemy", "敌方击杀"):
         assert raw not in en.analysis and raw not in zh.analysis
     if not killer and not unit:
@@ -196,9 +199,9 @@ def test_deny_and_own_spell_are_not_reported_as_enemy_kills():
         return rules(ctx, lang).analysis
 
     assert denied("Lion", 2, "en").startswith("Legion Commander was denied by ally Lion.")
-    assert denied("Lion", 2, "zh").startswith("Legion Commander被队友Lion反补。")
+    assert denied("Lion", 2, "zh").startswith("军团指挥官被队友莱恩反补。")
     assert denied("Legion Commander", 1, "en").startswith("Legion Commander died to their own ability or item.")
-    assert denied("Legion Commander", 1, "zh").startswith("Legion Commander死于自己的技能或物品。")
+    assert denied("Legion Commander", 1, "zh").startswith("军团指挥官死于自己的技能或物品。")
 
 
 def test_overextended_death_does_not_say_far_from_the_towers_twice():
@@ -221,7 +224,7 @@ def test_death_text_does_not_repeat_the_brief():
     assert rules(ctx).analysis == "Legion Commander was killed by Lion."
     laning = death_ctx()  # no HP sample: the laning stage is all that is known
     assert rules(laning).analysis == "Legion Commander was killed by Lion during laning."
-    assert rules(death_ctx(lang="zh"), "zh").analysis == "Legion Commander在对线期被Lion击杀。"
+    assert rules(death_ctx(lang="zh"), "zh").analysis == "军团指挥官在对线期被莱恩击杀。"
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +391,7 @@ def test_survivor_text_states_each_fact_once():
                                "died in the same fight (1v2 by then). HP was 53% 4s before the death.")
     assert laning.score == "C"                                   # a 2v2 lane, not a fight with the team
     zh = rules(death_ctx(is_tf=True, phase="mid_game", time=1340, mc=_LAST_ONE_STANDING, lang="zh"), "zh")
-    assert zh.analysis == "Legion Commander在团战中被Lion击杀，此前已有3名队友在这场团战中阵亡（此时为1v4）。"
+    assert zh.analysis == "军团指挥官在团战中被莱恩击杀，此前已有3名队友在这场团战中阵亡（此时为1v4）。"
     # Still with the team and not outnumbered: the ordinary sentence is right as it is.
     grouped = dict(_LAST_ONE_STANDING, headcount_allies=3, headcount_enemies=3, fallen_allies=1)
     assert "3 allies were fighting nearby" in rules(
@@ -518,13 +521,53 @@ def test_dying_in_the_own_base_is_a_defence(lang, is_tf):
 
 
 @pytest.mark.parametrize("lang", ["en", "zh"])
-def test_missed_cs_at_ten_minutes_is_a_laning_point(lang):
-    """The point at 10:00 sums up the laning stage; it read "during the mid game phase"."""
-    dp = DecisionPoint(time=600, point_type="missed_cs", player_slot=1, hero_name="Drow Ranger",
-                       severity="minor", brief="Minute 10: 32 last hits" if lang == "en" else "第10分钟补刀32个")
-    ctx = DecisionContext(decision_point=dp, player_state=hero("Drow Ranger", 1), game_phase="mid_game")
-    ev = rules(ctx, lang)
-    assert ("during the laning phase" in ev.analysis) if lang == "en" else ("在对线期" in ev.analysis)
+def test_missed_cs_and_lost_trades_do_not_repeat_the_brief(lang):
+    """The card shows the brief as its title. The analysis read "Drow Ranger had low CS efficiency
+    during the mid game phase. Minute 10: 32 last hits." - the brief again behind a sentence that
+    said the same (and named the wrong phase for the point at 10:00). The rules know nothing
+    beyond the brief here, so the analysis is empty and the other fields carry the advice."""
+    for point_type, brief in (("missed_cs", ("Minute 10: 32 last hits", "第10分钟补刀32个")),
+                              ("bad_trade", ("Unfavorable trade with Lion (took 300, dealt only 90)",
+                                             "与莱恩交换血量不利（受到300伤害，仅造成90伤害）"))):
+        dp = DecisionPoint(time=600, point_type=point_type, player_slot=1, hero_name="Drow Ranger",
+                           severity="minor", brief=brief[lang == "zh"])
+        ev = rules(DecisionContext(decision_point=dp, player_state=hero("Drow Ranger", 1), game_phase="mid_game"), lang)
+        assert ev.analysis == "" and ev.score == "C"
+        assert ev.mistake and ev.better_play and ev.lesson
+        assert brief[lang == "zh"] not in all_text(ev) and "mid game" not in all_text(ev) and "中期" not in all_text(ev)
+
+
+@pytest.mark.parametrize("lang", ["en", "zh"])
+def test_positive_moments_carry_no_filler(lang):
+    """A good play read: analysis "Viper pulled off an outstanding play! Achieved a Double Kill."
+    (the brief, behind praise), mistake "None", better play "Keep it up". The card hides empty
+    fields: what has nothing to say stays empty, the lesson is what the rules have to add."""
+    filler = ("None", "none", "N/A", "无", "Keep it up", "继续保持")
+    for subtype, brief in (("multi_kill", ("Achieved a Double Kill", "完成双杀")),
+                           ("kill_streak", ("Achieved a Mega Kill streak (5 kills without dying)",
+                                            "达成杀人如麻（连续5次击杀未阵亡）")),
+                           ("", ("A successful smoke gank", "一次成功的开雾抓人"))):
+        dp = DecisionPoint(time=900, point_type="good_play", player_slot=1, hero_name="Viper",
+                           severity="positive", brief=brief[lang == "zh"], subtype=subtype)
+        ev = rules(DecisionContext(decision_point=dp, player_state=hero("Viper", 1), game_phase="mid_game"), lang)
+        assert (ev.analysis, ev.mistake, ev.better_play) == ("", "", "") and ev.lesson not in filler and ev.lesson
+        assert ev.score == ("S" if subtype == "multi_kill" else "A")
+    # A good teamfight: the head count is the one fact beyond the brief, and only when it is known
+    brief = "Excellent teamfight (2 kills, 0 deaths)" if lang == "en" else "团战表现出色（2击杀，0阵亡）"
+    dp = DecisionPoint(time=900, point_type="fight_engage", player_slot=1, hero_name="Viper",
+                       severity="positive", brief=brief)
+    known = DecisionContext(decision_point=dp, player_state=hero("Viper", 1), game_phase="mid_game",
+                            match_context={"headcount_basis": "nearby", "headcount_allies": 2, "headcount_enemies": 3})
+    ev = rules(known, lang)
+    assert ev.analysis == ("Head count: 3v3 nearby." if lang == "en" else "人数：附近3v3。")
+    assert (ev.score, ev.mistake, ev.better_play) == ("A", "", "") and ev.lesson
+    unknown = DecisionContext(decision_point=dp, player_state=hero("Viper", 1), game_phase="mid_game",
+                              match_context={"headcount_basis": "unknown"})
+    assert rules(unknown, lang).analysis == ""
+    # Any other fight keeps what the rules say about the numbers, without the brief behind it
+    dp.severity = "major"
+    assert rules(known, lang).analysis == ("Viper took a teamfight with even or better numbers (3v3 nearby)."
+                                           if lang == "en" else "冥界亚龙在人数不吃亏的情况下参与团战（附近3v3）。")
 
 
 def test_player_state_says_when_components_are_still_listed():
@@ -550,7 +593,7 @@ def test_missing_counts_are_dated_and_not_contradictory():
     zh = rules(death_ctx(phase="late_game", time=1725, lang="zh",
                          va=vision(missing=("Lion", "Void Spirit"), danger="danger", time=1725,
                                    critical=(1685, "5名敌方英雄同时消失超过10秒，形势危险"))), "zh")
-    assert "当时有2名敌方英雄藏在玩家5000码范围内的迷雾中（Lion、Void Spirit）。" in zh.analysis
+    assert "当时有2名敌方英雄藏在玩家5000码范围内的迷雾中（莱恩、虚无之灵）。" in zh.analysis
     assert "此前在28:05：" in zh.analysis
 
 
@@ -569,15 +612,16 @@ def test_enemies_hidden_across_the_map_are_not_part_of_a_death(lang):
                 far_longest=90, time=985)
     ctx = death_ctx(phase="mid_game", time=985, va=va, lang=lang)
     ev = rules(ctx, lang)
-    assert "Dragon Knight" not in ev.analysis and "Viper" not in ev.analysis and "90" not in ev.analysis
+    for far_away in ("Dragon Knight", "Viper", "龙骑士", "冥界亚龙", "90"):
+        assert far_away not in ev.analysis
     assert ("1 enemy hero was out of sight within 5000 units of the player (Lion)." in ev.analysis
-            if lang == "en" else "当时有1名敌方英雄藏在玩家5000码范围内的迷雾中（Lion）。" in ev.analysis)
+            if lang == "en" else "当时有1名敌方英雄藏在玩家5000码范围内的迷雾中（莱恩）。" in ev.analysis)
     situation = evaluator.format_match_situation(ctx, lang)
     if lang == "en":
         assert "Enemy heroes hidden in the fog within 5000 units of the player: 1 (Lion)" in situation
         assert "Enemy heroes out of sight elsewhere on the map (more than 5000 units from the player): 2" in situation
     else:
-        assert "藏在玩家5000码范围内迷雾中的敌方英雄: 1名（Lion）" in situation
+        assert "藏在玩家5000码范围内迷雾中的敌方英雄: 1名（莱恩）" in situation
         assert "地图其他位置（距玩家超过5000码）不在视野内的敌方英雄: 2名" in situation
     # Only far-away enemies in the fog: nothing is said about the death, whatever the danger level.
     only_far = vision(far=("Dragon Knight",), danger="caution", far_longest=90, time=985)
@@ -608,7 +652,7 @@ def test_enemies_without_position_data_are_unknown_not_missing(lang):
         assert "5名敌方英雄当时没有位置数据" in ev.analysis and "消失" not in ev.analysis
     situation = evaluator.format_match_situation(ctx, lang)
     expected = ("Enemy heroes with no position data (unknown, not counted as missing): 5 (Lion, Zeus, Viper and 2 more)"
-                if lang == "en" else "没有位置数据的敌方英雄（未知，不算消失）: 5名（Lion、Zeus、Viper等5名）")
+                if lang == "en" else "没有位置数据的敌方英雄（未知，不算消失）: 5名（莱恩、宙斯、冥界亚龙等5名）")
     assert expected in situation
     # "0 hidden within 5000 units" would be a claim about heroes nothing is known about.
     assert "hidden in the fog within 5000 units" not in situation and "迷雾中的敌方英雄" not in situation
@@ -670,6 +714,7 @@ def test_good_play_grade_follows_the_subtype_in_both_languages():
     assert grade("Achieved a Killing Spree streak", "kill_streak", "en") == "A"
     assert grade("达成连杀", "kill_streak", "zh") == "A"  # was S in zh only: "连杀" matched a word list
     assert grade("Achieved a Double Kill", "", "en") == "S"  # points without a subtype: by the brief
+    assert grade("完成疯狂杀戮", "", "zh") == grade("完成暴走", "", "zh") == "S"   # the game's names for 4 and 5 kills
     # A run of kills is praised as such, not as "an excellent decision".
     for lang, never in (("en", "decision"), ("zh", "决策")):
         dp = DecisionPoint(time=900, point_type="good_play", player_slot=1, hero_name="Legion Commander",
@@ -699,7 +744,7 @@ def _rule_contexts(lang):
         yield death_ctx(is_tf=True, lang=lang, phase="mid_game", time=1156, mc=mc)
         yield death_ctx(lang=lang, phase="pregame", time=5, mc=mc)
     reason = "3 enemy heroes are missing in the fog" if lang == "en" else "3名敌方英雄消失在迷雾中"
-    crit = "Observer ward at Dire jungle expired; vision lost" if lang == "en" else "夜魇野区的观察守卫到期，视野丢失"
+    crit = "Observer ward at Dire jungle expired; vision lost" if lang == "en" else "夜魇野区的侦察守卫到期，视野丢失"
     for danger in ("safe", "caution", "danger", "critical"):
         yield death_ctx(lang=lang, phase="mid_game", time=900,
                         va=vision(missing=("Lion", "Zeus"), unknown=("Viper",), danger=danger, longest=40,
@@ -720,7 +765,9 @@ def test_rule_text_follows_the_report_language(lang):
             ctx.decision_point = dp
             ev = rules(ctx, lang)
             seen += 1
-            assert ev.score in "SABCD" and ev.analysis.strip()
+            assert ev.score in "SABCD" and ev.lesson.strip()
+            # Only a point whose brief says all the rules know has no analysis.
+            assert ev.analysis.strip() or dp.point_type in ("bad_trade", "missed_cs", "good_play", "fight_engage")
             for text in (ev.analysis, ev.mistake, ev.better_play, ev.lesson):
                 assert "  " not in text and ".." not in text and "。。" not in text, text
                 assert text == text.strip()
@@ -728,6 +775,8 @@ def test_rule_text_follows_the_report_language(lang):
                     assert not CJK_RE.search(text), text
                 else:
                     assert not ENGLISH_RUN_RE.search(text), text
+                    # hero names included: "Legion Commander" / "Lion" are written 军团指挥官 / 莱恩
+                    assert not re.search(r"[A-Za-z]{3,}", text.replace("OpenDota", "")), text
     assert seen > 100
 
 
@@ -768,10 +817,11 @@ def test_prompt_says_what_the_data_cannot_show():
         evaluator.format_match_situation(ctx, "en"))
     assert "附近存活英雄: 队友2名（不含玩家本人），敌人2名" in evaluator.format_match_situation(ctx, "zh")
     for lang, cooldowns, names in (("en", "no ability or item cooldowns", "exactly as"),
-                                   ("zh", "没有技能和物品的冷却状态", "一律照抄")):
+                                   ("zh", "没有技能和物品的冷却状态", "一律写中文名，照抄上文的写法")):
         rules_text = evaluator._t(lang)["writing_rules"]
         assert cooldowns in rules_text and names in rules_text
-    assert "不要自行翻译" in evaluator._t("zh")["writing_rules"]   # "风行者" for Hoodwink in a live verdict
+    # "风行者" for Hoodwink in a live verdict: the names are given, the model does not translate
+    assert "不要自行翻译" in evaluator._t("zh")["writing_rules"] and "名称对照" in evaluator._t("zh")["writing_rules"]
 
 
 @pytest.mark.parametrize("lang", ["en", "zh"])
@@ -787,7 +837,7 @@ def test_match_situation_states_the_aftermath_of_a_death(lang):
         assert "In the 30s after this death: no other hero kill and no tower loss is recorded" in nothing
         assert not CJK_RE.search(text + nothing)
     else:
-        assert "阵亡后30秒内: 己方击杀了Lion、Zeus；己方又有Weaver阵亡；己方失去了上路一塔" in text
+        assert "阵亡后30秒内: 己方击杀了莱恩、宙斯；己方又有编织者阵亡；己方失去了上路一塔" in text
         assert "阵亡后30秒内: 没有其他击杀记录，也没有防御塔被摧毁" in nothing
         assert not ENGLISH_RUN_RE.search(text + nothing)
     assert "30" not in evaluator.format_match_situation(death_ctx(lang=lang), lang)
@@ -806,7 +856,7 @@ def test_prompt_states_the_role_and_what_a_positionless_source_cannot_show(lang)
     prompt = evaluator._build_evaluation_prompt(ctx, "", lang=lang)
     situation = evaluator.format_match_situation(ctx, lang)
     # Nothing is itemized that would read like a head count or like enemies missing.
-    assert "Lion" not in situation and "0" not in situation
+    assert "Lion" not in situation and "莱恩" not in situation and "0" not in situation
     partial = evaluator.format_match_situation(
         death_ctx(lang=lang, mc={"has_positions": True, "nearby_allies": 0, "nearby_enemies": 1,
                                  "headcount_basis": "unknown"}), lang)
@@ -827,7 +877,7 @@ def test_prompt_states_the_role_and_what_a_positionless_source_cannot_show(lang)
         assert "也没有技能释放的时间" in prompt and "不要说玩家“孤身一人”" in prompt
         assert "无法判断哪些队友在附近" in prompt and "附近没有队友\n" not in prompt
         assert "## 其他英雄（本场数据没有位置记录：他们当时在哪里未知）" in prompt
-        assert "- Lion (Lv5, 存活)\n" in prompt and "位置数据缺失\n" not in prompt
+        assert "- 莱恩 (Lv5, 存活)\n" in prompt and "位置数据缺失\n" not in prompt
         assert "也不说明玩家是否孤身一人" in partial
     # A replay (positions known, all allies located) gets neither the note nor the hedge.
     replay = death_ctx(lang=lang, phase="mid_game", mc={"player_position": 4, "lane_role": 3, "has_positions": True})
@@ -855,9 +905,11 @@ def test_prompt_lists_the_position_every_hero_played(lang):
                                "Drow Ranger (Position 1), Axe (Position 2), Hoodwink (Position 5)")
         assert "do not call a Position 4 or 5 just 'a support'" in rule and not CJK_RE.search(ours + rule)
     else:
-        assert ours == ("各英雄本场位置（按分路和经济推算）: 己方 Drow Ranger 1号位、Axe 2号位、Hoodwink 5号位；"
-                        "敌方 Viper 1号位、Lion 5号位")
-        assert theirs.endswith("己方 Viper 1号位、Lion 5号位；敌方 Drow Ranger 1号位、Axe 2号位、Hoodwink 5号位")
+        # the Chinese name the verdict writes, and the English one the reference material uses
+        assert ours == ("各英雄本场位置（按分路和经济推算）: 己方 卓尔游侠（Drow Ranger）1号位、斧王（Axe）2号位、"
+                        "森海飞霞（Hoodwink）5号位；敌方 冥界亚龙（Viper）1号位、莱恩（Lion）5号位")
+        assert theirs.endswith("己方 冥界亚龙（Viper）1号位、莱恩（Lion）5号位；"
+                               "敌方 卓尔游侠（Drow Ranger）1号位、斧王（Axe）2号位、森海飞霞（Hoodwink）5号位")
         assert "不要把4号位、5号位只称为“辅助”" in rule
     assert ours in evaluator.format_match_situation(radiant, lang) and ours in prompt and rule in prompt
     # One side unknown is said, nothing known is left out together with its rule.
@@ -883,11 +935,13 @@ def test_aftermath_line_reports_a_buyback():
         death_ctx(mc={"aftermath": mine}), "en")
     assert "玩家在阵亡2秒后买活；玩家在这次阵亡17秒后再次阵亡；己方击杀了" in evaluator.format_match_situation(
         death_ctx(mc={"aftermath": mine}, lang="zh"), "zh")
-    assert "己方击杀了Viper（玩家本人击杀）、Lion" in evaluator.format_match_situation(
+    assert "己方击杀了冥界亚龙（玩家本人击杀）、莱恩" in evaluator.format_match_situation(
         death_ctx(mc={"aftermath": mine}, lang="zh"), "zh")
     twice = dict(after, allied_deaths=["Drow Ranger", "Warlock", "Warlock"])     # died, bought back, died again
     assert "your team also lost Drow Ranger, Warlock×2" in evaluator.format_match_situation(
         death_ctx(mc={"aftermath": twice}), "en")
+    assert "己方又有卓尔游侠、术士×2阵亡" in evaluator.format_match_situation(
+        death_ctx(mc={"aftermath": twice}, lang="zh"), "zh")
 
 
 def test_match_situation_gives_the_players_own_score_and_the_limits_of_a_kill_log():
@@ -1032,10 +1086,19 @@ def test_a_word_that_starts_a_sentence_is_not_a_label():
 def test_strict_grade_and_stock_answers():
     assert [evaluator.strict_grade(v) for v in ("b", " A+ ", "S", "Average", "S|A|B|C|D", "", None, 3)] == [
         "B", "A", "S", None, None, None, None, None]
-    assert evaluator.localize_stock_answer("None", "zh") == "无"
-    assert evaluator.localize_stock_answer("Keep it up.", "zh") == "继续保持"
-    assert evaluator.localize_stock_answer("无", "en") == "None"
-    assert evaluator.localize_stock_answer("Stay with the team", "zh") == "Stay with the team"
+    # "Nothing to say" in either language is an empty field of the report, not the word "None"
+    for stock in ("None", "none.", "N/A", "No mistake", "Keep it up.", "无", "无。", "没有", "继续保持", "“无”"):
+        assert evaluator.drop_stock_answer(stock) == "", stock
+    for real in ("Stay with the team", "None of the wards covered the river", "无视了小地图", "没有及时后撤",
+                 "继续保持这种“打可赢的团”的判断", "No mistake in the laning stage itself", ""):
+        assert evaluator.drop_stock_answer(real) == evaluator.drop_stock_answer(real, whole=True) == real
+    # A field that only opens with the stock answer loses the opening ...
+    assert evaluator.drop_stock_answer("继续保持。后续仍然紧贴大部队压制。") == "后续仍然紧贴大部队压制。"
+    assert evaluator.drop_stock_answer("Keep it up - and group earlier.") == "and group earlier."
+    # ... but under "mistake" the rest is the reason why there was none (a live verdict:
+    # "无。低血量继续接团在拥有绝冥再生的冥魂大帝身上是合理选择"): shown as the mistake it would be one
+    for none in ("无。低血量继续接团是合理选择。", "None. Fighting on at low HP was right for this hero.", "没有，站位很好。"):
+        assert evaluator.drop_stock_answer(none, whole=True) == ""
 
 
 # ---------------------------------------------------------------------------

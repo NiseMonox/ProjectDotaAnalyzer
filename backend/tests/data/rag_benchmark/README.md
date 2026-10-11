@@ -34,6 +34,10 @@ committed game data, committed vector file, no embedding model: the state of a f
 | hybrid (+ pooled dense term, relative cut-off 0.5) | 0.891 | 0.903 | 0.017 | 0.780 | 12.7 |
 | hybrid, learned chunks embedded too (a server with the optional model) | 0.891 | 0.905 | 0.021 | 0.777 | 12.6 |
 
+Measured again at the end of the same day, after the last changes to the coach's texts (`rag eval` with the
+committed vector file only): 0.801 / 0.856 / 0.891 at 10, 0.802 / 0.853 / 0.902 in the block, 0.098 / 0.099 /
+0.017 irrelevant chunks in the block. The top-level `README.md` quotes this run.
+
 The third pass scoped the learned farm and item-timing statistics (`topic:economy`): they are ranked for a hero's
 own player only and halved for every decision that is not about farming. The rows before it were 0.798 / 0.855 /
 0.889 / 0.890 at 10 and 0.109 / 0.107 / 0.026 / 0.030 irrelevant chunks in the block; in 240 rule-based reports over nine replays

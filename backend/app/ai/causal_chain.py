@@ -307,10 +307,10 @@ def _detect_transitions(
             area = describe_area(lost[0].x, lost[0].y, lang=lang)
             if lost[0].dewarded:
                 desc = (f"The observer ward at {area} was destroyed: no more vision around the player" if en
-                        else f"{area}的观察守卫被摧毁，玩家周围失去视野")
+                        else f"{area}的侦察守卫被摧毁，玩家周围失去视野")
             else:
                 desc = (f"The observer ward at {area} expired: no more vision around the player" if en
-                        else f"{area}的观察守卫到期，玩家周围失去视野")
+                        else f"{area}的侦察守卫到期，玩家周围失去视野")
             steps.append(CausalStep(
                 time=t, step_type="vision_loss", description=desc,
                 significance="contributing", position=pos,
@@ -335,7 +335,7 @@ def _detect_transitions(
             details = {"missing_before": prev["missing_enemies"], "missing_after": n}
             if left:
                 desc = (f"{', '.join(left[:3])} moved out of allied vision close to the player" if en
-                        else f"{'、'.join(left[:3])}在玩家附近脱离己方视野")
+                        else f"{'、'.join(_hero(n, lang) for n in left[:3])}在玩家附近脱离己方视野")
                 steps.append(CausalStep(
                     time=t, step_type="enemy_missing", description=desc + total,
                     significance="contributing", position=pos,
@@ -351,7 +351,8 @@ def _detect_transitions(
                 else:
                     since = "" if longest <= 0 else (
                         f"（已{longest}秒）" if len(came) == 1 else f"（最长已{longest}秒）")
-                    desc = f"{'、'.join(came[:3])}此前就不在己方视野内{since}，此时距玩家已不足{THREAT_RADIUS}码"
+                    desc = (f"{'、'.join(_hero(n, lang) for n in came[:3])}此前就不在己方视野内{since}，"
+                            f"此时距玩家已不足{THREAT_RADIUS}码")
                 steps.append(CausalStep(
                     time=t, step_type="hidden_enemy_near", description=desc + total,
                     significance="contributing", position=pos,
@@ -514,11 +515,16 @@ def _add_ability_steps(steps: list[CausalStep], incoming: list[AbilityEvent], la
         else:
             ability = _ability(first, lang)
             desc = (f"{first.hero_name} engaged with {ability}" if en
-                    else f"{first.hero_name}使用{ability}发起攻击")
+                    else f"{_hero(first.hero_name, lang)}使用{ability}发起攻击")
             steps.append(CausalStep(
                 time=first.time, step_type="enemy_approach", description=desc,
                 significance="consequence", position=pos,
                 details={"ability": ability, "attacker": first.hero_name}))
+
+
+def _hero(name: str, lang: str) -> str:
+    """A hero's name as text of language ``lang`` (the data keeps the English name)."""
+    return data_manager.hero_display_name(name, lang) or name
 
 
 def _ability(ae: AbilityEvent, lang: str) -> str:
@@ -635,7 +641,7 @@ def _format_chain_text(chain: CausalChain, lang: str = "zh") -> str:
             lines.append(f"Killer: {killer}")
     else:
         lines = ["## 死亡因果链",
-                 f"死亡时间: {_fmt(death.time)} | 英雄: {death.hero_name}"]
+                 f"死亡时间: {_fmt(death.time)} | 英雄: {_hero(death.hero_name, lang)}"]
         if killer:
             lines.append(f"击杀者: {killer}")
     lines.append("")
@@ -667,8 +673,9 @@ def _build_pregame_chain(match: MatchData, death: DeathEvent, lang: str = "zh") 
         root_summary = "Took a fight at level 1, before the first creep wave arrived"
     else:
         where = f"在{area}" if area else ""
-        step1_desc = f"{death.hero_name}在兵线接触前（1级）{where}参与了战斗。"
-        step2_desc = f"{death.hero_name}在这场战斗中{verb}。"
+        hero = _hero(death.hero_name, lang)
+        step1_desc = f"{hero}在兵线接触前（1级）{where}参与了战斗。"
+        step2_desc = f"{hero}在这场战斗中{verb}。"
         root_summary = "在第一波兵线到达前（1级）参与了战斗"
     steps = [
         CausalStep(time=death.time - 5, step_type="rune_contest",

@@ -188,6 +188,26 @@ def test_cut_off_single_prompt_answer_is_retried_with_more_room(monkeypatch):
     assert retry["messages"] == first["messages"]  # nothing of the cut answer is fed back
 
 
+def test_answer_without_text_is_asked_for_again_without_hidden_reasoning(monkeypatch):
+    """Live (7.41f replay, single prompt): a first answer of 890 reasoning tokens and no text.
+    The re-ask was the same request, reasoned for 48 s into the token budget, and the
+    evaluation fell back to rules. A direct answer takes about 5 s."""
+    monkeypatch.setenv("AI_COACH_AGENT", "0")
+    replies = iter([response("", reasoning_tokens=890), response(TEXT_VERDICT_EN)])
+
+    async def handler(kwargs):
+        return next(replies)
+
+    fake = install_fake(monkeypatch, handler, thinking=True)
+    match, ctx = death_context()
+    ev = asyncio.run(coach._safe_evaluate(ctx, "", lang="en", match=match))
+    assert ev.used_llm and not ev.degraded and ev.analysis == ANALYSIS_EN
+    first, retry = fake.calls
+    assert "extra_body" not in first and retry["extra_body"] == THINKING_OFF
+    assert retry["max_tokens"] == first["max_tokens"]            # nothing was cut off: the budget stays
+    assert retry["messages"] == first["messages"]                # there is no answer to quote back
+
+
 def test_cut_off_answer_is_never_accepted_as_a_verdict(monkeypatch):
     """Live r2: 'Score: D / Analysis: ...the player entered the' was stored as an LLM verdict."""
     monkeypatch.setenv("AI_COACH_AGENT", "0")
@@ -587,8 +607,8 @@ def test_verdict_in_the_wrong_language_is_reasked(monkeypatch):
     ev = _run_agent(match, ctx, lang="zh")
     assert ev.analysis == ANALYSIS_ZH and len(fake.calls) == 2
     assert "中文" in _tool_messages(fake.calls[1])[-1]["content"]
-    # Stock answers of the other language are localized, not shown as English words.
-    assert (ev.mistake, ev.better_play) == ("无", "继续保持")
+    # A stock "nothing wrong" answer is an empty field, in whatever language it was written.
+    assert (ev.mistake, ev.better_play, ev.lesson) == ("", "", "先看小地图再进场。")
 
 
 def test_text_verdict_is_validated_like_a_submit(monkeypatch):
@@ -687,7 +707,9 @@ def test_benchmark_tool_knows_the_game_mode():
 @pytest.mark.parametrize("lang, line, rule", [
     ("en", "Positions in this match (derived from lanes and net worth): your team: Puck (Position 2); "
            "enemy team: Lina (Position 2), Lion (Position 5)", "do not call a Position 4 or 5 just 'a support'"),
-    ("zh", "各英雄本场位置（按分路和经济推算）: 己方 Puck 2号位；敌方 Lina 2号位、Lion 5号位", "不要把4号位、5号位只称为“辅助”"),
+    # zh: the Chinese name the verdict uses, with the English one (reference material, search queries)
+    ("zh", "各英雄本场位置（按分路和经济推算）: 己方 帕克（Puck）2号位；敌方 莉娜（Lina）2号位、莱恩（Lion）5号位",
+     "不要把4号位、5号位只称为“辅助”"),
 ])
 def test_agent_brief_and_situation_tool_list_every_heros_position(lang, line, rule):
     """The agent names roles from the positions of this match, like the single prompt."""
