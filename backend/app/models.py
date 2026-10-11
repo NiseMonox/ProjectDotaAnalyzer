@@ -67,11 +67,17 @@ class WardEvent(BaseModel):
     # Game time the ward died (dewarded or expired); None = alive at game end
     destroyed_time: int | None = None
     team: str = ""  # "radiant"/"dire"; empty = derive from player_slot
-    # True only when an enemy destroyed the ward; False = expired naturally or
-    # still alive at game end. Consumers must use this, not a lifetime guess.
+    # True only when an enemy destroyed the ward; False = expired naturally,
+    # denied or still alive at game end. Consumers must use this, not a
+    # lifetime guess.
     dewarded: bool = False
-    # player_slot of the hero that dewarded it (the owner of a summon that
-    # did); None when it was not dewarded, or not by a hero, or unknown.
+    # True only when its own side destroyed it before its time (an ally's or
+    # the owner's attack; never the expiry). Replay parser from analyzer
+    # 1.5.0 and OpenDota; older analyzer output cannot tell and leaves False.
+    denied: bool = False
+    # player_slot of the hero that dewarded or denied it (the owner of a
+    # summon that did); None when neither happened, or not by a hero, or
+    # unknown.
     killer_slot: int | None = None
 
 
@@ -121,6 +127,10 @@ class KillEvent(BaseModel):
     # False when the source cannot tell a real death from a reincarnation
     # (OpenDota kills_log of a victim with more entries than scoreboard deaths).
     confirmed: bool = True
+    # Game time the victim was alive again (respawn or buyback; the replay
+    # parser sees it up to a second late). None = still dead when the data
+    # ends, or the source does not tell (OpenDota, analyzer before 1.5.0).
+    respawn_time: float | None = None
 
 
 class PositionSnapshot(BaseModel):
@@ -427,9 +437,11 @@ class MatchData(BaseModel):
     # Other OpenDota objective types are passed through unchanged.
     objectives: list[dict] = []
 
-    # Chat in time order: [{time, type, key, player_slot[, slot]}].
+    # Chat in time order: [{time, type, key, player_slot[, slot][, hero_id]}].
     # type "chat": ``key`` = the message text; type "chatwheel": ``key`` =
-    # "chatwheel_<id>" (the frontend translates the id).
+    # "chatwheel_<id>" (the analysis resolves the id to its phrase through
+    # the chat-wheel catalog) and ``hero_id`` = the hero the phrase names
+    # ("<hero> is missing!"; replay parser from analyzer 1.5.0 only).
     chat: list[dict] = []
 
     # Building status at game end (OpenDota/Valve bit layout, set bit = alive).

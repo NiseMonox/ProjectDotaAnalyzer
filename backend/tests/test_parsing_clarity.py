@@ -644,6 +644,51 @@ def test_v3_position_log_and_wards(match_v3):
     assert by_time[400].dewarded is False and by_time[400].destroyed_time is None
 
 
+def test_a_ward_denied_by_its_own_side_keeps_the_denying_hero():
+    """Analyzer 1.5.0 says who ended a ward: an enemy (dewarded), a hero of its own side
+    (denied) or nobody (it expired). Before, a deny was a ward that "died early, not dewarded"."""
+    raw = _v3_fixture()
+    raw["wards"] = [
+        # replay 9038374031 at 7:25: Terrorblade (radiant) attacks Jakiro's radiant sentry
+        {"type": "sentry", "x": 0.0, "y": 0.0, "time": 51, "player_slot": 0, "team": "radiant", "destroyed_time": 445,
+         "dewarded": False, "denied": True, "killer_team": "radiant", "killer_slot": 1},
+        # dewarded by an enemy hero, and by an enemy creep (no hero to name)
+        {"type": "observer", "x": 0.0, "y": 0.0, "time": 60, "player_slot": 0, "team": "radiant", "destroyed_time": 90,
+         "dewarded": True, "denied": False, "killer_team": "dire", "killer_slot": 128},
+        {"type": "sentry", "x": 0.0, "y": 0.0, "time": 70, "player_slot": 0, "team": "radiant", "destroyed_time": 95,
+         "dewarded": True, "denied": False, "killer_team": "dire"},
+        # ran out: the ward is its own attacker, nobody is named
+        {"type": "observer", "x": 0.0, "y": 0.0, "time": 80, "player_slot": 0, "team": "radiant", "destroyed_time": 440,
+         "dewarded": False, "denied": False, "killer_team": "radiant"},
+        # contradictory or incomplete flags never make a deny: an enemy wins, a standing ward has no end
+        {"type": "sentry", "x": 0.0, "y": 0.0, "time": 100, "player_slot": 0, "team": "radiant", "destroyed_time": 120,
+         "dewarded": True, "denied": True, "killer_slot": 128},
+        {"type": "sentry", "x": 0.0, "y": 0.0, "time": 110, "player_slot": 0, "team": "radiant", "destroyed_time": None,
+         "dewarded": False, "denied": True, "killer_slot": 1},
+        {"type": "sentry", "x": 0.0, "y": 0.0, "time": 115, "player_slot": 0, "team": "radiant", "destroyed_time": 130,
+         "dewarded": False, "denied": "yes", "killer_slot": 1},
+        # output of an older analyzer: no "denied" at all
+        {"type": "sentry", "x": 0.0, "y": 0.0, "time": 120, "player_slot": 0, "team": "radiant", "destroyed_time": 140,
+         "dewarded": False},
+    ]
+    wards = {w.time: w for w in ClarityParser()._transform_data(raw).wards}
+    assert [(t, w.dewarded, w.denied, w.killer_slot) for t, w in wards.items()] == [
+        (51, False, True, 1), (60, True, False, 128), (70, True, False, None), (80, False, False, None),
+        (100, True, False, 128), (110, False, False, None), (115, False, False, None), (120, False, False, None)]
+
+
+def test_respawn_time_and_the_hero_a_chat_wheel_line_names_are_passed_on():
+    raw = _v3_fixture()
+    raw["kills_log"][0]["respawn_time"] = 1052.04       # analyzer 1.5.0
+    raw["kills_log"][1]["respawn_time"] = None          # still dead when the recording ends
+    raw["chat"] = [{"time": 387, "type": "chatwheel", "key": "chatwheel_71", "player_slot": 128, "hero_id": 74},
+                   {"time": 400, "type": "chatwheel", "key": "chatwheel_2", "player_slot": 0}]
+    match = ClarityParser()._transform_data(raw)
+    assert [(k.time, k.respawn_time) for k in match.kills_log] == [
+        (500.0, None), (1004.5, 1052.0), (1010.0, None), (1300.0, None)]    # absent before 1.5.0
+    assert match.chat[0]["hero_id"] == 74 and "hero_id" not in match.chat[1]
+
+
 def test_v3_teamfight_kill_targets_and_objectives(match_v3):
     fight = match_v3.teamfights[0]
     killer, victim = fight.players

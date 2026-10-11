@@ -158,6 +158,21 @@ def _warm_up_retrieval() -> None:
     )
 
 
+def _preload_llm_sdk() -> None:
+    """Import the LLM SDK ahead of the first report (blocking, never raises).
+
+    Without it the first coach request pays for the SDK's lazy imports;
+    the evaluator keeps them off the event loop either way.
+    """
+    try:
+        from .ai import evaluator
+
+        if evaluator.is_api_available():
+            evaluator.preload_sdk()
+    except Exception as exc:
+        logger.warning("LLM SDK preload failed: %s", exc)
+
+
 async def _check_and_update_gamedata() -> bool:
     """Refresh the game data when it is missing or outdated; True when it changed.
 
@@ -334,8 +349,9 @@ async def run_periodic_maintenance(startup: asyncio.Task | None = None) -> None:
 async def lifespan(app: FastAPI):
     """Size the worker pool and start the background work.
 
-    Three tasks: the startup maintenance, its periodic repetition and the
-    warm-up of the knowledge-retrieval index. RAG_WARM_UP=0 skips that one:
+    Four tasks: the startup maintenance, its periodic repetition, the import
+    of the LLM SDK (when a key is configured) and the warm-up of the
+    knowledge-retrieval index. RAG_WARM_UP=0 skips the last one:
     the first report then builds the knowledge stores, and this process
     never embeds missing texts (the index only starts builds once warmed
     up; ``python -m backend.scripts.rag build`` does it from outside).
@@ -355,7 +371,11 @@ async def lifespan(app: FastAPI):
     )
     task = asyncio.create_task(run_startup_maintenance(), name="startup-maintenance")
     app.state.startup_task = task
-    background = [task, asyncio.create_task(run_periodic_maintenance(task), name="periodic-maintenance")]
+    background = [
+        task,
+        asyncio.create_task(run_periodic_maintenance(task), name="periodic-maintenance"),
+        asyncio.create_task(_run_in_daemon_thread(_preload_llm_sdk), name="llm-sdk-preload"),
+    ]
     warm_up = config.env_bool("RAG_WARM_UP", True)
     if warm_up:
         background.append(asyncio.create_task(_run_in_daemon_thread(_warm_up_retrieval), name="rag-warm-up"))

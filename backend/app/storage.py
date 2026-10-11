@@ -391,13 +391,19 @@ class MatchStore:
     end of the match. The AI coach reports cached before it had CS
     benchmark sentences that disagreed with their own benchmark column,
     empty phase cards for scoreboard-only matches and the root cause of a
-    death repeated in the analysis text.
+    death repeated in the analysis text;
+    7 = who ended a ward (``WardEvent.denied`` and, for a deny too, the
+    hero in ``killer_slot``: replay analyzer 1.5.0, and OpenDota imports
+    from the attacker of the left log), ``KillEvent.respawn_time`` (when a
+    hero was alive again after a death) and the hero a chat-wheel line
+    names (``chat[].hero_id``). The AI coach reports cached before it were
+    written by the coach of the round before the last polish.
     ``MatchData.talent_names_patch`` was added without a bump: its default
     ("" = unknown) is what every reader assumes for older files, and a bump
     would also discard the cached AI coach reports.
     """
 
-    FORMAT = 6
+    FORMAT = 7
     SUFFIX = ".json.gz"
 
     def __init__(self, directory: Path, max_files: Callable[[], int]) -> None:

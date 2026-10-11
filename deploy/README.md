@@ -60,8 +60,9 @@ All settings are environment variables, read from `/opt/dota-analyzer/.env`
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | empty | LLM for the AI coach; empty = rule-based reports only |
 | `ADMIN_TOKEN` | empty | Required (`X-Admin-Token` header) for `/api/admin/*` and `/api/parse-local/*`; empty = those endpoints return 403 |
-| `AI_COACH_MODEL` | `deepseek-flash` | Model of the coach and of the learning job (the name the endpoint's `/models` lists). One LLM-backed report measured 14-31 requests, 105-130k prompt and 38-60k completion tokens, 60-85 s |
+| `AI_COACH_MODEL` | `deepseek-flash` | Model of the coach and of the learning job (the name the endpoint's `/models` lists). One LLM-backed report measured 14-31 requests, 53-137k prompt and 38-75k completion tokens, 60-140 s (six runs on 2026-10-11, table in the top-level `README.md`) |
 | `AI_COACH_DAILY_LIMIT` | `200` | Max cold LLM-backed coach reports per UTC day (0 = unlimited); cached reports are free |
+| `AI_COACH_DEGRADED_TTL_S` / `AI_COACH_REFRESH_COOLDOWN_S` | `600` / `60` | Seconds a degraded report (the LLM failed, rules were used) is served from memory, and seconds before a reader may force a new run of it ("generate again", `?refresh=1`); a forced run counts as a cold report for the two limits around this row |
 | `AI_COACH_MAX_TOKENS` / `AI_COACH_PHASE_MAX_TOKENS` | `8192` / `4096` | `max_tokens` of one decision evaluation / one phase review (512-16384); the model's hidden reasoning is billed inside it |
 | `RATE_LIMIT_UPLOAD` | `10/3600` | Per-IP uploads per window (`count/seconds`, `0` disables) |
 | `RATE_LIMIT_FETCH` | `30/600` | Per-IP OpenDota fetches (cache hits are free) |
@@ -363,13 +364,22 @@ sudo systemctl restart dota-analyzer
   format). Old files go away as they are met or by the normal pruning.
   Vector files of an older format in `cache/rag/` are removed and rebuilt by
   the next build.
-- **AI-coach reports** are payload version 4: every evaluation lists the
-  knowledge entries behind it (`sources`, with `cited` for the ones the model
-  named) and the report says how they were retrieved (`knowledge`). The
-  frontend of this release reads both; reports cached as version 3 are not
-  served. With a tool-calling model the agent may additionally search the
-  knowledge base `RAG_AGENT_SEARCH_LIMIT` times per evaluation (default 3,
-  at most 6, 0 = off).
+- **AI-coach reports** are payload version 5. Since version 4 every
+  evaluation lists the knowledge entries behind it (`sources`, with `cited`
+  for the ones the model named) and the report says how they were retrieved
+  (`knowledge`). Version 5 adds the report's own `lang`, writes hero, item
+  and ability names in that language (Chinese names in a zh report) and
+  leaves `analysis` / `mistake` / `better_play` empty where there is nothing
+  to say (a positive moment); a served report also carries
+  `refresh: {available, retry_after}`, which says whether a degraded report
+  can be generated again (`?refresh=1`, see `AI_COACH_REFRESH_COOLDOWN_S`).
+  The frontend of this release reads all of it; reports cached as version 4
+  or older are not served. The text of a listed entry is read with
+  `GET /api/knowledge/{id}?lang=zh|en` (the `id` of a `sources` item; 404
+  `knowledge_not_found` once a later learning run has dropped the entry).
+  With a tool-calling model the agent may additionally search the knowledge
+  base `RAG_AGENT_SEARCH_LIMIT` times per evaluation (default 3, at most 6,
+  0 = off).
 - **Learned knowledge**: output of a quick or under-sampled learning run is no
   longer loaded (a hero's item timings need 10 pro games and 8 purchases per
   item now), and neither are LLM notes that judge the reader by a pro
@@ -383,6 +393,7 @@ sudo systemctl restart dota-analyzer
   run again.
 - **New settings** (all optional, see `.env.example`): `GAMEDATA_RECHECK_HOURS`,
   `RATE_LIMIT_AI_COACH_RULES`, `AI_COACH_MAX_TOKENS`, `AI_COACH_PHASE_MAX_TOKENS`,
+  `AI_COACH_REFRESH_COOLDOWN_S`,
   `RAG_EMBEDDINGS`, `RAG_MODEL`, `RAG_MODEL_DIR`, `RAG_EMBED_THREADS`,
   `RAG_MODEL_IDLE_UNLOAD_S`, `RAG_EMBED_API_BASE_URL` / `_KEY` / `_MODEL`,
   `RAG_INDEX_DIR`, `RAG_TOP_K`, `RAG_AGENT_SEARCH_LIMIT`, `RAG_WARM_UP`.
@@ -401,7 +412,11 @@ sudo systemctl restart dota-analyzer
   which a test ties to `DEFAULT_PATCH_LABEL`. Then run the test suite (it
   names editorial texts that quote changed numbers), run
   `python -m backend.scripts.rag build --static` and commit the catalogs, the
-  fallback files and `backend/data/rag/`.
+  fallback files and `backend/data/rag/`. The same run refreshes the chat-wheel
+  phrases (`frontend/static/data/chat_wheel.json`, English and Chinese, from
+  Valve's game files as mirrored in `dotabuff/d2vpkr` on GitHub, about 10 MB
+  of downloads); when that mirror cannot be reached the phrases of the
+  previous run are kept.
 - **nginx**: no change. Uploads may now be named `.dem.bz2` / `.dem.zst`.
 
 ## Redeploy after a `git push`

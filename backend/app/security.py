@@ -188,6 +188,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "AI coaching analysis timed out. Please try again later.",
         "zh": "AI 教练分析超时，请稍后重试。",
     },
+    "knowledge_not_found": {
+        "en": "This entry is no longer in the knowledge base (a later learning run may have replaced it).",
+        "zh": "知识库中已没有这条资料（之后的学习更新可能替换了它）。",
+    },
     "gamedata_update_failed": {
         "en": "Game data update failed.",
         "zh": "游戏数据更新失败。",

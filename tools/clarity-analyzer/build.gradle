@@ -7,7 +7,7 @@ plugins {
 group = 'com.dotaanalyzer'
 // Written to the JAR manifest (Implementation-Version) and by the analyzer into every output
 // (`analyzer_version`): raise it with each change of the output.
-version = '1.4.0'
+version = '1.5.0'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17

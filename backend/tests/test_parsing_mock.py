@@ -320,4 +320,26 @@ def test_wards_carry_team_and_deward_flag(match):
         assert not w.dewarded or w.destroyed_time is not None
         assert w.destroyed_time is None or w.destroyed_time <= match.duration
     counts = Counter((w.ward_type, w.dewarded) for w in match.wards)
-    assert counts[("observer", True)] == 6 and counts[("sentry", True)] == 14
+    # as in the real match the mock is modelled on: 19 dewards, and the sentry Warlock
+    # attacked himself 18 s after placing it (the lifetime alone would call it a deward)
+    assert counts[("observer", True)] == 6 and counts[("sentry", True)] == 13
+    denied = [w for w in match.wards if w.denied]
+    assert [(w.ward_type, w.time, w.destroyed_time, w.player_slot, w.killer_slot, w.dewarded) for w in denied] == [
+        ("sentry", 1003, 1021, 2, 2, False)]
+
+
+def test_every_death_has_the_respawn_the_position_log_shows(match):
+    by_slot = {p.player_slot: p for p in match.players}
+    for kill in match.kills_log:
+        log = by_slot[kill.victim_slot].position_log
+        if kill.respawn_time is None:       # the game ended first
+            assert all(hp == 0 for t, _x, _y, hp in log if t > kill.time), kill
+            continue
+        assert kill.time + 10 <= kill.respawn_time <= match.duration, kill
+        # dead on every sample up to the respawn, alive on those after it until the next death
+        again = min((k.time for k in match.kills_log if k.victim_slot == kill.victim_slot and k.time > kill.time),
+                    default=match.duration + 1)
+        assert kill.respawn_time <= again, kill
+        assert all(hp == 0 for t, _x, _y, hp in log if kill.time < t < kill.respawn_time), kill
+        assert all(hp > 0 for t, _x, _y, hp in log if kill.respawn_time <= t < again), kill
+    assert sum(k.respawn_time is None for k in match.kills_log) == 1

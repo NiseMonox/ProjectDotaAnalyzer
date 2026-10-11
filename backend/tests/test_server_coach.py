@@ -12,6 +12,7 @@ import asyncio
 import json
 import sys
 import threading
+import time
 import types
 from types import SimpleNamespace
 
@@ -31,6 +32,8 @@ SSE_URL = "/api/match/opendota_777/ai-coach-stream/{slot}?lang={lang}"
 # Report identity: match key + parse source + slot + language + LLM mode.
 COACH_ID = "opendota_777_opendota_0_zh_rules"
 DEM = b"PBDEMS2\x00"
+# What every served report says about forcing a new run: a final report cannot be refreshed.
+FINAL = {"available": False, "retry_after": None}
 
 
 def report_file(coach_id: str = COACH_ID, version: int = 2) -> str:
@@ -256,6 +259,61 @@ def test_malformed_slot_follows_the_error_contract(coach_env, slot):
 
 
 # ---------------------------------------------------------------------------
+# Knowledge entries behind a report's sources
+# ---------------------------------------------------------------------------
+
+def test_a_knowledge_entry_can_be_read_by_the_id_a_report_lists(coach_env):
+    """A report listed ``sources: [{id, title, ...}]`` and no route returned the text behind an id:
+    the page showed titles under "so the basis of a verdict can be checked" with nothing to read."""
+    c = coach_env.client
+    zh = c.get("/api/knowledge/coaching:smoke_gank?lang=zh")
+    en = c.get("/api/knowledge/coaching%3Asmoke_gank?lang=en")          # as encodeURIComponent sends it
+    assert zh.status_code == en.status_code == 200
+    assert zh.headers["content-type"] == "application/json"
+    assert list(zh.json()) == ["id", "title", "source_type", "source_label", "patch", "text", "lang"]
+    assert zh.json() | {"text": ""} == {
+        "id": "coaching:smoke_gank", "title": "开雾Gank原则", "source_type": "builtin",
+        "source_label": "教练原则", "patch": "", "text": "", "lang": "zh"}
+    assert zh.json()["text"].startswith("## 开雾Gank原则\n- 诡计之雾使友方单位隐身")
+    assert en.json() | {"text": ""} == {
+        "id": "coaching:smoke_gank", "title": "Smoke Gank Principles", "source_type": "builtin",
+        "source_label": "Coaching principle", "patch": "", "text": "", "lang": "en"}
+    assert en.json()["text"].startswith("## Smoke Gank Principles\n- Smoke makes allied units invisible")
+    # the title is the one a report shows: names in the report language, the text as the model gets it
+    laning = c.get("/api/knowledge/hero_laning:skeleton_king?lang=zh").json()
+    assert laning["title"] == "冥魂大帝 — 对线要点" and laning["source_label"] == "编辑整理"
+    assert laning["text"].startswith("Wraith King — 对线要点：")
+    # any other language value is the zh report, as on the coach routes
+    assert c.get("/api/knowledge/coaching:smoke_gank?lang=ja").json()["lang"] == "zh"
+    assert c.get("/api/knowledge/coaching:smoke_gank").json() == zh.json()
+    assert coach_env.fake.calls == []
+
+
+@pytest.mark.parametrize("entry_id", ["nope", "coaching:", "learned:matchup:axe:nobody", "a/b", "x" * 201,
+                                      "..%2F..%2Fetc%2Fpasswd", "coaching:smoke_gank%00"])
+def test_an_unknown_knowledge_entry_follows_the_error_contract(coach_env, entry_id):
+    """Also the id of a learned entry that a later learning run dropped."""
+    c = coach_env.client
+    r = c.get(f"/api/knowledge/{entry_id}?lang=en")
+    assert r.status_code == 404
+    assert r.json() == {"detail": "This entry is no longer in the knowledge base (a later learning run may have "
+                                  "replaced it).", "code": "knowledge_not_found"}
+    assert c.get(f"/api/knowledge/{entry_id}?lang=zh").json()["detail"] == security.message("knowledge_not_found", "zh")
+
+
+def test_knowledge_entry_route_survives_a_missing_knowledge_base(coach_env, monkeypatch):
+    def broken(lang="zh"):
+        raise RuntimeError("store build failed")
+
+    monkeypatch.setattr(routes, "_knowledge_entry", lambda entry_id, lang: None)
+    assert coach_env.client.get("/api/knowledge/coaching:smoke_gank").json()["code"] == "knowledge_not_found"
+    # the lookup itself never raises: a failing store is "no entry", not a 500
+    from backend.app.ai import knowledge_base
+    monkeypatch.setattr(knowledge_base, "_get_knowledge_store", broken)
+    assert knowledge_base.knowledge_entry("coaching:smoke_gank", "zh") is None
+
+
+# ---------------------------------------------------------------------------
 # Caching
 # ---------------------------------------------------------------------------
 
@@ -306,6 +364,160 @@ def test_degraded_reports_are_not_persisted(coach_env, monkeypatch):
     coach_env.fake.degraded = False
     c.get(JSON_URL.format(slot=0, lang="zh"))
     assert coach_files(coach_env) == [report_file()]
+
+
+def end_cooldown(coach_id: str = COACH_ID) -> None:
+    """Let the refresh cooldown of the cached degraded report run out."""
+    routes._coach_report_cache[coach_id].refresh_at = time.monotonic() - 1
+
+
+def test_a_degraded_report_can_be_refreshed_and_only_a_degraded_one(coach_env):
+    """The UI's "generate again" got the same degraded report from memory for ten minutes."""
+    c, fake = coach_env.client, coach_env.fake
+    fake.degraded = True
+    first = c.get(JSON_URL.format(slot=0, lang="zh")).json()
+    assert first["degraded"] is True and first["n"] == 1
+    # the envelope says a new run can be forced, and from when
+    assert first["refresh"]["available"] is True
+    assert 0 < first["refresh"]["retry_after"] <= config.AI_COACH_REFRESH_COOLDOWN_S == 60
+
+    # within the cooldown: the cached report, no run, and the time left
+    early = c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1")
+    assert early.status_code == 200 and early.json()["n"] == 1 and early.json()["refresh"]["retry_after"] > 0
+    assert len(fake.calls) == 1
+
+    end_cooldown()
+    assert c.get(JSON_URL.format(slot=0, lang="zh")).json()["refresh"] == {"available": True, "retry_after": 0}
+    assert len(fake.calls) == 1                         # asking without refresh never starts a run
+    fake.degraded = False                               # the LLM answers again
+    fresh = c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1").json()
+    assert fresh["n"] == 2 and fresh["degraded"] is False and fresh["refresh"] == FINAL
+    assert coach_files(coach_env) == [report_file()]    # a full report is kept like any other
+
+    # a full report is never run again, whatever the query says
+    for value in ("1", "true"):
+        again = c.get(JSON_URL.format(slot=0, lang="zh") + f"&refresh={value}").json()
+        assert again == fresh
+    events = sse_events(c.get(SSE_URL.format(slot=0, lang="zh") + "&refresh=1").text)
+    assert events == [{"type": "done", "data": fresh}]
+    routes._coach_report_cache.clear()                  # ... also when it comes from disk
+    assert c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1").json() == fresh
+    assert len(fake.calls) == 2
+
+
+def test_refresh_of_a_degraded_report_over_sse_and_still_degraded(coach_env):
+    c, fake = coach_env.client, coach_env.fake
+    fake.degraded = True
+    assert c.get(JSON_URL.format(slot=0, lang="zh")).json()["n"] == 1
+    end_cooldown()
+    events = sse_events(c.get(SSE_URL.format(slot=0, lang="zh") + "&refresh=1").text)
+    assert [e["type"] for e in events][0] == "progress" and events[-1]["type"] == "done"
+    again = events[-1]["data"]
+    # a new run that is degraded again replaces the old report and starts a new cooldown
+    assert again["n"] == 2 and again["degraded"] is True
+    assert again["refresh"]["available"] is True and again["refresh"]["retry_after"] > 0
+    # an EventSource that reconnects with the same URL gets that report, not another run
+    assert sse_events(c.get(SSE_URL.format(slot=0, lang="zh") + "&refresh=1").text)[-1]["data"]["n"] == 2
+    assert c.get(JSON_URL.format(slot=0, lang="zh")).json()["n"] == 2
+    assert len(fake.calls) == 2 and coach_files(coach_env) == []
+    # anything but a clear yes is no request for a new run
+    end_cooldown()
+    for value in ("", "0", "false", "no", "2"):
+        assert c.get(JSON_URL.format(slot=0, lang="zh") + f"&refresh={value}").json()["n"] == 2
+    assert len(fake.calls) == 2
+
+
+def test_a_forced_run_is_a_cold_report_for_the_limits(coach_env, monkeypatch):
+    c, fake = coach_env.client, coach_env.fake
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setenv("RATE_LIMIT_AI_COACH", "2/3600")
+    security.reset_rate_limits()
+    llm_id = COACH_ID.replace("_rules", "_llm")
+    fake.degraded = True
+    assert c.get(JSON_URL.format(slot=0, lang="zh")).json()["degraded"] is True
+    assert routes.ai_coach_daily_quota.used() == 1
+    end_cooldown(llm_id)
+    assert c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1").json()["n"] == 2
+    assert routes.ai_coach_daily_quota.used() == 2      # it spends the LLM budget like a first report
+
+    # the per-IP limit is used up: the next forced run is refused on both routes ...
+    end_cooldown(llm_id)
+    refused = c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1")
+    assert refused.status_code == 429 and refused.json()["code"] == "rate_limited" and refused.json()["retry_after"] > 0
+    event = sse_events(c.get(SSE_URL.format(slot=0, lang="zh") + "&refresh=1").text)[0]
+    assert (event["type"], event["code"], event["status"]) == ("error", "rate_limited", 429)
+    # ... while the report itself keeps being served, and still offers the refresh
+    kept = c.get(JSON_URL.format(slot=0, lang="zh")).json()
+    assert kept["n"] == 2 and kept["refresh"] == {"available": True, "retry_after": 0}
+
+    # and so is the daily quota
+    monkeypatch.setenv("RATE_LIMIT_AI_COACH", "0")
+    security.reset_rate_limits()
+    monkeypatch.setattr(config, "AI_COACH_DAILY_LIMIT", 2)
+    refused = c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1")
+    assert refused.status_code == 429 and refused.json()["code"] == "daily_limit"
+    assert len(fake.calls) == 2
+
+
+def test_concurrent_refreshes_share_one_run(coach_env):
+    fake = coach_env.fake
+    fake.degraded = True
+    assert coach_env.client.get(JSON_URL.format(slot=0, lang="zh")).json()["n"] == 1
+    end_cooldown()
+    fake.gate = threading.Event()
+
+    async def scenario():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            forced = [asyncio.create_task(client.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1"))
+                      for _ in range(3)]
+            forced.append(asyncio.create_task(client.get(SSE_URL.format(slot=0, lang="zh") + "&refresh=1")))
+            for _ in range(300):
+                await asyncio.sleep(0.01)
+                job = routes._coach_jobs.get(COACH_ID)
+                if job is not None and job.listeners:
+                    break
+            await asyncio.sleep(0.05)
+            # meanwhile the degraded report is still there for a reader who does not ask for more
+            waiting = await client.get(JSON_URL.format(slot=0, lang="zh"))
+            fake.degraded = False
+            fake.gate.set()
+            return waiting, await asyncio.gather(*forced)
+
+    waiting, responses = asyncio.run(scenario())
+    assert waiting.json()["n"] == 1 and waiting.json()["degraded"] is True
+    assert len(fake.calls) == 2                                     # one run for the four of them
+    bodies = [r.json() for r in responses[:3]]
+    assert all(body == bodies[0] for body in bodies) and bodies[0]["n"] == 2 and bodies[0]["refresh"] == FINAL
+    assert sse_events(responses[3].text)[-1] == {"type": "done", "data": bodies[0]}
+    assert COACH_ID not in routes._coach_jobs
+
+
+def test_a_failed_forced_run_keeps_the_degraded_report_and_restarts_the_cooldown(coach_env):
+    c, fake = coach_env.client, coach_env.fake
+    fake.degraded = True
+    assert c.get(JSON_URL.format(slot=0, lang="zh")).json()["n"] == 1
+    end_cooldown()
+    fake.error = RuntimeError("provider down")
+    failed = c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1")
+    assert failed.status_code == 500 and failed.json()["code"] == "coach_failed"
+    fake.error = None
+    kept = c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1").json()     # at once: not another run
+    assert kept["n"] == 1 and kept["degraded"] is True and kept["refresh"]["retry_after"] > 0
+    assert len(fake.calls) == 2
+
+
+def test_refresh_without_a_cached_degraded_report_is_an_ordinary_request(coach_env, monkeypatch):
+    c, fake = coach_env.client, coach_env.fake
+    # nothing cached yet: the first report, written once
+    assert c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1").json()["n"] == 1
+    assert c.get(JSON_URL.format(slot=0, lang="zh") + "&refresh=1").json()["n"] == 1
+    # with the degraded cache switched off every request is a run of its own, as before
+    monkeypatch.setattr(config, "AI_COACH_DEGRADED_TTL_S", 0)
+    fake.degraded = True
+    report = c.get(JSON_URL.format(slot=128, lang="zh") + "&refresh=1").json()
+    assert report["degraded"] is True and report["refresh"] == {"available": True, "retry_after": 0}
+    assert c.get(JSON_URL.format(slot=128, lang="zh")).json()["n"] == report["n"] + 1
 
 
 def test_coach_works_after_match_evicted_from_memory(coach_env, monkeypatch):
@@ -638,7 +850,9 @@ def test_sse_disconnect_does_not_cancel_and_reconnect_attaches(coach_env, monkey
 
     result, rest = asyncio.run(scenario())
     assert len(fake.calls) == 1
-    assert json.loads(rest[-1][len("data: "):]) == {"type": "done", "data": result}
+    # the pipeline's report, served with the envelope's word on refreshing it
+    assert "refresh" not in result
+    assert json.loads(rest[-1][len("data: "):]) == {"type": "done", "data": {**result, "refresh": FINAL}}
     assert routes._coach_mem_get(coach_id) == result
     assert coach_files(coach_env) == [report_file()]
     assert coach_id not in routes._coach_jobs

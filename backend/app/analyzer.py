@@ -16,9 +16,15 @@ one. ``PlayerData.position_log`` is deliberately not part of the payload.
 """
 from __future__ import annotations
 
+import bisect
+import logging
+import math
+
 from . import geo
 from .game_constants import OBSERVER_WARD_DURATION_S, SENTRY_WARD_DURATION_S
 from .models import KillEvent, MatchData, PlayerData, SkillEvent, TeamfightPlayer
+
+logger = logging.getLogger(__name__)
 
 # Natural ward lifetimes (seconds), used for wards without a recorded end
 # when counting the wards active in a time window.
@@ -28,6 +34,10 @@ SENTRY_LIFETIME_S = SENTRY_WARD_DURATION_S
 # OpenDota's lane efficiency: net worth at 10:00 relative to the gold one
 # lane yields by then (OpenDota's constant).
 LANE_GOLD_AT_TEN = 4948
+# The constant describes the standard game. Turbo doubles the gold: every
+# core of a Turbo replay read 130-190 % "of the ideal lane income", so the
+# figure is not given for that mode (whoever computed it, OpenDota included).
+LANE_EFFICIENCY_NA_MODES = frozenset({"turbo"})
 
 # Shorter than any respawn time (12 s at level 1): a hero that "dies" again
 # this soon was alive in between, so the first entry was a reincarnation
@@ -162,6 +172,40 @@ def _coach_available(match: MatchData) -> bool:
     first minutes after it: nothing in it can be reviewed or compared.
     """
     return not (match.partial and match.duration < COACH_MIN_PARTIAL_SECONDS)
+
+
+def _player_positions(match: MatchData) -> dict[int, dict]:
+    """Position (1-5) of every player: ``{player_slot: {number, confidence,
+    method}}`` with ``confidence`` high | medium | low and ``method``
+    lane_nw | archetype_nw | nw_only.
+
+    This is the AI layer's own derivation (``ai.positions``), so the
+    scoreboard names the position a coach report names. A player it could
+    not place is missing. Empty for a replay the coach does not review
+    (``_coach_available``: it ends before the horn or in the first minutes,
+    when lanes and farm say nothing yet and the roles could only be guessed
+    from the heroes) and when the AI layer is unavailable; it never fails
+    the analysis.
+    """
+    if not _coach_available(match):
+        return {}
+    try:
+        from .ai.positions import match_positions_payload
+
+        derived = match_positions_payload(match)
+    except Exception as exc:
+        logger.warning("Player positions are left out of the analysis: %s", exc)
+        return {}
+    positions: dict[int, dict] = {}
+    for slot, position in derived.items() if isinstance(derived, dict) else ():
+        number = position.get("number") if isinstance(position, dict) else None
+        if isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= 5:
+            positions[slot] = {
+                "number": number,
+                "confidence": str(position.get("confidence") or ""),
+                "method": str(position.get("method") or ""),
+            }
+    return positions
 
 
 def _patch_versions(match: MatchData) -> tuple[str, str]:
@@ -385,15 +429,18 @@ _WARD_EARLY_S = 5
 
 def _ward_state(ward) -> str:
     """How a ward ended: ``active`` (still standing when the data ends),
-    ``dewarded`` (an enemy destroyed it: the parser's flag), ``expired`` (it
-    ran its full time) or ``destroyed``: it fell clearly before its time,
-    but not to an enemy the data names — usually its own team denied it,
-    and it certainly did not expire.
+    ``dewarded`` (an enemy destroyed it), ``denied`` (its own side did: an
+    ally's or the owner's attack) — both are the parser's flags —,
+    ``expired`` (it ran its full time) or ``destroyed``: it fell clearly
+    before its time and the data does not name who ended it (a source that
+    cannot tell a deny, or an attacker of neither side).
     """
     if ward.destroyed_time is None:
         return "active"
     if ward.dewarded:
         return "dewarded"
+    if ward.denied:
+        return "denied"
     full = OBSERVER_LIFETIME_S if ward.ward_type == "observer" else SENTRY_LIFETIME_S
     return "destroyed" if ward.destroyed_time - ward.time < full - _WARD_EARLY_S else "expired"
 
@@ -401,12 +448,14 @@ def _ward_state(ward) -> str:
 def analyze_wards(match: MatchData) -> dict:
     """Analyze ward placements for both teams.
 
-    Every ward carries ``dewarded`` (an enemy destroyed it; the parser's
-    flag, never a lifetime guess), ``state`` (see :func:`_ward_state`) and
-    ``lifetime`` (seconds until it was destroyed or expired; None while
-    alive at game end). ``killer_slot`` / ``killer_hero_name`` /
-    ``killer_hero_slug`` name the hero that dewarded it (None / "" when it
-    was not dewarded, or not by a hero, or unknown).
+    Every ward carries ``dewarded`` (an enemy destroyed it) and ``denied``
+    (its own side did) — the parser's flags, never a lifetime guess —,
+    ``state`` (see :func:`_ward_state`) and ``lifetime`` (seconds until it
+    was destroyed or expired; None while alive at game end).
+    ``killer_slot`` / ``killer_hero_name`` / ``killer_hero_slug`` name the
+    hero that dewarded or denied it (None / "" when neither happened, or
+    not by a hero, or unknown): an enemy for ``dewarded``, a hero of the
+    ward's own team for ``denied``.
     """
     slot_map = _slot_map(match)
     radiant_obs = []
@@ -424,7 +473,8 @@ def analyze_wards(match: MatchData) -> dict:
         lifetime = (
             ward.destroyed_time - ward.time if ward.destroyed_time is not None else None
         )
-        killer = slot_map.get(ward.killer_slot) if ward.dewarded and ward.killer_slot is not None else None
+        ended_by_hero = (ward.dewarded or ward.denied) and ward.killer_slot is not None
+        killer = slot_map.get(ward.killer_slot) if ended_by_hero else None
         deward = {"killer_slot": killer.player_slot if killer else None, **_hero_fields(killer, "killer_")}
 
         ward_info = {
@@ -438,6 +488,7 @@ def analyze_wards(match: MatchData) -> dict:
             "lifetime": lifetime,
             "destroyed_time": ward.destroyed_time,
             "dewarded": ward.dewarded,
+            "denied": ward.denied,
             "state": _ward_state(ward),
             **deward,
         }
@@ -460,6 +511,7 @@ def analyze_wards(match: MatchData) -> dict:
             "destroyed_time": ward.destroyed_time,
             "lifetime": lifetime,
             "dewarded": ward.dewarded,
+            "denied": ward.denied,
             "state": _ward_state(ward),
             **deward,
         })
@@ -655,6 +707,69 @@ def _guessed_kill_timeline(tf_start: int, players_detail: list[dict]) -> list[di
     return timeline
 
 
+# A natural respawn takes at least 12 s and a buyback has a log of its own:
+# a position-log sample this close after a death can still show the hero's
+# last health and is no sign of a respawn.
+_RESPAWN_MIN_S = 1.0
+
+
+def _dead_spans(player: PlayerData, deaths: list[KillEvent]) -> list[tuple[float, float | None]] | None:
+    """When a hero was dead: ``(death, respawn)`` spans in time order.
+
+    ``deaths`` are the hero's kill-log entries in time order. The respawn
+    is the earliest of: the hero's buyback after the death (exact), the
+    entry's own ``respawn_time`` (the replay parser sees it up to a second
+    late) and, for an entry without one, the first position-log sample
+    that shows health again (one sample every 5 s, so up to that much
+    late). A respawn of None means the hero was still dead when the data
+    ends. Reincarnations (Aegis, Wraith King) are no kill-log deaths and
+    leave no span. None when the source cannot tell: no position log
+    (OpenDota), one without health values, or a kill log that misses deaths
+    of the hero.
+    """
+    samples = [s for s in player.position_log if len(s) > 3]
+    if not any(s[3] >= 0 for s in samples) or len(deaths) < player.deaths:
+        return None
+    alive_at = [s[0] for s in samples if s[3] > 0]
+    buybacks = sorted(float(entry.get("time") or 0) for entry in player.buyback_log)
+    spans: list[tuple[float, float | None]] = []
+    for n, kill in enumerate(deaths):
+        death = kill.time
+        next_death = deaths[n + 1].time if n + 1 < len(deaths) else math.inf
+        back = [t for t in buybacks if death <= t < next_death][:1]
+        if kill.respawn_time is not None:
+            back.append(kill.respawn_time)
+        else:
+            seen = bisect.bisect_left(alive_at, death + _RESPAWN_MIN_S)
+            back += alive_at[seen:seen + 1]
+        respawn = min(back) if back else None
+        if next_death != math.inf and (respawn is None or respawn > next_death):
+            respawn = next_death    # alive again between two samples, then dead once more
+        spans.append((death, respawn))
+    return spans
+
+
+def _alive_intervals(spans: list[tuple[float, float | None]] | None, start: float, end: float) -> list[list[float]] | None:
+    """``[[from, to], ...]`` in seconds from ``start``: when a hero was alive
+    between ``start`` and ``end`` (see ``_dead_spans``). ``[]`` = dead all
+    the time, None = unknown."""
+    if spans is None:
+        return None
+    intervals: list[list[float]] = []
+    cursor = start
+    for death, respawn in spans:
+        if death >= end:
+            break
+        if respawn is not None and respawn <= cursor:
+            continue
+        if death > cursor:
+            intervals.append([cursor, death])
+        cursor = end if respawn is None else respawn
+    if cursor < end:
+        intervals.append([cursor, end])
+    return [[round(float(a - start), 1), round(float(b - start), 1)] for a, b in intervals]
+
+
 def analyze_teamfights(match: MatchData) -> list[dict]:
     """Analyze teamfight data.
 
@@ -667,11 +782,23 @@ def analyze_teamfights(match: MatchData) -> list[dict]:
     ``ability_casts`` they list hero abilities only (see
     ``_abilities_used``). ``gold_delta`` / ``xp_delta`` of a fight are
     Radiant minus Dire (positive = Radiant came out ahead).
+
+    ``alive_intervals`` of a player are the parts of the fight window in
+    which the hero was alive, as ``[[from, to], ...]`` in seconds from the
+    fight start: a death ends one, a buyback or a respawn starts the next,
+    and a hero that was still dead from before the fight starts late. ``[]``
+    means dead for the whole window; None means the source cannot tell
+    (OpenDota). Deaths and buybacks are exact, a respawn is up to a second
+    late (see ``_dead_spans``).
     """
     from .parser import is_utility_ability
 
     slot_map = _slot_map(match)
     kills = sorted(match.kills_log, key=lambda k: k.time)
+    deaths_by_slot: dict[int, list[KillEvent]] = {}
+    for kill in kills:
+        deaths_by_slot.setdefault(kill.victim_slot, []).append(kill)
+    dead_spans = {p.player_slot: _dead_spans(p, deaths_by_slot.get(p.player_slot, [])) for p in match.players}
     hero_kills = {id(k) for k in _hero_kills(match, slot_map)}
     assigned: set[int] = set()  # kills already attributed to an earlier fight
     results = []
@@ -703,6 +830,7 @@ def analyze_teamfights(match: MatchData) -> list[dict]:
                 "item_uses": tp.item_uses,
                 "buybacks": tp.buybacks,
                 "death_time_offset": tp.death_time_offset,
+                "alive_intervals": _alive_intervals(dead_spans.get(tp.player_slot), tf.start_time, tf.end_time),
                 "kill_targets": tp.kill_targets,
                 "positions": [
                     {"x": pos.x, "y": pos.y, "time_offset": pos.time_offset}
@@ -893,7 +1021,13 @@ def analyze_laning(match: MatchData) -> dict:
     is None when the source has nothing to derive it from (an OpenDota match
     without parsed data), never a made-up 0. ``lane_pos`` is the position
     histogram of the laning phase (see ``_lane_positions``).
+
+    ``lane_efficiency_applicable`` is False for a game mode the lane
+    efficiency does not describe (``LANE_EFFICIENCY_NA_MODES``: Turbo);
+    ``lane_efficiency`` and ``lane_efficiency_pct`` of every player are
+    None then.
     """
+    efficiency_applies = str(match.game_mode or "").strip().lower() not in LANE_EFFICIENCY_NA_MODES
     # LaningDamageEvent.target_idx is the index of the target in
     # match.players (0-9, as emitted by the clarity Java analyzer and mock
     # data), NOT player_slot (dire slots are 128+).
@@ -928,7 +1062,9 @@ def analyze_laning(match: MatchData) -> dict:
 
         lane_efficiency = p.lane_efficiency
         lane_efficiency_pct = p.lane_efficiency_pct
-        if not lane_efficiency and len(p.gold_t) > 10:
+        if not efficiency_applies:
+            lane_efficiency = lane_efficiency_pct = None
+        elif not lane_efficiency and len(p.gold_t) > 10:
             # Only OpenDota ships this value; same formula for the others.
             lane_efficiency = p.gold_t[10] / LANE_GOLD_AT_TEN
             lane_efficiency_pct = int(lane_efficiency * 100)
@@ -964,7 +1100,7 @@ def analyze_laning(match: MatchData) -> dict:
             "regen_items_used": len(p.laning_regen_events),
         })
 
-    return {"players": players}
+    return {"players": players, "lane_efficiency_applicable": efficiency_applies}
 
 
 def _hero_kills(match: MatchData, slot_map: dict[int, PlayerData]) -> list[KillEvent]:
@@ -1398,8 +1534,44 @@ def analyze_draft(match: MatchData) -> dict:
     }
 
 
+# Stands for the hero in a chat-wheel line about one ("… is missing!") when
+# the source does not say which hero it was.
+_UNNAMED_HERO = "…"
+
+
+def _chat_wheel_fields(msg: dict, match: MatchData) -> dict:
+    """What a chat-wheel message said, from the chat-wheel catalog.
+
+    ``phrase`` is the line in both languages, ``{"en", "zh"}``; None for a
+    spray and for a message id the catalog does not have. ``sound`` says
+    the line was also heard (a voice line), ``spray`` that the message was a
+    spray on the ground. The two lines that name a hero ("Zeus is
+    missing!") get its name from the message's ``hero_id`` (replay parser);
+    a source without it (OpenDota) leaves "…" in its place.
+    """
+    from .parser import chat_wheel_entry, hero_names
+
+    entry = chat_wheel_entry(msg.get("key")) or {}
+    phrase = None
+    if entry.get("en"):
+        phrase = {"en": str(entry["en"]), "zh": str(entry.get("zh") or entry["en"])}
+        if any("{hero}" in text for text in phrase.values()):
+            hero_id = msg.get("hero_id")
+            en, zh = hero_names(hero_id) if isinstance(hero_id, int) and not isinstance(hero_id, bool) else ("", "")
+            # the name the rest of the payload uses for a hero of this match
+            en = next((p.hero_name for p in match.players if hero_id and p.hero_id == hero_id), en)
+            names = {"en": en or _UNNAMED_HERO, "zh": zh or en or _UNNAMED_HERO}
+            phrase = {lang: text.replace("{hero}", names[lang]) for lang, text in phrase.items()}
+    return {"phrase": phrase, "sound": bool(entry.get("sound")), "spray": bool(entry.get("spray"))}
+
+
 def analyze_chat(match: MatchData) -> dict:
-    """Analyze chat messages."""
+    """Analyze chat messages.
+
+    ``type`` is "chat" (``key`` is the text) or "chatwheel" (``key`` is
+    "chatwheel_<id>"); a chat-wheel message also carries ``phrase``,
+    ``sound`` and ``spray`` (see ``_chat_wheel_fields``).
+    """
     slot_map = _slot_map(match)
 
     messages = []
@@ -1426,6 +1598,7 @@ def analyze_chat(match: MatchData) -> dict:
             "hero_name": hero_name,
             "hero_slug": hero_slug,
             "team": team,
+            **(_chat_wheel_fields(msg, match) if msg_type == "chatwheel" else {}),
         })
 
     messages.sort(key=lambda m: m["time"])
@@ -1439,10 +1612,19 @@ def full_analysis(match: MatchData) -> dict:
     ends before the horn (see ``_pre_game_only``): the frontend shows it as
     an incomplete replay instead of a 0:00 match. ``coach_available`` is
     false when the coach refuses the match (409 ``coach_no_game``): such a
-    replay, or one cut within the first minutes of the game.
+    replay, or one cut within the first minutes of the game. ``position``
+    of a player is ``{number, confidence, method}`` or None (see
+    ``_player_positions``). ``gpm`` / ``xpm`` of a player are None for a
+    truncated replay that ends within the first minute of the game.
     """
     # A truncated replay has no result: never report a guessed winner.
     radiant_win = match.radiant_win if match.winner_known else None
+    positions = _player_positions(match)
+    # A per-minute rate needs a minute of game: a replay cut four seconds
+    # after the horn showed "GPM 621" for all ten players (the gold of those
+    # seconds, extrapolated to a minute). A complete match keeps the rates
+    # of its source, also when its length is unknown.
+    has_rates = not (match.partial and match.duration < 60)
     return {
         "match_overview": {
             "match_id": match.match_id,
@@ -1479,14 +1661,15 @@ def full_analysis(match: MatchData) -> dict:
                     "hero_slug": p.hero_slug,
                     "player_name": p.player_name,
                     "team": p.team,
+                    "position": positions.get(p.player_slot),
                     "kills": p.kills,
                     "deaths": p.deaths,
                     "assists": p.assists,
                     "level": p.level,
                     "last_hits": p.last_hits,
                     "denies": p.denies,
-                    "gpm": p.gold_per_min,
-                    "xpm": p.xp_per_min,
+                    "gpm": p.gold_per_min if has_rates else None,
+                    "xpm": p.xp_per_min if has_rates else None,
                     "hero_damage": p.hero_damage,
                     "tower_damage": p.tower_damage,
                     "hero_healing": p.hero_healing,

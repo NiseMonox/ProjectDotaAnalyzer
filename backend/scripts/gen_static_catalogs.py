@@ -21,6 +21,11 @@ then the OpenDota API):
    catalog that is not carried through fails the suite, and it checks the
    numbers quoted in ``backend/data/editorial`` against it.
 
+A fourth catalog comes from another source, Valve's own game files:
+``frontend/static/data/chat_wheel.json``, the phrases of the chat wheel in
+English and Simplified Chinese by message id (see "Chat wheel" below). Its
+input is part of the same fixture and it follows the same rules.
+
 Usage (from the repository root)::
 
     python -m backend.scripts.gen_static_catalogs           # download, rewrite all three
@@ -64,6 +69,14 @@ the data does not have: readers fall back to ``name``. The ``name_to_*``
 tables stay English, like every name in a match payload. When Valve's lists
 cannot be reached the names of the previous run are kept, and likewise the
 pictures found missing (``missing_ability_images``).
+
+- chat_wheel.json: ``{"by_id": {"<message id>": {en, zh[, sound]} |
+  {"spray": true}}, "meta"}`` — the line a chat-wheel message shows in chat,
+  in both languages (``zh`` is the English text where Valve has no Chinese
+  one); ``sound`` marks a line that is also heard; a spray has a picture and
+  no text. The two lines that name a hero keep it as ``{hero}``
+  ("{hero} is missing!"). The reader is ``backend/app/parser.py``
+  (``chat_wheel_entry``); the analysis puts the phrase into the payload.
 
 Keys of the previous catalog that the source no longer has are kept with
 ``"legacy": true``: old replays still carry removed items and abilities.
@@ -120,6 +133,29 @@ NAMES_ZH_FEEDS = (
 )
 # (catalog file, its table)
 CATALOGS = (("heroes", "by_id"), ("items", "by_key"), ("abilities", "by_key"))
+
+# The chat wheel: Valve's scripts name the messages by id, its localisation
+# files have their text. Both are read from the mirror of the game's files
+# that Dotabuff keeps on GitHub (one commit per client build), at one commit.
+CHAT_WHEEL_REPO = "dotabuff/d2vpkr"
+CHAT_WHEEL_COMMIT_URL = f"https://api.github.com/repos/{CHAT_WHEEL_REPO}/commits/master"
+CHAT_WHEEL_LISTING_URL = f"https://api.github.com/repos/{CHAT_WHEEL_REPO}/contents/{{path}}?ref={{commit}}"
+CHAT_WHEEL_FILE_URL = f"https://raw.githubusercontent.com/{CHAT_WHEEL_REPO}/{{commit}}/{{path}}"
+# The general wheel and the hero voice lines ...
+CHAT_WHEEL_SCRIPTS = ("dota/scripts/chat_wheel.txt", "dota/scripts/chat_wheel_heroes.txt")
+# ... and the voice lines of casters and players: the files of this directory
+# whose names start like this, one per season. (The fan content of the teams
+# is hundreds of small files there; its lines are taken from the localisation
+# file instead, which names each by its message id.)
+CHAT_WHEEL_DIR = "dota/scripts/chat_wheels"
+CHAT_WHEEL_DIR_FILES = ("stickers_chat_wheel_", "ti2021_casters_chat_wheel")
+CHAT_WHEEL_TOKENS = "dota/resource/localization/{name}_{language}.txt"
+CHAT_WHEEL_TOKEN_FILES = ("dota", "hero_chat_wheel", "teamfandom")
+# catalog language -> Valve's name of it
+CHAT_WHEEL_LANGUAGES = {"en": "english", "zh": "schinese"}
+# What a message says, in the order the catalog takes it: the translation of
+# a line spoken in another language, the line itself, the caption on the wheel.
+CHAT_WHEEL_TEXT_FIELDS = ("translation", "message", "label")
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
 
@@ -303,10 +339,13 @@ def load_source(directory: Path | None, previous_items: dict | None = None,
     - ``missing_images``: abilities without a picture
       (:func:`missing_ability_images`; ``<directory>/missing_images.json``,
       a list of keys, when reading files).
+    - ``chat_wheel``: the chat-wheel input (:func:`_download_chat_wheel`;
+      ``<directory>/chat_wheel.json`` in that shape when reading files).
+      Missing from the result when there is none at all.
 
-    When Valve cannot be asked, the last two are the ones of the *stored*
-    data set (the test fixture of the previous run), else what the
-    *previous* catalogs (by catalog name) carry.
+    When Valve cannot be asked, the last three are the ones of the *stored*
+    data set (the test fixture of the previous run), else — the first two —
+    what the *previous* catalogs (by catalog name) carry.
     """
     previous, stored = previous or {}, stored or {}
     if directory is not None:
@@ -320,12 +359,14 @@ def load_source(directory: Path | None, previous_items: dict | None = None,
             missing = json.loads((directory / "missing_images.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             missing = None
+        chat_wheel = _read_json(directory / "chat_wheel.json") or None
     else:
         from backend.app.ai import data_manager
         raw, identity = data_manager.download_constants_snapshot(SOURCE_FILES)
         items_txt = _download_items_txt()
         chinese = _download_names_zh()
         missing = missing_ability_images(raw["abilities"], previous.get("abilities"))
+        chat_wheel = _download_chat_wheel(stored.get("chat_wheel"))
     flagged = obsolete_items(items_txt) if items_txt is not None else []
     if not flagged:
         print(f"warning: {'items.txt names no obsolete item' if items_txt is not None else 'no items.txt'}; "
@@ -346,6 +387,11 @@ def load_source(directory: Path | None, previous_items: dict | None = None,
                    if isinstance(entry, dict) and entry.get("img") is None
                    and isinstance(raw["abilities"].get(key), dict) and raw["abilities"][key].get("img")]
     raw["missing_images"] = sorted(str(key) for key in missing)
+    if chat_wheel is None and isinstance(stored.get("chat_wheel"), dict):
+        print("warning: no chat wheel files; keeping the phrases of the previous run")
+        chat_wheel = stored["chat_wheel"]
+    if isinstance(chat_wheel, dict) and isinstance(chat_wheel.get("messages"), dict):
+        raw["chat_wheel"] = chat_wheel
     return raw, identity
 
 
@@ -431,6 +477,8 @@ def trim(raw: dict[str, Any]) -> dict[str, Any]:
                      for catalog, keys in kept.items()},
         "missing_images": [key for key in raw.get("missing_images") or [] if key in abilities],
         "numbers": numbers,
+        # (already reduced to what build_chat_wheel reads, see chat_wheel_input)
+        **({"chat_wheel": raw["chat_wheel"]} if raw.get("chat_wheel") else {}),
     }
 
 
@@ -633,6 +681,218 @@ def dump_catalog(catalog: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Chat wheel
+# ---------------------------------------------------------------------------
+
+def keyvalues(text: str):
+    """Every ``"key" "value"`` pair of a KeyValues text, as ``(path, key,
+    value)``: ``path`` is the tuple of the names of the blocks around it."""
+    path: list[str | None] = []
+    pending: str | None = None  # a key waiting for its value or block
+    for match in _KV_TOKEN.finditer(text):
+        string, brace = match.group(1), match.group(2)
+        if brace == "{":
+            path.append(pending)
+            pending = None
+        elif brace == "}":
+            if path:
+                path.pop()
+            pending = None
+        elif string is not None:
+            if pending is None:
+                pending = string
+            else:
+                yield tuple(path), pending, string
+                pending = None
+
+
+def chat_wheel_messages(script: str) -> dict[str, dict]:
+    """The messages of one of Valve's chat-wheel scripts by id: ``{"<id>":
+    {label, message, translation, sound, image}}`` with the fields the script
+    gives. The texts are as written there, a literal or a ``#token`` of the
+    localisation files; ``sound`` / ``image`` are 1 when the message has one.
+    """
+    blocks: dict[tuple, dict[str, str]] = {}
+    for path, key, value in keyvalues(script):
+        if key == "message_id" or key in CHAT_WHEEL_TEXT_FIELDS or key in ("sound", "image"):
+            blocks.setdefault(path, {})[key] = value
+    found: dict[str, dict] = {}
+    for block in blocks.values():
+        message_id = block.get("message_id", "")
+        if not (message_id.isascii() and message_id.isdigit()):
+            continue
+        entry: dict[str, Any] = {field: block[field] for field in CHAT_WHEEL_TEXT_FIELDS if block.get(field)}
+        entry.update({flag: 1 for flag in ("sound", "image") if block.get(flag)})
+        found.setdefault(str(int(message_id)), entry)
+    return found
+
+
+# "dota_chatwheel_message_MissingHero:f": the suffix says how the game formats the text.
+_TOKEN_SUFFIX = re.compile(r":[a-z]+$")
+# A voice line of a team's fan content: the message id is part of the token.
+_FANDOM_LINE = re.compile(r"dota_chatwheel_teamfandom_\d+_\d+_voiceline_(\d+)_message")
+
+
+def localisation_tokens(text: str) -> dict[str, str]:
+    """``{token: text}`` of one of Valve's localisation files, tokens in
+    lower case and without their format suffix."""
+    tokens: dict[str, str] = {}
+    for _path, key, value in keyvalues(text):
+        tokens.setdefault(_TOKEN_SUFFIX.sub("", key.lower()), value)
+    return tokens
+
+
+def _token(value: Any) -> str | None:
+    """The localisation token a script value refers to; None for a literal."""
+    value = str(value or "")
+    return value[1:].lower() if value.startswith("#") else None
+
+
+def chat_wheel_input(scripts: list[str], tokens: dict[str, dict[str, str]]) -> dict[str, Any]:
+    """Valve's files reduced to what :func:`build_chat_wheel` reads.
+
+    *scripts* are chat-wheel scripts (an earlier one wins for an id),
+    *tokens* the localisation tokens by Valve's language name. The result is
+    ``{"messages": {"<id>": {...}}, "tokens": {language: {token: text}}}``:
+    of a message only the fields up to the first one that has a text in
+    every language, of the tokens only those the messages name. The voice
+    lines of the teams' fan content are added from the tokens themselves.
+    """
+    messages: dict[str, dict] = {}
+    for script in scripts:
+        for message_id, entry in chat_wheel_messages(script).items():
+            messages.setdefault(message_id, entry)
+    for token in tokens.get(CHAT_WHEEL_LANGUAGES["en"]) or {}:
+        line = _FANDOM_LINE.fullmatch(token)
+        if line:
+            messages.setdefault(str(int(line.group(1))), {"message": f"#{token}", "sound": 1})
+
+    tables = [tokens.get(language) or {} for language in CHAT_WHEEL_LANGUAGES.values()]
+    reduced: dict[str, dict] = {}
+    for message_id, entry in sorted(messages.items(), key=lambda item: int(item[0])):
+        if entry.get("image"):
+            reduced[message_id] = {"image": 1}    # a spray: a picture, no line
+            continue
+        kept: dict[str, Any] = {}
+        for field in CHAT_WHEEL_TEXT_FIELDS:
+            if not entry.get(field):
+                continue
+            kept[field] = entry[field]
+            token = _token(entry[field])
+            # (Valve leaves the translation of a line blank in the language it is spoken in)
+            if token is None or all(chat_wheel_phrase(table.get(token)) for table in tables):
+                break
+        if entry.get("sound"):
+            kept["sound"] = 1
+        reduced[message_id] = kept
+    named = {token for entry in reduced.values() for field in CHAT_WHEEL_TEXT_FIELDS
+             if (token := _token(entry.get(field))) is not None}
+    return {
+        "messages": reduced,
+        "tokens": {language: {token: table[token] for token in sorted(named) if token in table}
+                   for language, table in ((language, tokens.get(language) or {})
+                                           for language in CHAT_WHEEL_LANGUAGES.values())},
+    }
+
+
+# "{hero_name, gender, other{is missing!}}": the wording by the hero's gender;
+# English and Chinese only have the one for "other".
+_GENDER_SELECT = re.compile(r"\{\s*hero_name\s*,\s*gender\s*,(?:\s*\w+\s*\{[^{}]*\})*?\s*other\s*\{([^{}]*)\}\s*\}")
+
+
+def chat_wheel_phrase(text: Any) -> str:
+    """The line a localised chat-wheel text shows; "" when it is none.
+
+    Two of Valve's texts are templates that name a hero
+    ("{hero_name} {hero_name, gender, other{is missing!}}"): the hero stays
+    in the phrase as ``{hero}``. A text with any other template, or a token
+    that was not resolved, is no phrase.
+    """
+    text = _GENDER_SELECT.sub(lambda match: match.group(1), str(text or ""))
+    text = text.replace("{hero_name}", "{hero}").replace("\\n", " ").replace('\\"', '"')
+    text = " ".join(text.split())
+    return "" if text.startswith("#") or "{" in text.replace("{hero}", "") else text
+
+
+def build_chat_wheel(source: dict[str, Any]) -> dict:
+    """The chat-wheel catalog (without ``meta``) for the input of
+    :func:`chat_wheel_input`: by message id, a spray as ``{"spray": true}``,
+    a line as ``{"en", "zh"[, "sound"]}``. A message without an English text
+    in the game's files (retired fan content) is left out; one without a
+    Chinese text shows the English one.
+    """
+    tokens = source.get("tokens") or {}
+    by_id: dict[str, dict] = {}
+    for message_id, message in (source.get("messages") or {}).items():
+        if not isinstance(message, dict):
+            continue
+        if message.get("image"):
+            by_id[message_id] = {"spray": True}
+            continue
+        texts: dict[str, str] = {}
+        for lang, language in CHAT_WHEEL_LANGUAGES.items():
+            table = tokens.get(language) or {}
+            for field in CHAT_WHEEL_TEXT_FIELDS:
+                token = _token(message.get(field))
+                phrase = chat_wheel_phrase(message.get(field) if token is None else table.get(token))
+                if phrase:
+                    texts[lang] = phrase
+                    break
+        if not texts.get("en"):
+            continue
+        entry: dict[str, Any] = {"en": texts["en"], "zh": texts.get("zh") or texts["en"]}
+        if message.get("sound"):
+            entry["sound"] = True
+        by_id[message_id] = entry
+    return {"by_id": by_id}
+
+
+def _download_text(url: str, timeout: int = 60) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "DotaAnalyzer/1.0"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8-sig", errors="replace")
+
+
+def _download_chat_wheel(stored: Any = None) -> dict[str, Any] | None:
+    """The chat-wheel input from Valve's files (:func:`chat_wheel_input`
+    plus ``source``: where it was read), or None when they cannot be read.
+
+    The mirror gets a commit with every client build while the chat wheel
+    changes a few times a year: when the phrases are those of *stored* (the
+    input of the previous run), *stored* is returned, so that ``source``
+    keeps naming the revision the content was first read from.
+    """
+    try:
+        head = json.loads(_download_text(CHAT_WHEEL_COMMIT_URL, timeout=30))
+        commit = str(head["sha"])
+        if not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise ValueError("unexpected answer of the revision check")
+        date = str(((head.get("commit") or {}).get("committer") or {}).get("date") or "")
+        listing = json.loads(_download_text(CHAT_WHEEL_LISTING_URL.format(path=CHAT_WHEEL_DIR, commit=commit), timeout=30))
+        seasons = sorted(str(entry.get("path")) for entry in listing if isinstance(entry, dict)
+                         and str(entry.get("name") or "").startswith(CHAT_WHEEL_DIR_FILES))
+        if not seasons:
+            raise ValueError(f"no voice-line scripts in {CHAT_WHEEL_DIR}")
+        scripts = [_download_text(CHAT_WHEEL_FILE_URL.format(commit=commit, path=path))
+                   for path in (*CHAT_WHEEL_SCRIPTS, *seasons)]
+        tokens: dict[str, dict[str, str]] = {}
+        for language in CHAT_WHEEL_LANGUAGES.values():
+            table: dict[str, str] = {}
+            for name in CHAT_WHEEL_TOKEN_FILES:
+                path = CHAT_WHEEL_TOKENS.format(name=name, language=language)
+                for token, text in localisation_tokens(_download_text(CHAT_WHEEL_FILE_URL.format(commit=commit, path=path))).items():
+                    table.setdefault(token, text)
+            tokens[language] = table
+    except Exception as exc:
+        print(f"warning: the chat wheel files of {CHAT_WHEEL_REPO} are unreachable ({exc})")
+        return None
+    current = chat_wheel_input(scripts, tokens)
+    if isinstance(stored, dict) and all(stored.get(part) == current[part] for part in ("messages", "tokens")):
+        return stored
+    return {"source": {"source": CHAT_WHEEL_REPO, "source_revision": commit[:12], "source_date": date}, **current}
+
+
+# ---------------------------------------------------------------------------
 # Numeric fallback of the AI coach
 # ---------------------------------------------------------------------------
 
@@ -826,6 +1086,19 @@ def main(argv: list[str] | None = None) -> int:
         note = comment.format(extra=extra)
         outputs.append((path, dump_fallback({"_comment": note, table: entries}), old.get(table) != entries,
                         bool(patch) and old.get("_comment") != note, f"{len(entries)} entries"))
+
+    # The chat wheel: its own source, the same stamp and the same rules.
+    if raw.get("chat_wheel"):
+        path = args.out / "chat_wheel.json"
+        previous = _read_json(path)
+        wheel = build_chat_wheel(raw["chat_wheel"])
+        origin = raw["chat_wheel"].get("source")
+        meta = {"generated_at": stamp["generated_at"], "patch": patch,
+                **(origin if isinstance(origin, dict) else {"source": "files"})}
+        outputs.append((path, dump_catalog({**wheel, "meta": meta}),
+                        dump_catalog({k: v for k, v in previous.items() if k != "meta"}) != dump_catalog(wheel),
+                        bool(patch) and (previous.get("meta") or {}).get("patch") != patch,
+                        f"{len(wheel['by_id'])} entries"))
 
     stale = any(changed or restamp for _path, _text, changed, restamp, _summary in outputs)
     for path, text, changed, restamp, summary in outputs:

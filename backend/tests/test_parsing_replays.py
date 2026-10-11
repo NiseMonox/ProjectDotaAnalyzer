@@ -87,6 +87,16 @@ def test_replay_is_read_to_its_end(runtime, replay):
         assists = sum(1 for k in match.kills_log if slot in k.assist_slots and not k.deny)
         assert 0 <= player.kills - kills <= loose and 0 <= player.assists - assists <= loose, player.hero_name
         assert player.hero_slug and player.final_item_keys == [parser.canonical_item_key(k) for k in player.final_item_keys]
+    # every death says when the hero was alive again (null: the game ended first), and every
+    # ward that is gone says who ended it: an enemy, its own side, or nobody (it ran out)
+    assert all(k.respawn_time is None or k.time < k.respawn_time <= match.duration for k in match.kills_log)
+    assert any(k.respawn_time for k in match.kills_log)
+    gone = [w for w in raw["wards"] if w["destroyed_time"] is not None]
+    assert all(isinstance(w.get("dewarded"), bool) and isinstance(w.get("denied"), bool) for w in gone)
+    for ward in match.wards:
+        assert not (ward.dewarded and ward.denied), ward
+        if ward.killer_slot is not None:
+            assert (_team(ward.killer_slot) != ward.team) == ward.dewarded and ward.denied != ward.dewarded, ward
     # the score is Valve's counter; it never exceeds the deaths of the other side
     deaths = {team: sum(p.deaths for p in match.players if p.team == team) for team in ("radiant", "dire")}
     assert 0 < match.radiant_score <= deaths["dire"] and 0 < match.dire_score <= deaths["radiant"]

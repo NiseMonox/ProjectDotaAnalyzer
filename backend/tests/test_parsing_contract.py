@@ -92,6 +92,8 @@ def check_contract(match: MatchData, source: str) -> None:
         else:
             assert k.killer_team in (None, "radiant", "dire", "neutral"), k
         assert (k.x is None) == (k.y is None) and (k.x is None or _in_world(k.x, k.y)), k
+        # alive again after the death, never before it; OpenDota does not tell
+        assert k.respawn_time is None or (exact and k.time < k.respawn_time <= match.duration + 1), k
         if exact:
             assert k.confirmed and k.x is not None, k
     if exact:
@@ -184,9 +186,11 @@ def check_contract(match: MatchData, source: str) -> None:
         assert w.ward_type in ("observer", "sentry") and w.team in ("radiant", "dire") and _in_world(w.x, w.y), w
         assert w.player_slot == -1 or (w.player_slot in slots and _team(w.player_slot) == w.team), w
         assert w.destroyed_time is None or w.time <= w.destroyed_time <= match.duration, w
-        assert not w.dewarded or w.destroyed_time is not None, w
+        # an enemy dewards, the ward's own side denies; never both, and only a ward that is gone
+        assert not (w.dewarded and w.denied) and (not (w.dewarded or w.denied) or w.destroyed_time is not None), w
         if w.killer_slot is not None:
-            assert w.dewarded and w.killer_slot in slots and _team(w.killer_slot) != w.team, w
+            assert (w.dewarded or w.denied) and w.killer_slot in slots, w
+            assert (_team(w.killer_slot) != w.team) == w.dewarded, w
     for p in match.players:
         own = [w for w in match.wards if w.player_slot == p.player_slot]
         assert p.wards == own, p.hero_name
@@ -276,6 +280,14 @@ def test_fixture_jar_and_sources_are_one_analyzer_version(clarity_raw):
     assert f"Implementation-Version: {version}" in manifest
     # written by 1.4.0 or later: every death names the side of the unit that landed the kill
     assert {k["killer_team"] for k in clarity_raw["kills_log"]} == {"radiant", "dire"}
+    # written by 1.5.0 or later: when the victim was alive again, who ended a ward, and the
+    # hero a "<hero> is missing!" line names
+    assert all("respawn_time" in k for k in clarity_raw["kills_log"])
+    gone = [w for w in clarity_raw["wards"] if w["destroyed_time"] is not None]
+    assert gone and all(isinstance(w["denied"], bool) and w["killer_team"] in ("radiant", "dire") for w in gone)
+    assert all(("killer_slot" in w) == (w["dewarded"] or w["denied"]) for w in gone)
+    missing = [c for c in clarity_raw["chat"] if c["key"] == "chatwheel_71"]
+    assert missing and all(c["hero_id"] > 0 for c in missing)
 
 
 def test_clarity_satisfies_the_contract(clarity):
@@ -293,7 +305,8 @@ def test_mock_satisfies_the_contract():
     assert all(len(p.position_log) == (mock.duration // 5 * 5 + 90) // 5 + 1 for p in mock.players)
     assert all(s.player_slot in s.player_slots for s in mock.smokes)
     assert any(w.killer_slot is not None for w in mock.wards)
-    assert all((w.killer_slot is not None) == w.dewarded for w in mock.wards)
+    assert all((w.killer_slot is not None) == (w.dewarded or w.denied) for w in mock.wards)
+    assert any(w.denied for w in mock.wards) and any(k.respawn_time for k in mock.kills_log)
     assert any(p.multi_kills for p in mock.players) and any(p.kill_streaks for p in mock.players)
     assert any(tf.xp_delta for tf in mock.teamfights)
 

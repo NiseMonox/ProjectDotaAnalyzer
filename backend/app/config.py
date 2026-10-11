@@ -242,6 +242,12 @@ AI_COACH_USAGE_FILE = CACHE_DIR / "ai_coach_usage.json"
 AI_COACH_TIMEOUT_S = env_float("AI_COACH_TIMEOUT_S", 180.0, minimum=1.0)
 # Degraded reports (LLM failed, rules used) are only memory-cached this long.
 AI_COACH_DEGRADED_TTL_S = env_int("AI_COACH_DEGRADED_TTL_S", 600, minimum=0)
+# A reader can ask for a new run of a degraded report (?refresh=1) instead of
+# waiting for that cache to expire, but for one report only this many seconds
+# after it was written or its last forced run started (0 = at once). Each
+# such run also counts as a cold report for the per-IP rate limit and the
+# daily quota.
+AI_COACH_REFRESH_COOLDOWN_S = env_int("AI_COACH_REFRESH_COOLDOWN_S", 60, minimum=0)
 
 
 # ---------------------------------------------------------------------------

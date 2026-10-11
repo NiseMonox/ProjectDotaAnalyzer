@@ -510,8 +510,11 @@ _REAL_WARD_RAW: dict[int, list[tuple[str, int, float, float, int | None]]] = {
 }
 
 # Ward lifetimes in seconds. The table above has no "who removed it" column,
-# so a ward that died clearly before its expiry counts as dewarded.
+# so a ward that died clearly before its expiry counts as dewarded, except
+# the one its own side denied in the real match: (owner slot, type, time
+# placed) -> slot of the denying hero (Warlock attacked his own sentry).
 _WARD_LIFETIME_S = WARD_LIFETIME_S
+_REAL_WARD_DENIED = {(2, "sentry", 1003): 2}
 
 
 def _real_wards_for_player(player_slot: int, duration: int) -> list[WardEvent]:
@@ -522,12 +525,15 @@ def _real_wards_for_player(player_slot: int, duration: int) -> list[WardEvent]:
         gx, gy = _cell_to_game(cx, cy)
         if dt is not None and dt > duration:
             dt = None  # expired after the game ended: alive at game end
+        denier = _REAL_WARD_DENIED.get((player_slot, ward_type, t)) if dt is not None else None
         wards.append(WardEvent(
             ward_type=ward_type, x=gx, y=gy,
             time=t, player_slot=player_slot,
             destroyed_time=dt,
             team="radiant" if player_slot < 128 else "dire",
-            dewarded=dt is not None and dt - t < _WARD_LIFETIME_S[ward_type] - 5,
+            dewarded=denier is None and dt is not None and dt - t < _WARD_LIFETIME_S[ward_type] - 5,
+            denied=denier is not None,
+            killer_slot=denier,
         ))
     return sorted(wards, key=lambda w: w.time)
 
@@ -1367,8 +1373,10 @@ def _build_mock_match() -> MatchData:
             killer_team="radiant" if _slot_of(k.killer) < 128 else "dire",
             x=k.x, y=k.y,
             assist_slots=sorted(_slot_of(a) for a in k.assists),
+            respawn_time=respawn if respawn <= duration else None,
         )
         for k in kills
+        for respawn in (k.time + _respawn_time(k.time),)
     ]
 
     all_wards: list[WardEvent] = []

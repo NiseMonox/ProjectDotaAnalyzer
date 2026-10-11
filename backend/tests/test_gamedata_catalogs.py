@@ -923,3 +923,298 @@ def test_generator_carries_chinese_names_and_missing_pictures(tmp_path, data_set
     assert _load(out / "abilities.json")["by_key"]["axe_culling_blade"] == abilities["axe_culling_blade"]
     assert _load(out / "abilities.json")["by_key"]["special_bonus_hp_250"]["name_zh"] == "+250 生命"
     assert _load(out / "heroes.json")["by_id"]["2"]["name_zh"] == "斧王"
+
+
+# ---------------------------------------------------------------------------
+# Chat wheel (Valve's scripts and localisation files)
+# ---------------------------------------------------------------------------
+
+# The message ids of the nine replays the parser was checked on (2 of 7.40 / 7.41b, 7 of 7.41f,
+# one of them Turbo): general phrases, a spray, hero voice lines, voice lines of casters.
+CHAT_WHEEL_IDS_SEEN = (
+    0, 2, 3, 7, 9, 12, 49, 54, 61, 62, 63, 65, 68, 69, 71, 76, 801, 802, 805, 818, 819, 822, 823,
+    12001, 12002, 12004, 15001, 20004, 22001, 37001, 37002, 37003, 37006, 47001, 49002, 49004, 62001, 62002,
+    79001, 83001, 86001, 88001, 90001, 91001, 91002, 105001, 107001, 107002, 112001, 112002, 112003, 112004,
+    401007, 401016, 401829, 401914, 401985, 402090)
+
+_CHAT_WHEEL_SCRIPT = '''
+"chat_wheel"
+{
+    "messages"
+    {
+        // "Retired" { "message_id" "9" "label" "gone" }
+        "Ok"
+        {
+            "message_id"    "0"
+            "label"         "#dota_chatwheel_label_Ok"
+            "message"       "#dota_chatwheel_message_Ok"
+            "always_unlocked"   "1"
+        }
+        "MissingHero"
+        {
+            "message_id"    "71"
+            "label"         "#dota_chatwheel_label_MissingHero"
+            "message"       "#dota_chatwheel_message_MissingHero"
+        }
+        "Caster_Chinese"
+        {
+            "message_id"    "802"
+            "label"         "喂喂喂？"
+            "message"       "喂喂喂？ Hello？队友呢？"
+            "translation"   "#Dota_Chatwheel_hello_team"
+            "sound"         "soundboard.hello_team"
+            "all_chat"      "1"
+        }
+        "Caster_English"
+        {
+            "message_id"    "801"
+            "label"         "Its Too Good"
+            "message"       "Omg its \\"too good\\"..."
+            "sound"         "soundboard.too_good"
+        }
+        "Spray"
+        {
+            "message_id"    "805"
+            "image"         "sprays/dark_carnival/dc_beastmaster_icon.png"
+        }
+        "Old_Fan_Line"
+        {
+            "message_id"    "140116"
+            "label"         "#dota_chatwheel_teamfandom_2_36_voiceline_140116_label"
+            "message"       "#dota_chatwheel_teamfandom_2_36_voiceline_140116_message"
+            "sound"         "teamfandom.2.36.140116"
+        }
+        "Caption_Only"
+        {
+            "message_id"    "111"
+            "label"         "#dota_chatwheel_label_Day_Night"
+            "message"       "#dota_chatwheel_message_Day_Night"
+        }
+        "No_Id" { "label" "nothing" }
+    }
+}
+'''
+_CHAT_WHEEL_TOKENS = {
+    "english": '''"lang" { "Language" "English" "Tokens" {
+        "dota_chatwheel_label_Ok"       "Okay"
+        "dota_chatwheel_message_Ok"     "Okay."
+        "dota_chatwheel_message_MissingHero:f"  "{hero_name} {hero_name, gender, other{is missing!}}"
+        "Dota_Chatwheel_hello_team"     "Hihihi? Hello? Team?"
+        "dota_chatwheel_label_Day_Night"    "Day/Night Cycle"
+        "dota_chatwheel_teamfandom_13_2163_voiceline_143035_label"      "Referee!"
+        "dota_chatwheel_teamfandom_13_2163_voiceline_143035_message"    "Referee! Referee!"
+        "unrelated_token"               "never read"
+    } }''',
+    "schinese": '''"lang" { "Language" "Schinese" "Tokens" {
+        "dota_chatwheel_label_Ok"       "好的"
+        "dota_chatwheel_message_Ok"     "好的。"
+        "dota_chatwheel_message_MissingHero:f"  "{hero_name}{hero_name, gender, other{不见了！}}"
+        "Dota_Chatwheel_hello_team"     " "
+        "dota_chatwheel_label_Day_Night"    "白昼/夜晚循环"
+        "dota_chatwheel_teamfandom_13_2163_voiceline_143035_message"    "裁判！裁判！"
+    } }''',
+}
+
+
+def _chat_wheel_input() -> dict:
+    tokens = {language: generator.localisation_tokens(text) for language, text in _CHAT_WHEEL_TOKENS.items()}
+    return generator.chat_wheel_input([_CHAT_WHEEL_SCRIPT], tokens)
+
+
+def test_committed_chat_wheel_is_what_the_generator_builds_from_the_data_set(catalogs, data_set):
+    committed = _load(CATALOG_DIR / "chat_wheel.json")
+    built = generator.build_chat_wheel(data_set["chat_wheel"])
+    assert {key: value for key, value in committed.items() if key != "meta"} == built, (
+        f"chat_wheel.json lags the data set: {REGENERATE}")
+    assert list(committed["by_id"]) == list(built["by_id"]) == sorted(built["by_id"], key=int)
+    # one stamp with the other catalogs, and its own source: Valve's files at one revision of the mirror
+    meta = committed["meta"]
+    assert meta["patch"] == catalogs["heroes"]["meta"]["patch"] and data_manager._parse_utc(meta["generated_at"])
+    assert meta["source"] == generator.CHAT_WHEEL_REPO == data_set["chat_wheel"]["source"]["source"]
+    assert re.fullmatch(r"[0-9a-f]{12}", meta["source_revision"]) and data_manager._parse_utc(meta["source_date"])
+    # a phrase that changed upstream is noticed
+    stale = json.loads(json.dumps(committed["by_id"]))
+    stale["2"]["zh"] = "回来！"
+    assert stale != built["by_id"]
+
+
+def test_chat_wheel_has_every_line_in_both_languages(data_set):
+    by_id = _load(CATALOG_DIR / "chat_wheel.json")["by_id"]
+    assert len(by_id) > 3000
+    missing = [mid for mid in CHAT_WHEEL_IDS_SEEN if str(mid) not in by_id]
+    assert not missing, f"message ids seen in real replays are not in the catalog: {missing}"
+    lines = {mid: entry for mid, entry in by_id.items() if not entry.get("spray")}
+    assert all(set(entry) <= {"en", "zh", "sound"} and entry["en"] and entry["zh"] for entry in lines.values())
+    assert all(entry == {"spray": True} for mid, entry in by_id.items() if mid not in lines) and len(lines) > 2900
+    # display text: no token, no template, on one line
+    for mid, entry in lines.items():
+        for text in (entry["en"], entry["zh"]):
+            assert not text.startswith("#") and "\n" not in text and text == text.strip(), (mid, text)
+            assert "{" not in text.replace("{hero}", ""), (mid, text)
+    # Valve translates most of them (voice lines of casters often are not, for want of a translation)
+    assert sum(1 for entry in lines.values() if entry["zh"] != entry["en"]) > 2000
+    assert sum(1 for entry in lines.values() if CJK_TEXT.search(entry["zh"])) > 2000
+    assert by_id["0"] == {"en": "Okay.", "zh": "好的。"} and by_id["805"] == {"spray": True}
+    assert by_id["12001"]["sound"] is True and "sound" not in by_id["2"]
+    # the two lines that name a hero keep it as {hero}
+    assert {mid for mid, entry in lines.items() if "{hero}" in entry["en"]} == {"71", "72"}
+    assert by_id["71"] == {"en": "{hero} is missing!", "zh": "{hero}不见了！"}
+    # a line spoken in Chinese shows as spoken there, with its translation in English
+    assert by_id["402090"]["zh"] == "每一把都当最后一把，然后就也不要怕输" and by_id["402090"]["en"].startswith("Play every game")
+    # the fixture holds no more than the catalog was built from
+    wheel = data_set["chat_wheel"]
+    named = {str(entry[field])[1:].lower() for entry in wheel["messages"].values() for field in generator.CHAT_WHEEL_TEXT_FIELDS
+             if str(entry.get(field) or "").startswith("#")}
+    assert set(wheel["tokens"]) == {"english", "schinese"}
+    assert all(set(table) <= named for table in wheel["tokens"].values())
+
+
+CJK_TEXT = re.compile(r"[一-鿿]")
+
+
+def test_chat_wheel_scripts_and_tokens_are_read_like_valve_writes_them():
+    messages = generator.chat_wheel_messages(_CHAT_WHEEL_SCRIPT)
+    assert list(messages) == ["0", "71", "802", "801", "805", "140116", "111"]      # a comment and a block without id are none
+    assert messages["0"] == {"label": "#dota_chatwheel_label_Ok", "message": "#dota_chatwheel_message_Ok"}
+    assert messages["802"] == {"label": "喂喂喂？", "message": "喂喂喂？ Hello？队友呢？",
+                               "translation": "#Dota_Chatwheel_hello_team", "sound": 1}
+    assert messages["805"] == {"image": 1}
+    tokens = generator.localisation_tokens(_CHAT_WHEEL_TOKENS["english"])
+    # lower case, and without the suffix that says how the game formats the text
+    assert tokens["dota_chatwheel_message_missinghero"].startswith("{hero_name}")
+    assert tokens["dota_chatwheel_hello_team"] == "Hihihi? Hello? Team?" and tokens["language"] == "English"
+    pairs = list(generator.keyvalues('"a" { "b" "1" // "c" "2"\n "d" { "e" "x \\"y\\"" } } "f" "3"'))
+    assert pairs == [(("a",), "b", "1"), (("a", "d"), "e", 'x \\"y\\"'), ((), "f", "3")]
+
+    assert generator.chat_wheel_phrase("{hero_name} {hero_name, gender, other{is missing!}}") == "{hero} is missing!"
+    assert generator.chat_wheel_phrase("{hero_name}{hero_name, gender, male{他} female{她} other{不见了！}}") == "{hero}不见了！"
+    assert generator.chat_wheel_phrase('  Omg its \\"too good\\"...\\nreally ') == 'Omg its "too good"... really'
+    for no_phrase in ("", " ", None, "#dota_chatwheel_message_Ok", "{s:value} wards", "{count, plural, one{a} other{b}}"):
+        assert generator.chat_wheel_phrase(no_phrase) == ""
+
+
+def test_chat_wheel_catalog_takes_the_line_a_message_shows_in_chat():
+    source = _chat_wheel_input()
+    assert generator.build_chat_wheel(source) == {"by_id": {
+        "0": {"en": "Okay.", "zh": "好的。"},                                           # the message, not the caption
+        "71": {"en": "{hero} is missing!", "zh": "{hero}不见了！"},
+        # no text for the message: the caption on the wheel
+        "111": {"en": "Day/Night Cycle", "zh": "白昼/夜晚循环"},
+        # a literal line without a translation is the same in both languages
+        "801": {"en": 'Omg its "too good"...', "zh": 'Omg its "too good"...', "sound": True},
+        # a line spoken in Chinese: the English translation, and the line itself where Valve left
+        # the translation blank
+        "802": {"en": "Hihihi? Hello? Team?", "zh": "喂喂喂？ Hello？队友呢？", "sound": True},
+        "805": {"spray": True},
+        # fan content of the teams: from the localisation file, the id is in the token
+        "143035": {"en": "Referee! Referee!", "zh": "裁判！裁判！", "sound": True},
+    }}                                                                               # 140116: no text left in the game
+    # reduced to what is read: fields up to the first with a text in both languages, tokens that are named
+    assert source["messages"]["0"] == {"message": "#dota_chatwheel_message_Ok"}
+    assert source["messages"]["802"] == {"translation": "#Dota_Chatwheel_hello_team",
+                                         "message": "喂喂喂？ Hello？队友呢？", "sound": 1}
+    assert source["messages"]["805"] == {"image": 1} and list(source["messages"]) == sorted(source["messages"], key=int)
+    assert "unrelated_token" not in source["tokens"]["english"] and "dota_chatwheel_label_ok" not in source["tokens"]["english"]
+    assert "dota_chatwheel_label_day_night" in source["tokens"]["schinese"]
+    # an earlier script wins for an id; without Chinese text the English one is shown
+    second = _CHAT_WHEEL_SCRIPT.replace('"#dota_chatwheel_message_Ok"', '"Sure."')
+    tokens = {"english": generator.localisation_tokens(_CHAT_WHEEL_TOKENS["english"]), "schinese": {}}
+    english_only = generator.build_chat_wheel(generator.chat_wheel_input([_CHAT_WHEEL_SCRIPT, second], tokens))["by_id"]
+    assert english_only["0"] == {"en": "Okay.", "zh": "Okay."} and english_only["143035"]["zh"] == "Referee! Referee!"
+    assert english_only["802"] == {"en": "Hihihi? Hello? Team?", "zh": "喂喂喂？ Hello？队友呢？", "sound": True}
+
+
+def test_generator_writes_and_checks_the_chat_wheel(tmp_path, data_set, capsys):
+    source = _source_dir(tmp_path, data_set, _ITEMS_TXT)
+    out, fixture = tmp_path / "catalogs", tmp_path / "fixture.json.gz"
+    args = ["--source", str(source), "--out", str(out), "--fallback", str(tmp_path / "fallback"),
+            "--fixture", str(fixture), "--patch", "7.41f"]
+    # no chat wheel files and none from an earlier run: the catalog is simply not written
+    assert generator.main(args) == 0 and generator.main(args + ["--check"]) == 0
+    assert not (out / "chat_wheel.json").exists() and "chat_wheel" not in generator.read_fixture(fixture)
+
+    wheel = {"source": {"source": "dotabuff/d2vpkr", "source_revision": "0123456789ab",
+                        "source_date": "2026-10-10T06:00:18Z"}, **_chat_wheel_input()}
+    (source / "chat_wheel.json").write_text(json.dumps(wheel, ensure_ascii=False), encoding="utf-8")
+    assert generator.main(args + ["--check"]) == 1 and not (out / "chat_wheel.json").exists()
+    assert generator.main(args) == 0 and generator.main(args + ["--check"]) == 0
+    written = _load(out / "chat_wheel.json")
+    assert written["by_id"] == generator.build_chat_wheel(wheel)["by_id"]
+    assert written["meta"]["patch"] == "7.41f" == _load(out / "items.json")["meta"]["patch"]
+    assert (written["meta"]["source"], written["meta"]["source_revision"]) == ("dotabuff/d2vpkr", "0123456789ab")
+    text = (out / "chat_wheel.json").read_text(encoding="utf-8")
+    assert '"802": {"en": "Hihihi? Hello? Team?", "zh": "喂喂喂？ Hello？队友呢？", "sound": true},\n' in text    # a line per entry
+    # the fixture rebuilds it
+    assert generator.build_chat_wheel(generator.read_fixture(fixture)["chat_wheel"])["by_id"] == written["by_id"]
+
+    # a phrase Valve changed is noticed and carried through
+    wheel["tokens"]["schinese"]["dota_chatwheel_message_ok"] = "好。"
+    (source / "chat_wheel.json").write_text(json.dumps(wheel, ensure_ascii=False), encoding="utf-8")
+    capsys.readouterr()
+    assert generator.main(args + ["--check"]) == 1
+    assert "chat_wheel.json: 7 entries, CHANGED" in capsys.readouterr().out
+    assert generator.main(args) == 0 and _load(out / "chat_wheel.json")["by_id"]["0"]["zh"] == "好。"
+
+    # the mirror is unreachable on the next run: the phrases of the previous one stay
+    (source / "chat_wheel.json").unlink()
+    capsys.readouterr()
+    assert generator.main(args + ["--check"]) == 0
+    assert "keeping the phrases of the previous run" in capsys.readouterr().out
+    assert generator.main(args) == 0 and _load(out / "chat_wheel.json")["by_id"]["0"]["zh"] == "好。"
+
+
+def test_the_chat_wheel_download_keeps_the_stored_revision_while_the_phrases_are_the_same(monkeypatch):
+    """The mirror gets a commit with every client build; the chat wheel changes a few times a
+    year. The stamp must not move, and the fixture must not go stale, without a new phrase."""
+    commit = "a" * 40
+    files = {
+        generator.CHAT_WHEEL_COMMIT_URL: json.dumps({"sha": commit, "commit": {"committer": {"date": "2026-10-12T06:00:00Z"}}}),
+        generator.CHAT_WHEEL_LISTING_URL.format(path=generator.CHAT_WHEEL_DIR, commit=commit): json.dumps([
+            {"name": "stickers_chat_wheel_13.txt", "path": "dota/scripts/chat_wheels/stickers_chat_wheel_13.txt"},
+            {"name": "teamfandom_chat_wheel_13_2163.txt", "path": "dota/scripts/chat_wheels/teamfandom_chat_wheel_13_2163.txt"}]),
+    }
+    raw = generator.CHAT_WHEEL_FILE_URL
+    files[raw.format(commit=commit, path="dota/scripts/chat_wheel.txt")] = _CHAT_WHEEL_SCRIPT
+    files[raw.format(commit=commit, path="dota/scripts/chat_wheel_heroes.txt")] = (
+        '"chat_wheel" { "hero_messages" { "12" { "pl_laugh" { "message_id" "12001" "message" "Ha!" "sound" "x" } } } }')
+    files[raw.format(commit=commit, path="dota/scripts/chat_wheels/stickers_chat_wheel_13.txt")] = (
+        '"chat_wheel" { "messages" { "talent" { "message_id" "402090" "message" "每一把" "sound" "x" } } }')
+    for language, text in _CHAT_WHEEL_TOKENS.items():
+        for name in generator.CHAT_WHEEL_TOKEN_FILES:
+            path = generator.CHAT_WHEEL_TOKENS.format(name=name, language=language)
+            files[raw.format(commit=commit, path=path)] = text if name == "dota" else '"x" { }'
+    asked: list[str] = []
+
+    def download(url, timeout=60):
+        asked.append(url)
+        return files[url]                       # a KeyError is a file the generator must not ask for
+
+    monkeypatch.setattr(generator, "_download_text", download)
+    first = generator._download_chat_wheel(None)
+    assert first["source"] == {"source": "dotabuff/d2vpkr", "source_revision": "a" * 12, "source_date": "2026-10-12T06:00:00Z"}
+    by_id = generator.build_chat_wheel(first)["by_id"]
+    assert by_id["12001"] == {"en": "Ha!", "zh": "Ha!", "sound": True} and by_id["402090"]["zh"] == "每一把"
+    assert by_id["0"] == {"en": "Okay.", "zh": "好的。"} and len(asked) == len(files)
+    # the per-team fan content is not downloaded script by script
+    assert not any("teamfandom_chat_wheel_" in url for url in asked)
+
+    stored = {**first, "source": {**first["source"], "source_revision": "0123456789ab"}}
+    assert generator._download_chat_wheel(stored) is stored             # same phrases: the stored revision stays
+    files[raw.format(commit=commit, path="dota/scripts/chat_wheel_heroes.txt")] = (
+        '"chat_wheel" { "hero_messages" { "12" { "pl_laugh" { "message_id" "12001" "message" "Ha ha!" "sound" "x" } } } }')
+    assert generator._download_chat_wheel(stored)["source"]["source_revision"] == "a" * 12     # a new phrase: the new one
+    # an unreachable mirror, or an answer that is not what was asked for, is no data
+    del files[generator.CHAT_WHEEL_COMMIT_URL]
+    assert generator._download_chat_wheel(stored) is None
+    files[generator.CHAT_WHEEL_COMMIT_URL] = json.dumps({"sha": "not a commit"})
+    assert generator._download_chat_wheel(stored) is None
+
+
+def test_the_parser_reads_the_chat_wheel_catalog():
+    assert parser.chat_wheel_entry("chatwheel_2") == {"en": "Get Back!", "zh": "撤退！"}
+    assert parser.chat_wheel_entry(2) == parser.chat_wheel_entry("2") == parser.chat_wheel_entry("chatwheel_002")
+    assert parser.chat_wheel_entry("chatwheel_805") == {"spray": True}
+    for unknown in ("chatwheel_99999999", "chatwheel_", "chatwheel_-1", "chatwheel_x", "", None, "２"):
+        assert parser.chat_wheel_entry(unknown) is None
+    assert parser.hero_names(22) == ("Zeus", "宙斯") and parser.hero_names("22") == ("Zeus", "宙斯")
+    assert parser.hero_names(0) == parser.hero_names(None) == parser.hero_names("x") == ("", "")

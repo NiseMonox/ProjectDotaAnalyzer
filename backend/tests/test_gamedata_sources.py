@@ -705,10 +705,12 @@ def test_map_actions_and_recipes_are_named_in_both_languages(net):
     assert (name("ability_lamp_use", "en"), name("ability_lamp_use", "zh")) == ("Activate Watcher", "启动观察者")
     assert (name("twin_gate_portal_warp", "en"), name("twin_gate_portal_warp", "zh")) == ("Twin Gate", "双生之门")
     assert name("special_bonus_attributes", "zh") == "Attribute Bonus"      # a name, shown untranslated
-    # the catalog lists recipes in English; the generic word is still localized
+    # zh is the game's own Chinese name where the catalog has one, and its wording
+    # ("图纸（…）") for a recipe the catalog does not name
     item = data_manager.item_display_name
     assert data_manager.is_known_item("recipe_abyssal_blade")
     assert (item("recipe_abyssal_blade", "en"), item("item_recipe_abyssal_blade", "zh")) == (
-        "Abyssal Blade Recipe", "Abyssal Blade 图纸")
-    assert item("Abyssal Blade Recipe", "zh") == "Abyssal Blade 图纸"
-    assert item("recipe_thing_nobody_knows", "zh") == "Thing Nobody Knows 图纸"
+        "Abyssal Blade Recipe", "图纸（深渊之刃）")
+    assert item("Abyssal Blade Recipe", "zh") == "图纸（深渊之刃）"
+    assert (item("recipe_thing_nobody_knows", "en"), item("recipe_thing_nobody_knows", "zh")) == (
+        "Thing Nobody Knows Recipe", "图纸（Thing Nobody Knows）")

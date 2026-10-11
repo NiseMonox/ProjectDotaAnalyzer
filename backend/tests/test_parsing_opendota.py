@@ -770,6 +770,36 @@ def test_dewarding_hero_and_teamfight_xp_delta():
     assert (match.players[0].observer_kills, match.players[0].sentry_kills) == (0, 0)
 
 
+def test_a_ward_removed_early_by_its_own_side_is_denied():
+    """The left log names the owner for a ward that ran out and the attacking hero for one
+    that was denied (match 9038370833: Earthshaker's own sentry after 17 s, hero 7 in both logs)."""
+    raw = _fixture()
+    raw["players"][0].update({
+        "obs_log": [{"time": 100, "x": 100, "y": 100, "ehandle": 10}, {"time": 200, "x": 101, "y": 100, "ehandle": 11}],
+        "obs_left_log": [
+            {"time": 185, "ehandle": 10, "attackername": "npc_dota_hero_hero2"},        # an ally, after 85 s
+            {"time": 560, "ehandle": 11, "attackername": "npc_dota_hero_hero1"},        # the owner, after 360 s: expired
+        ],
+        "sen_log": [{"time": 82, "x": 110, "y": 100, "ehandle": 20}, {"time": 300, "x": 111, "y": 100, "ehandle": 21},
+                    {"time": 400, "x": 112, "y": 100, "ehandle": 22}],
+        "sen_left_log": [
+            {"time": 99, "ehandle": 20, "attackername": "npc_dota_hero_hero1"},         # the owner himself, after 17 s
+            {"time": 330, "ehandle": 21, "attackername": "npc_dota_hero_hero7"},        # an enemy: dewarded, not denied
+            {"time": 430, "ehandle": 22},                                               # nobody named: the lifetime guess
+        ],
+    })
+    raw["players"][1].update({"observer_kills": 1, "sentry_kills": 0})
+    raw["players"][0].update({"observer_kills": 0, "sentry_kills": 1})
+    match = _transform(raw)
+    wards = {(w.ward_type, w.time): w for w in match.players[0].wards}
+    assert [(key, w.dewarded, w.denied, w.killer_slot) for key, w in sorted(wards.items())] == [
+        (("observer", 100), False, True, 1), (("observer", 200), False, False, None),
+        (("sentry", 82), False, True, 0), (("sentry", 300), True, False, 129), (("sentry", 400), True, False, None)]
+    # a deny is no ward kill: the counters keep counting the enemy wards a hero removed
+    assert [(p.observer_kills, p.sentry_kills) for p in match.players[:2]] == [(0, 0), (0, 0)]
+    assert (match.players[6].observer_kills, match.players[6].sentry_kills) == (0, 1)
+
+
 # ---------------------------------------------------------------------------
 # Real API response (match 8762775364)
 # ---------------------------------------------------------------------------

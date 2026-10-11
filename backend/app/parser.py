@@ -109,6 +109,7 @@ _STATIC_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / 
 HEROES_JSON_PATH = _STATIC_DATA_DIR / "heroes.json"
 ITEMS_JSON_PATH = _STATIC_DATA_DIR / "items.json"
 ABILITIES_JSON_PATH = _STATIC_DATA_DIR / "abilities.json"
+CHAT_WHEEL_JSON_PATH = _STATIC_DATA_DIR / "chat_wheel.json"
 
 # path -> (mtime, data, last mtime check); the mtime is re-checked at most every few seconds
 _json_cache: dict[Path, tuple[float, dict, float]] = {}
@@ -155,6 +156,34 @@ def load_hero_map() -> dict[int, dict]:
         except (TypeError, ValueError):
             continue
     return result
+
+
+def hero_names(hero_id: Any) -> tuple[str, str]:
+    """A hero's display name in English and in Simplified Chinese, by hero
+    id. The Chinese one is the English one where the catalog has none; both
+    are "" for an id it does not know."""
+    try:
+        info = (_load_static_json(HEROES_JSON_PATH).get("by_id") or {}).get(str(int(hero_id)))
+    except (TypeError, ValueError):
+        return "", ""
+    name = str(info.get("name") or "") if isinstance(info, dict) else ""
+    return name, str(info.get("name_zh") or name) if name else ""
+
+
+def chat_wheel_entry(key: Any) -> dict | None:
+    """Catalog entry of a chat-wheel message, by its chat key
+    ("chatwheel_71") or message id: ``{"en", "zh"[, "sound"]}`` for a line —
+    ``sound`` marks one that is also heard, and the two lines about a hero
+    name it as ``{hero}`` ("{hero} is missing!") —, ``{"spray": True}`` for
+    a spray. None for an id the catalog does not have.
+    """
+    text = str(key if key is not None else "")
+    if text.startswith("chatwheel_"):
+        text = text[len("chatwheel_"):]
+    if not (text.isascii() and text.isdigit()):
+        return None
+    entry = (_load_static_json(CHAT_WHEEL_JSON_PATH).get("by_id") or {}).get(str(int(text)))
+    return entry if isinstance(entry, dict) else None
 
 
 def normalize_hero_key(name: str | None) -> str:
@@ -528,11 +557,16 @@ def _time_log(value: Any) -> list[dict]:
 _WARD_LIFETIME_S = game_constants.WARD_LIFETIME_S
 
 
-def _dewarded_by_lifetime(ward_type: str, placed: int, destroyed: int | None) -> bool:
-    """Lifetime heuristic: a ward that died clearly before its expiry was dewarded."""
+def _ward_fell_early(ward_type: str, placed: int, destroyed: int | None) -> bool:
+    """Whether a ward died clearly before its expiry (it did not run out)."""
     if destroyed is None:
         return False
     return destroyed - placed < _WARD_LIFETIME_S.get(ward_type, game_constants.OBSERVER_WARD_DURATION_S) - 5
+
+
+def _dewarded_by_lifetime(ward_type: str, placed: int, destroyed: int | None) -> bool:
+    """Lifetime heuristic: a ward that died clearly before its expiry was dewarded."""
+    return _ward_fell_early(ward_type, placed, destroyed)
 
 
 # ---------------------------------------------------------------------------
@@ -1273,6 +1307,9 @@ class ClarityParser(ReplayParser):
                 dewarded = w["dewarded"] and destroyed is not None
             else:
                 dewarded = _dewarded_by_lifetime(ward_type, placed, destroyed)
+            # Analyzer 1.5.0 also tells an attack of the ward's own side from
+            # the expiry; older output leaves a denied ward as "not dewarded".
+            denied = w.get("denied") is True and destroyed is not None and not dewarded
             killer = _as_int(w.get("killer_slot"), -1) if w.get("killer_slot") is not None else -1
             all_wards.append(WardEvent(
                 ward_type=ward_type,
@@ -1283,7 +1320,8 @@ class ClarityParser(ReplayParser):
                 destroyed_time=destroyed,
                 team=team,
                 dewarded=dewarded,
-                killer_slot=killer if dewarded and killer in slots else None,
+                denied=denied,
+                killer_slot=killer if (dewarded or denied) and killer in slots else None,
             ))
         wards_by_slot: dict[int, list[WardEvent]] = {}
         for w in all_wards:
@@ -1669,6 +1707,8 @@ def _clarity_kills_log(value: Any, conv, slots: set[int]) -> list[KillEvent]:
             x=conv(k["x"]) if k.get("x") is not None else None,
             y=conv(k["y"]) if k.get("y") is not None else None,
             assist_slots=[s for s in (_as_int(a, -1) for a in assists) if s in slots],
+            # absent in output of analyzers before 1.5.0
+            respawn_time=round(_as_float(k["respawn_time"]), 1) if k.get("respawn_time") is not None else None,
             deny=bool(k.get("deny", False)),
         ))
     kills.sort(key=lambda k: k.time)
@@ -2216,11 +2256,11 @@ class OpenDotaParser(ReplayParser):
     @classmethod
     def _ward_events(cls, p: dict, slot: int, team: str, hero_teams: dict[str, str] | None = None,
                      duration: int = 0, hero_slots: dict[str, int] | None = None) -> list[WardEvent]:
-        """Ward placements with world coordinates, destruction times and the deward flag.
+        """Ward placements with world coordinates, destruction times and the deward / deny flags.
 
         ``hero_teams`` (normalized hero key -> team) tells whether the unit that
-        removed a ward was an enemy, ``hero_slots`` (-> player_slot) which hero
-        it was. An entry without a position is skipped.
+        removed a ward was an enemy or an ally, ``hero_slots`` (-> player_slot)
+        which hero it was. An entry without a position is skipped.
         """
         hero_teams = hero_teams or {}
         wards: list[WardEvent] = []
@@ -2255,8 +2295,10 @@ class OpenDotaParser(ReplayParser):
                     destroyed = None  # expired in the post-game: alive at game end
                 dewarded = destroyed is not None and cls._dewarded(
                     left or {}, team, ward_type, placed, destroyed, hero_teams)
+                denied = destroyed is not None and not dewarded and cls._denied(
+                    left or {}, team, ward_type, placed, destroyed, hero_teams)
                 attacker = normalize_hero_key((left or {}).get("attackername"))
-                killer = (hero_slots or {}).get(attacker) if dewarded else None
+                killer = (hero_slots or {}).get(attacker) if dewarded or denied else None
                 wards.append(WardEvent(
                     ward_type=ward_type,
                     x=geo.opendota_cell_to_world(cell[0]),
@@ -2266,6 +2308,7 @@ class OpenDotaParser(ReplayParser):
                     destroyed_time=destroyed,
                     team=team,
                     dewarded=dewarded,
+                    denied=denied,
                     killer_slot=killer,
                 ))
         return sorted(wards, key=lambda w: w.time)
@@ -2287,6 +2330,18 @@ class OpenDotaParser(ReplayParser):
         if attacker_team is None:
             return _dewarded_by_lifetime(ward_type, placed, destroyed)
         return attacker_team != ward_team
+
+    @staticmethod
+    def _denied(left: dict, ward_team: str, ward_type: str, placed: int, destroyed: int,
+                hero_teams: dict[str, str]) -> bool:
+        """Whether a hero of the ward's own side destroyed it before its time.
+
+        The left log names the owner for a ward that ran out and the
+        attacking hero (the owner included) for one that was denied: only
+        the lifetime tells the two apart.
+        """
+        attacker_team = hero_teams.get(normalize_hero_key(left.get("attackername")))
+        return attacker_team == ward_team and _ward_fell_early(ward_type, placed, destroyed)
 
     def _transform(self, raw: dict, hero_map: dict, item_map: dict,
                    ability_ids: dict[str, str] | None = None,
@@ -2479,7 +2534,8 @@ class OpenDotaParser(ReplayParser):
         # left logs say who removed each ward; without them the counters stay.
         if any(e.get("attackername") for p in raw_players
                for key in ("obs_left_log", "sen_left_log") for e in _dicts(p.get(key))):
-            dewards = Counter((w.killer_slot, w.ward_type) for w in all_wards if w.killer_slot is not None)
+            dewards = Counter((w.killer_slot, w.ward_type) for w in all_wards
+                              if w.dewarded and w.killer_slot is not None)
             for player in players:
                 player.observer_kills = dewards[(player.player_slot, "observer")]
                 player.sentry_kills = dewards[(player.player_slot, "sentry")]

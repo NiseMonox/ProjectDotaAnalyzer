@@ -882,7 +882,18 @@ SSE_HEARTBEAT_S = 15.0
 _COACH_TIMEOUT_GRACE_S = 60.0
 _COACH_MEMORY_SIZE = 32
 
-_coach_report_cache: OrderedDict[str, tuple[dict, float | None]] = OrderedDict()
+
+
+@dataclass
+class _CachedReport:
+    result: dict
+    # Degraded reports only (None otherwise), on the monotonic clock: when
+    # the entry stops being served, and from when a new run may be forced.
+    expires_at: float | None = None
+    refresh_at: float | None = None
+
+
+_coach_report_cache: OrderedDict[str, _CachedReport] = OrderedDict()
 
 
 class _CoachJob:
@@ -960,29 +971,56 @@ def _coach_disk_path(coach_id: str) -> Path:
     return storage.coach_cache_path(config.COACH_CACHE_DIR, data_id, _coach_schema_version())
 
 
-def _coach_mem_get(coach_id: str) -> dict | None:
+def _coach_mem_entry(coach_id: str) -> _CachedReport | None:
     item = _coach_report_cache.get(coach_id)
     if item is None:
         return None
-    result, expires_at = item
-    if expires_at is not None and time.monotonic() > expires_at:
+    if item.expires_at is not None and time.monotonic() > item.expires_at:
         _coach_report_cache.pop(coach_id, None)
         return None
     _coach_report_cache.move_to_end(coach_id)
-    return result
+    return item
+
+
+def _coach_mem_get(coach_id: str) -> dict | None:
+    item = _coach_mem_entry(coach_id)
+    return item.result if item is not None else None
 
 
 def _coach_mem_put(coach_id: str, result: dict, degraded: bool) -> None:
     if degraded:
         if config.AI_COACH_DEGRADED_TTL_S <= 0:
             return
-        expires_at: float | None = time.monotonic() + config.AI_COACH_DEGRADED_TTL_S
+        now = time.monotonic()
+        item = _CachedReport(result, now + config.AI_COACH_DEGRADED_TTL_S, now + config.AI_COACH_REFRESH_COOLDOWN_S)
     else:
-        expires_at = None
-    _coach_report_cache[coach_id] = (result, expires_at)
+        item = _CachedReport(result)
+    _coach_report_cache[coach_id] = item
     _coach_report_cache.move_to_end(coach_id)
     while len(_coach_report_cache) > _COACH_MEMORY_SIZE:
         _coach_report_cache.popitem(last=False)
+
+
+def _refresh_wait(coach_id: str) -> int:
+    """Seconds until a new run of the cached degraded report may be forced (0 = now)."""
+    item = _coach_report_cache.get(coach_id)
+    if item is None or item.refresh_at is None:
+        return 0
+    return max(0, math.ceil(item.refresh_at - time.monotonic()))
+
+
+def _with_refresh(coach_id: str, report: dict) -> dict:
+    """The report as it is served: plus ``refresh``, the envelope's word on
+    forcing a new run. ``available`` is true for a degraded report only (the
+    LLM was meant to write it and rules did): ``?refresh=1`` then starts a
+    new run once ``retry_after`` seconds have passed (0 = now). Every other
+    report is final: ``{"available": false, "retry_after": null}``.
+    """
+    if report.get("degraded"):
+        refresh = {"available": True, "retry_after": _refresh_wait(coach_id)}
+    else:
+        refresh = {"available": False, "retry_after": None}
+    return {**report, "refresh": refresh}
 
 
 @functools.lru_cache(maxsize=1)
@@ -1050,17 +1088,31 @@ def _start_coach_job(coach_id: str, match: MatchData, player_slot: int, lang: st
     return job
 
 
+def _refresh_requested(value: str | None) -> bool:
+    """Whether a ``refresh`` query value asks for a new run ("1", "true", ...)."""
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 async def _resolve_coach(
-    request: Request, file_key: str, player_slot: int, lang: str,
+    request: Request, file_key: str, player_slot: int, lang: str, refresh: bool = False,
 ) -> tuple[dict | None, _CoachJob | None]:
     """Return (cached report, None) or (None, in-flight job).
 
+    The cached report comes with its ``refresh`` envelope (``_with_refresh``).
     Only a cold start (no cached report, no in-flight job) is subject to
     the per-IP rate limit (``ai_coach`` with an LLM configured, the much
     higher ``ai_coach_rules`` for rule-based reports) and, with an LLM, to
     the global daily quota. A replay that ends
     before the game starts, or within its first minutes, is refused (409
     coach_no_game).
+
+    ``refresh`` forces such a cold start for a cached report that is
+    degraded, and only for that: any other report is served as usual. The
+    new run is the report's one in-flight job, shared by everyone who asks
+    meanwhile, and replaces the degraded report when it is done. Within
+    ``AI_COACH_REFRESH_COOLDOWN_S`` after the report was written (or after
+    its last forced run started) the cached report is served instead; its
+    envelope says how long to wait.
     """
     record = await _require_record(file_key, lang)
     if not any(p.player_slot == player_slot for p in record.match.players):
@@ -1071,19 +1123,27 @@ async def _resolve_coach(
         raise ApiError(409, "coach_no_game", lang)
 
     coach_id = _coach_id(record, player_slot, lang)
-    cached = _coach_mem_get(coach_id)
-    if cached is not None:
-        return cached, None
-    job = _active_coach_job(coach_id)
-    if job is not None:
-        return None, job
+    entry = _coach_mem_entry(coach_id)
+    forced = False
+    if entry is not None:
+        forced = refresh and bool(entry.result.get("degraded"))
+        job = _active_coach_job(coach_id) if forced else None
+        if job is not None:     # the forced run is already under way
+            return None, job
+        if not forced or _refresh_wait(coach_id) > 0:
+            return _with_refresh(coach_id, entry.result), None
+    else:
+        job = _active_coach_job(coach_id)
+        if job is not None:
+            return None, job
 
     # First call imports the AI pipeline (slow): keep it off the event loop.
     disk_path = await asyncio.to_thread(_coach_disk_path, coach_id)
-    cached = await asyncio.to_thread(storage.load_json, disk_path)
-    if cached is not None:
-        _coach_mem_put(coach_id, cached, degraded=False)
-        return cached, None
+    if not forced:      # (a degraded report is never on disk)
+        cached = await asyncio.to_thread(storage.load_json, disk_path)
+        if cached is not None:
+            _coach_mem_put(coach_id, cached, degraded=False)
+            return _with_refresh(coach_id, cached), None
 
     # Re-check: another request may have started the job while we read disk.
     job = _active_coach_job(coach_id)
@@ -1097,6 +1157,13 @@ async def _resolve_coach(
         if wait:
             logger.warning("AI coach daily quota exhausted (%d used)", ai_coach_daily_quota.used())
             raise rate_limited_error(wait, lang, code="daily_limit")
+    if forced:
+        # The degraded report stays in memory until the new one replaces it
+        # (or for the rest of its time, should the run fail). The cooldown
+        # starts over with this run, so a run that fails cannot be repeated
+        # at once either.
+        entry.refresh_at = time.monotonic() + config.AI_COACH_REFRESH_COOLDOWN_S
+        logger.info("AI coach report %s: new run forced for a degraded report", coach_id)
     return None, _start_coach_job(coach_id, record.match, player_slot, lang, disk_path)
 
 
@@ -1113,16 +1180,21 @@ def _map_coach_error(exc: BaseException, lang: str) -> ApiError:
 
 
 @router.get("/match/{file_key}/ai-coach/{player_slot}")
-async def get_ai_coaching(request: Request, file_key: str, player_slot: str, lang: str = Query("zh")):
+async def get_ai_coaching(
+    request: Request, file_key: str, player_slot: str, lang: str = Query("zh"), refresh: str = Query(""),
+):
     """Generate (or return the cached) AI coaching report for one player.
 
     ``player_slot`` is the player's slot number (0-4 Radiant, 128-132 Dire).
+    The report carries ``refresh: {available, retry_after}``: for a degraded
+    report ``refresh=1`` forces a new run (see ``_resolve_coach``).
     """
     lang = _coach_lang(lang)
-    cached, job = await _resolve_coach(request, file_key, _parse_player_slot(player_slot, lang), lang)
+    cached, job = await _resolve_coach(
+        request, file_key, _parse_player_slot(player_slot, lang), lang, _refresh_requested(refresh))
     if cached is None:
         try:
-            cached = await asyncio.shield(job.task)
+            cached = _with_refresh(job.coach_id, await asyncio.shield(job.task))
         except Exception as exc:
             raise _map_coach_error(exc, lang) from None
     return Response(_json_bytes(cached), media_type="application/json")
@@ -1164,7 +1236,7 @@ async def _sse_follow(job: _CoachJob, lang: str) -> AsyncIterator[str]:
         except Exception as exc:
             yield _sse_pack(_sse_error(_map_coach_error(exc, lang)))
         else:
-            yield _sse_pack({"type": "done", "data": result})
+            yield _sse_pack({"type": "done", "data": _with_refresh(job.coach_id, result)})
     finally:
         job.listeners.discard(queue)
 
@@ -1181,7 +1253,9 @@ def _sse_response(body: AsyncIterator[str]) -> StreamingResponse:
 
 
 @router.get("/match/{file_key}/ai-coach-stream/{player_slot}")
-async def stream_ai_coaching(request: Request, file_key: str, player_slot: str, lang: str = Query("zh")):
+async def stream_ai_coaching(
+    request: Request, file_key: str, player_slot: str, lang: str = Query("zh"), refresh: str = Query(""),
+):
     """Stream AI coaching report progress via Server-Sent Events.
 
     Each event is ``data: <json>\\n\\n`` with one of these shapes:
@@ -1193,16 +1267,54 @@ async def stream_ai_coaching(request: Request, file_key: str, player_slot: str, 
     ``: ping`` comments are sent every ~15 s while waiting. Errors (a bad
     ``player_slot`` included) are sent as events (HTTP 200) so EventSource
     clients can show the message. A reconnecting client attaches to the
-    in-flight generation.
+    in-flight generation. ``refresh=1`` forces a new run of a degraded
+    report as on the JSON route; a reconnect with it joins that run, or
+    gets its result.
     """
     lang = _coach_lang(lang)
     try:
-        cached, job = await _resolve_coach(request, file_key, _parse_player_slot(player_slot, lang), lang)
+        cached, job = await _resolve_coach(
+            request, file_key, _parse_player_slot(player_slot, lang), lang, _refresh_requested(refresh))
     except ApiError as exc:
         return _sse_response(_sse_once(_sse_error(exc)))
     if cached is not None:
         return _sse_response(_sse_once({"type": "done", "data": cached}))
     return _sse_response(_sse_follow(job, lang))
+
+
+# Longest knowledge entry id the route looks up (ids are short: "hero_laning:antimage").
+_KNOWLEDGE_ID_MAX = 200
+
+
+def _knowledge_entry(entry_id: str, lang: str) -> dict | None:
+    """``ai.knowledge_base.knowledge_entry``; None without the AI package. Blocking
+    (the first call builds the knowledge stores)."""
+    try:
+        from .ai import knowledge_base
+    except Exception as exc:
+        logger.warning("Knowledge base unavailable: %s", exc)
+        return None
+    return knowledge_base.knowledge_entry(entry_id, lang)
+
+
+@router.get("/knowledge/{entry_id:path}")
+async def get_knowledge_entry(entry_id: str, lang: str = Query("zh")):
+    """One entry of the AI coach's reference knowledge.
+
+    ``entry_id`` is the ``id`` of an item of a report's ``sources``; the
+    answer is ``{id, title, source_type, source_label, patch, text, lang}``
+    with the entry's text as retrieval hands it to the model, so a reader
+    can check what a verdict was shown. 404 ``knowledge_not_found`` for an
+    id the knowledge base does not (or no longer) hold: learned entries
+    are replaced by later learning runs.
+    """
+    lang = _coach_lang(lang)
+    entry = None
+    if 0 < len(entry_id) <= _KNOWLEDGE_ID_MAX:
+        entry = await asyncio.to_thread(_knowledge_entry, entry_id, lang)
+    if entry is None:
+        raise ApiError(404, "knowledge_not_found", lang)
+    return Response(_json_bytes({**entry, "lang": lang}), media_type="application/json")
 
 
 @router.get("/match/{file_key}/{section}")

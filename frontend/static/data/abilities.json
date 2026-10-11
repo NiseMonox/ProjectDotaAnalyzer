@@ -5682,5 +5682,5 @@
 "+Astral Imprisonment Mana Capacity Steal": "special_bonus_unique_outworld_devourer_2"
 },
 "cdn_base": "https://cdn.akamai.steamstatic.com",
-"meta": {"generated_at": "2026-10-11T02:56:54Z", "patch": "7.41f", "source": "dotaconstants_github", "source_revision": "51138e3d950f", "source_date": "2026-10-10T04:31:58Z"}
+"meta": {"generated_at": "2026-10-11T04:30:29Z", "patch": "7.41f", "source": "dotaconstants_github", "source_revision": "51138e3d950f", "source_date": "2026-10-10T04:31:58Z"}
 }

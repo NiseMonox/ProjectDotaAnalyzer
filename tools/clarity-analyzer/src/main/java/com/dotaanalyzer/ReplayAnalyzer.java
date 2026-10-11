@@ -539,6 +539,26 @@ public class ReplayAnalyzer {
         return team == TEAM_NEUTRALS ? "neutral" : teamName(team);
     }
 
+    static final String WARD_DEWARDED = "dewarded";
+    static final String WARD_DENIED = "denied";
+    static final String WARD_EXPIRED = "expired";
+    static final String WARD_OTHER = "other";
+
+    /**
+     * How a ward ended, from the attacker of its combat-log death (W4): an enemy unit dewarded
+     * it, a unit of its own side denied it, or it expired. A ward that runs out is its own
+     * attacker (attacker "npc_dota_observer_wards", damage source = its owner), so a ward as
+     * attacker is never a deny. Anything else (neutral or unnamed side) is "other".
+     */
+    static String wardDeathCause(String attackerName, int attackerTeam, int wardTeam) {
+        String attacker = attackerName != null ? attackerName.toLowerCase(Locale.ROOT) : "";
+        if (attacker.contains("observer_wards") || attacker.contains("sentry_wards")) return WARD_EXPIRED;
+        boolean sides = (attackerTeam == TEAM_RADIANT || attackerTeam == TEAM_DIRE)
+                && (wardTeam == TEAM_RADIANT || wardTeam == TEAM_DIRE);
+        if (!sides) return WARD_OTHER;
+        return attackerTeam != wardTeam ? WARD_DEWARDED : WARD_DENIED;
+    }
+
     // ======== Player ID mapping (J13) ========
 
     private void observeEntityPid(int pid, Integer team) {
@@ -1110,10 +1130,10 @@ public class ReplayAnalyzer {
                 ownerIdx = heroNameToPlayerIdx(cleanHeroName(cle.getTargetSourceName()));
             } catch (Exception ignored) {
             }
-            boolean byEnemy = (attackerTeam == TEAM_RADIANT || attackerTeam == TEAM_DIRE)
-                    && (wardTeam == TEAM_RADIANT || wardTeam == TEAM_DIRE) && attackerTeam != wardTeam;
+            String cause = wardDeathCause(attackerRaw, attackerTeam, wardTeam);
+            boolean byHero = WARD_DEWARDED.equals(cause) || WARD_DENIED.equals(cause);
             wardDeaths.add(new WardDeath(currentTick, time, observerDeath ? "observer" : "sentry", wardTeam,
-                    byEnemy, byEnemy ? attackerIdx : -1, ownerIdx));
+                    cause, attackerTeam, byHero ? attackerIdx : -1, ownerIdx));
         }
 
         if (targetIsHero || attackerIdx < 0) return;
@@ -2931,6 +2951,10 @@ public class ReplayAnalyzer {
             chat.put("type", "chatwheel");
             chat.put("_pid", message.getPlayerId());
             chat.put("key", "chatwheel_" + message.getChatMessageId());
+            // The hero a phrase is about ("<hero> is missing!"), when it names one.
+            if (message.hasParamHeroId() && message.getParamHeroId() > 0) {
+                chat.put("hero_id", message.getParamHeroId());
+            }
             chatMessages.add(chat);
         } catch (Exception e) {
             recordError("message.chatwheel", e);
@@ -3335,7 +3359,9 @@ public class ReplayAnalyzer {
             }
             if (best == null) continue;
             best.deathMatched = true;
-            best.dewarded = d.byEnemy;
+            best.dewarded = WARD_DEWARDED.equals(d.cause);
+            best.denied = WARD_DENIED.equals(d.cause);
+            best.killerTeam = d.attackerTeam;
             best.killerIdx = d.killerIdx;
             if (!best.diedByLifeState) best.destroyedRaw = d.rawTime;
         }
@@ -3347,6 +3373,49 @@ public class ReplayAnalyzer {
         if (series == null) return new ArrayList<>();
         int max = duration / 60 + 1;
         return series.size() > max ? new ArrayList<>(series.subList(0, max)) : series;
+    }
+
+    /** A natural respawn takes far longer; only a buyback brings a hero back sooner than this. */
+    static final float RESPAWN_MIN_S = 1f;
+    /**
+     * A sample shows a death this soon at the latest. Samples are normally a second apart, but
+     * around a pause their clock (nowRaw) can run up to 3 s ahead of the combat log's, so the
+     * sample after a death can still carry the hero's last health.
+     */
+    static final float DEATH_SEEN_WITHIN_S = 5f;
+
+    /**
+     * Raw time a hero was alive again after its death at deathRaw: its buyback when it bought
+     * back (buybacks: raw times in order, exact), else the first sample that shows health after
+     * one that showed it dead (samples: one per second, {raw time, x, y, hp %} with hp 0 = dead
+     * and -1 = unknown), so a respawn is up to a second late. Null when the hero is not seen
+     * alive again: the game or the recording ended first.
+     */
+    static Float respawnRaw(List<float[]> samples, List<Float> buybacks, float deathRaw) {
+        Float back = null;
+        boolean seenDead = false;
+        for (float[] sample : samples) {
+            if (sample[0] < deathRaw) continue;
+            if (sample[3] == 0 && (seenDead || sample[0] <= deathRaw + DEATH_SEEN_WITHIN_S)) {
+                seenDead = true;
+            } else if (sample[3] > 0 && seenDead) {
+                back = sample[0];
+                break;
+            }
+        }
+        if (!seenDead) {
+            // Back before a sample saw it dead (an instant buyback): the first sample with health.
+            for (float[] sample : samples) {
+                if (sample[0] >= deathRaw + RESPAWN_MIN_S && sample[3] > 0) {
+                    back = sample[0];
+                    break;
+                }
+            }
+        }
+        for (float buyback : buybacks) {
+            if (buyback >= deathRaw && (back == null || buyback <= back)) return buyback;
+        }
+        return back;
     }
 
     /** position_log (W2): [time, x, y, hp %] every POSITION_LOG_INTERVAL_S of game time. */
@@ -3636,6 +3705,8 @@ public class ReplayAnalyzer {
             for (int idx : new TreeSet<>(k.assistIdx)) assistSlots.add(playerStates[idx].playerSlot);
             ko.put("assist_slots", assistSlots);
             ko.put("deny", k.deny);
+            Float respawn = respawnRaw(playerStates[k.targetIdx].samples, playerStates[k.targetIdx].buybackRaw, k.time);
+            ko.put("respawn_time", respawn != null ? toGameTimeTenths(respawn) : null);
             killsOut.add(ko);
         }
         result.put("kills_log", killsOut);
@@ -3661,7 +3732,12 @@ public class ReplayAnalyzer {
                 ward.put("dewarded", false);
             } else if (w.deathMatched) {
                 ward.put("dewarded", w.dewarded);
-                if (w.dewarded && w.killerIdx >= 0) ward.put("killer_slot", playerStates[w.killerIdx].playerSlot);
+                ward.put("denied", w.denied);
+                String killerTeam = unitTeamName(w.killerTeam);
+                if (killerTeam != null) ward.put("killer_team", killerTeam);
+                if ((w.dewarded || w.denied) && w.killerIdx >= 0) {
+                    ward.put("killer_slot", playerStates[w.killerIdx].playerSlot);
+                }
             }
             wardsOut.add(ward);
         }
@@ -4006,9 +4082,11 @@ public class ReplayAnalyzer {
         Float destroyedRaw = null;
         int destroyedTick = -1;
         boolean diedByLifeState = false;  // destroyedRaw is the death itself, not the entity deletion
-        boolean deathMatched = false;     // a combat-log death was attached (dewarded / killerIdx valid)
-        boolean dewarded = false;
-        int killerIdx = -1;
+        boolean deathMatched = false;     // a combat-log death was attached (the fields below are valid)
+        boolean dewarded = false;         // an enemy unit ended it
+        boolean denied = false;           // a unit of its own side ended it (not the expiry)
+        int killerTeam = 0;               // combat-log team of the attacker (its own team for an expiry)
+        int killerIdx = -1;               // the hero that dewarded / denied it, when a hero did
 
         WardRecord(int entityIndex, String type, float placedRaw) {
             this.entityIndex = entityIndex;
@@ -4035,16 +4113,19 @@ public class ReplayAnalyzer {
         final float rawTime;
         final String type;
         final int wardTeam;
-        final boolean byEnemy;
-        final int killerIdx;
+        final String cause;       // wardDeathCause
+        final int attackerTeam;   // combat-log team of the attacker
+        final int killerIdx;      // the hero behind a deward / deny, else -1
         final int ownerIdx;
 
-        WardDeath(int tick, float rawTime, String type, int wardTeam, boolean byEnemy, int killerIdx, int ownerIdx) {
+        WardDeath(int tick, float rawTime, String type, int wardTeam, String cause, int attackerTeam,
+                  int killerIdx, int ownerIdx) {
             this.tick = tick;
             this.rawTime = rawTime;
             this.type = type;
             this.wardTeam = wardTeam;
-            this.byEnemy = byEnemy;
+            this.cause = cause;
+            this.attackerTeam = attackerTeam;
             this.killerIdx = killerIdx;
             this.ownerIdx = ownerIdx;
         }

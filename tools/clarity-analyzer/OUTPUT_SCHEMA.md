@@ -6,8 +6,10 @@
 turns it into `MatchData`; the last section says which fields it uses.
 
 This file describes schema 3 relative to schema 2, which the Python transform still accepts
-(cached output, test fixtures): everything that is not listed is unchanged from schema 2,
-new fields are additive, and the SEMANTIC changes of existing fields are marked [changed].
+(cached output, test fixtures): new fields are additive, and the SEMANTIC changes of existing
+fields are marked [changed]. Schema 2 never had a document of its own; the fields it already
+had and schema 3 left as they were are listed under "Fields unchanged from schema 2" near the
+end, so that every field of the output is described in this file.
 `"schema_version": 3` tells the versions apart. Positions are Dota 2 world units, times are
 seconds on the in-game clock (negative before the horn).
 
@@ -22,7 +24,7 @@ to 3.1.3's before the changes of the next section.
 
 Verification: `python3 tools/compare_with_opendota.py <raw.json> <opendota.json> --ability-ids <ids> --item-ids <ids>`
 compares an output with OpenDota's JSON of the same match. It reports 0 DIFF on the two
-reference replays (777 ok / 31 notes and 643 ok / 16 notes) and on seven replays of 7.41f: two
+reference replays (778 ok / 31 notes and 644 ok / 16 notes) and on seven replays of 7.41f: two
 league games (9037980041, 9037747302), four ranked games (9038370833, 9038370888, 9038374031,
 9038377636) and one Turbo game (9038388762). The notes are listed under "Remaining differences
 from OpenDota". `backend/tests/fixtures/clarity_v3_8762775364_trimmed.json`
@@ -58,6 +60,16 @@ Found by comparing the seven current replays with OpenDota; all additive or valu
 | `players[].ability_upgrades` | A level the player ordered to train while no skill point was spent is an entry: Winter Wyvern's Eldwurm's Edda (7.41 innate: an item she can consume after 10 minutes to raise the level and the maximum level of a basic ability by one). 9037747302: train order for Arctic Burn at 11:34 (694 s), level 3 -> 4, no decrease of `m_iAbilityPoints`; 9038377636: level 2 -> 3 at 10:16. The entry was missing and the next level of that ability was numbered one too high (Arctic Burn 1, 2, 3, 5). Only when the replay has `m_iAbilityPoints`, for one level per order. |
 | stderr summary | `diagnostics: {score_credits=1}` is printed apart from `handler errors: {...}`. |
 
+## Changes of analyzer 1.5.0 (still schema 3)
+
+All additive; the output of 1.4.0 for the reference replays is otherwise unchanged.
+
+| field | change |
+|---|---|
+| `wards[].denied`, `wards[].killer_team` (new), `wards[].killer_slot` | Who ended a ward, from the attacker of its combat-log death, see `wards[]`. Before, the output only told an enemy (`dewarded: true`) from everything else: a ward its own side attacked looked like one that ran out early. In the log a ward that runs out is its own attacker (`npc_dota_sentry_wards` kills `npc_dota_sentry_wards`, damage source = the owner), a deny has a hero of the ward's side as attacker. `killer_slot` is now also set for a deny. Six replays: 5 denied wards (8713267082 at 16:42: Warlock attacks his own sentry 18 s after placing it; 9038374031 at 7:25: Terrorblade denies Jakiro's sentry), 183 expired, 115 dewarded (9 of them by lane creeps: no `killer_slot`); every one agrees with the attacker OpenDota's left log names (the compare tool checks it). |
+| `kills_log[].respawn_time` (new) | Game time the victim was alive again, see `kills_log[]`. Deaths and buybacks had times, a natural respawn had none: a consumer could only read it off `position_log`, 5 s apart. 381 deaths of six replays: 360 with a time (12 of them buybacks), 21 null (dead when the game ended). Of the 278 natural respawns of the five standard games 269 took the base respawn time of the hero's level (`backend/app/game_constants.py`, within the second of the sampling); the other 9 were longer or shorter by an effect, and the Turbo game has times of its own. |
+| `chat[].hero_id` (new) | For a chat-wheel message that names a hero (`chatwheel_71` "<hero> is missing!", `chatwheel_72`): the hero's id, `param_hero_id` of the game's own message. Absent otherwise. All 29 `chatwheel_71` lines of the six replays carry one. |
+
 ## Removed since schema 2
 
 - Top level `tower_status_radiant` / `tower_status_dire` / `barracks_status_radiant` /
@@ -70,7 +82,7 @@ Found by comparing the seven current replays with OpenDota; all additive or valu
 | field | type | meaning | real example |
 |---|---|---|---|
 | `schema_version` | int | 3 | `3` |
-| `analyzer_version` (new in 1.4.0) | str | Version of the analyzer JAR that wrote the output; `""` outside the JAR. Absent before 1.4.0. | `"1.4.0"` |
+| `analyzer_version` (new in 1.4.0) | str | Version of the analyzer JAR that wrote the output; `""` outside the JAR. Absent before 1.4.0. | `"1.5.0"` |
 | `match_id` [changed] | int (64-bit) | The full id. From CDemoFileInfo whenever the replay has it, else from the game-rules entity (see `match_id_source`). Schema 2 only had the low 32 bits. | `8762775364` (was 172840772) |
 | `match_id_source` (new) | str | `"file_info"`; `"game_rules"` = no file info (truncated replay), the full id from the game-rules entity; `"game_rules_32bit"` = the same but decoded as 32 bits (Clarity has no decoder for the field type `MatchID_t`; the analyzer registers a 64-bit one before the run, and this value means that registration failed): the REAL ID MODULO 2^32, which Python turns into match_id 0; `"none"` = match_id 0. | `"file_info"`; truncated: `8762775364` / `"game_rules"` |
 | `radiant_win` [changed] | bool or null | `null` when the winner is unknown (truncated replay). Was `false`. | `false`; truncated: `null` |
@@ -101,11 +113,13 @@ No illusions, no reincarnation / aegis deaths. Denies are included with `deny: t
 | `x`, `y` | float or null | victim position, world units |
 | `assist_slots` | list[int] | sorted player_slots: union of the combat-log assist list (only for a death that scores for the other side) and the players whose scoreboard assist counter went up in the tick of this death; never contains the killer |
 | `deny` | bool | victim was killed by its own team |
+| `respawn_time` (new in 1.5.0) | float (1 decimal) or null | game time the victim was alive again: the time of its buyback when it bought back (exact), else the first of the hero's one-per-second samples that shows health after one that showed it dead, so a respawn is up to a second late. null = not seen alive again (the game or the recording ended first). Around a pause the sample clock can run up to 3 s ahead of the combat log's; a sample that still carries the last health after the death is therefore no respawn (8762775364 at 28:25). |
 
 Examples:
-`{"time": 141.6, "victim_slot": 132, "killer_slot": 3, "killer_unit": "npc_dota_hero_weaver", "killer_team": "radiant", "x": 6496.3438, "y": -3305.1562, "assist_slots": [2], "deny": false}`
-`{"time": 805.9, "victim_slot": 129, "killer_slot": 2, "killer_unit": "npc_dota_warlock_golem", "killer_team": "radiant", "x": 5478.375, "y": -4190.8438, "assist_slots": [0, 3], "deny": false}`
-`{"time": 1433.8, "victim_slot": 129, "killer_slot": null, "killer_unit": "dota_fountain", "killer_team": "radiant", "x": -7051.0312, "y": -6588.875, "assist_slots": [], "deny": false}` (9038370833)
+`{"time": 141.6, "victim_slot": 132, "killer_slot": 3, "killer_unit": "npc_dota_hero_weaver", "killer_team": "radiant", "x": 6496.3438, "y": -3305.1562, "assist_slots": [2], "deny": false, "respawn_time": 157.0}`
+`{"time": 805.9, "victim_slot": 129, "killer_slot": 2, "killer_unit": "npc_dota_warlock_golem", "killer_team": "radiant", "x": 5478.375, "y": -4190.8438, "assist_slots": [0, 3], "deny": false, "respawn_time": 835.0}`
+`{"time": 1433.8, "victim_slot": 129, "killer_slot": null, "killer_unit": "dota_fountain", "killer_team": "radiant", "x": -7051.0312, "y": -6588.875, "assist_slots": [], "deny": false, "respawn_time": null}` (9038370833; the game ends at 24:12)
+`{"time": 1687.2, "victim_slot": 4, ..., "deny": false, "respawn_time": 1690.1}` (8713267082: a buyback 2.9 s after the death)
 
 Invariants, all EXACT for the 20 players of the two reference replays:
 entries with `victim_slot == slot` == `deaths`; entries with `killer_slot == slot and not deny` ==
@@ -157,12 +171,16 @@ only two of his own team died; it belongs to no death and is reported as
 | `player_slot` [changed] | int | Owner from the ward entity's own `m_nPlayerOwnerID` (161/161 equal to OpenDota); -1 only when nothing resolved it. |
 | `owner_source` | str | `"entity"`, `"purchase"` (last-resort heuristic) or `"unknown"`. All 161 are `"entity"`. |
 | `destroyed_time` [changed] | int or null | Game time the ward DIED (life-state change): now -1..0 s from OpenDota's left-log time (was +4..+9). null = alive at game end. |
-| `dewarded` (new) | bool | true = destroyed by the enemy team; false = expired, or still alive at game end. The key is ABSENT when the ward died but no combat-log death was matched (did not happen on the two replays: 137/137 matched) - apply the lifetime fallback in Python then. |
-| `killer_slot` (new) | int | Only when `dewarded` is true and a hero (or its summon) did it: that hero's player_slot. |
+| `dewarded` (new) | bool | true = destroyed by the enemy team; false = denied, expired, or still alive at game end. The key is ABSENT when the ward died but no combat-log death was matched (did not happen on the two replays: 137/137 matched) - apply the lifetime fallback in Python then. |
+| `denied` (new in 1.5.0) | bool | true = destroyed by a unit of its own side that is not the ward itself (an ally's or the owner's attack). false for a ward that expired: it is its own attacker in the combat log. Present exactly when `dewarded` is, for a ward that died; never true together with it. |
+| `killer_team` (new in 1.5.0) | str | Side of the unit that ended the ward (the attacker team of the combat-log row): `"radiant"`, `"dire"` or `"neutral"`; the ward's own side when it expired or was denied. Only for a ward that died with a matched combat-log death; absent when the row names no side. |
+| `killer_slot` (new) | int | Only when `dewarded` or (since 1.5.0) `denied` is true and a hero (or its summon) did it: that hero's player_slot. An enemy for `dewarded`, a hero of the ward's side for `denied`. Never for an expiry. |
 
 Examples:
-`{"type": "sentry", "x": -4530.75, "y": 3675.0, "time": -39, "player_slot": 128, "team": "dire", "destroyed_time": 91, "ehandle": 2081703, "owner_source": "entity", "dewarded": true, "killer_slot": 4}`
-`{"type": "observer", "x": 541.78125, "y": -161.28125, "time": -56, "player_slot": 131, "team": "dire", "destroyed_time": 303, "ehandle": 6521761, "owner_source": "entity", "dewarded": false}`
+`{"type": "sentry", "x": -4530.75, "y": 3675.0, "time": -39, "player_slot": 128, "team": "dire", "destroyed_time": 91, "ehandle": 2081703, "owner_source": "entity", "dewarded": true, "denied": false, "killer_team": "radiant", "killer_slot": 4}`
+`{"type": "observer", "x": 541.78125, "y": -161.28125, "time": -56, "player_slot": 131, "team": "dire", "destroyed_time": 303, "ehandle": 6521761, "owner_source": "entity", "dewarded": false, "denied": false, "killer_team": "dire"}` (expired)
+`{"type": "sentry", "x": -1532.9375, "y": -3796.4062, "time": 1002, "player_slot": 2, "team": "radiant", "destroyed_time": 1020, "ehandle": 1049567, "owner_source": "entity", "dewarded": false, "denied": true, "killer_team": "radiant", "killer_slot": 2}` (8713267082: denied by its owner)
+`{"type": "sentry", ..., "time": 1346, "team": "radiant", "destroyed_time": 1743, ..., "dewarded": true, "denied": false, "killer_team": "dire"}` (8713267082: a lane creep, no hero)
 `{"type": "sentry", ..., "time": 1686, "destroyed_time": null, ..., "dewarded": false}`
 
 ## teamfights[]
@@ -216,6 +234,80 @@ Examples:
 ## smokes[]
 - `player_slot` [changed]: the hero that USED the smoke (was the first hero that received the modifier). `player_slots` unchanged.
 - `objective_taken` can now be `"tower"` / `"barracks"` / `"ancient"` on current builds (building names resolve; 3 smokes on the two replays).
+
+## Fields unchanged from schema 2
+
+Fields that have no row in the sections above: they exist since schema 2 with the meaning given
+here. Examples are from 8762775364 unless noted.
+
+Top level:
+
+| field | type | meaning |
+|---|---|---|
+| `coord_space` | str | Always `"world"`: every `x` / `y` in the output is in Dota 2 world units. The Python transform converts positions only for output without it (the pre-v2 grid). |
+| `partial` | bool | The replay could not be read to its end (cut off or damaged); see "Truncated replays". `false` for a complete replay. |
+| `game_mode` | int | Valve's game-mode id (`22` ranked all pick, `23` Turbo). Python maps it to a code (`parser.GAME_MODES`). |
+| `players`, `wards`, `smokes`, `teamfights`, `objectives`, `buildings`, `chat` | list | The sections described in this file; `players` always has 10 entries, Radiant first. |
+
+`players[]`:
+
+| field | type | meaning |
+|---|---|---|
+| `player_slot` | int | 0-4 Radiant, 128-132 Dire. |
+| `hero_npc_name` | str | Full unit name of the hero (`"npc_dota_hero_invoker"`); `hero_name` is the same without the prefix. `""` when the hero never resolved. |
+| `steam_id` | int | 64-bit Steam id from the file info; 0 without it. Not mapped by Python. |
+| `ability_casts` | list | `{name, time}`: every ability the hero used, from the combat log, in time order (1577 entries for Invoker). |
+| `lane_kills` | int | Lane creeps (melee, ranged, flagbearer, siege) the hero last-hit; denies are not counted. |
+| `neutral_kills` | int | Neutral creeps the hero last-hit, ancients included (`ancient_kills` is the part that were ancients). |
+| `courier_kills` | int | Couriers the hero killed. |
+| `observer_kills`, `sentry_kills` | int | Enemy wards of that kind the hero destroyed. |
+| `runes_log` | list | `{time, key}` per rune the player picked up; `key` is Valve's rune id as a string: `"0"` double damage, `"1"` haste, `"2"` illusion, `"3"` invisibility, `"4"` regeneration, `"5"` bounty, `"6"` arcane, `"7"` water, `"8"` XP (a wisdom rune until 7.37, a Shrine of Wisdom capture since 7.38), `"9"` shield. |
+| `runes` | map[str,int] | The same pickups counted per rune id: `{"3": 1, "0": 1, "5": 2, "8": 2}`. |
+| `lane`, `lane_role` | int | Always `0`: the analyzer does not judge lanes. Python derives both from `laning_snapshots`. |
+| `laning_snapshots` | list | One sample every 5 s from 0:00 to 10:00 (121 entries for a game that lasts that long): `{time, x, y, hp, max_hp, mana, max_mana, level, last_hits, denies, net_worth}`, the state of the hero at that game second. |
+| `laning_creep_kills` | list | `{time, creep_type, gold}` per lane or neutral creep the hero last-hit in the first 10 minutes; `creep_type` is `"melee"`, `"ranged"`, `"siege"`, `"neutral"` or `"unknown"`, `gold` the bounty of the combat-log row. |
+| `laning_denies` | list | The same shape for lane creeps of the hero's own side that it denied in the first 10 minutes. |
+| `laning_damage_events` | list | `{time, target_idx, damage, inflictor}` per instance of damage to an enemy hero in the first 10 minutes; `target_idx` is the INDEX of the target in `players` (0-9), not its player_slot. See `players[]` above for the rules of who counts as dealer. |
+| `laning_regen_events` | list | `{time, item}` per use of a regeneration item in the first 10 minutes (item keys seen: `tango`, `tango_single`, `flask`, `clarity`, `enchanted_mango`, `famango`, `faerie_fire`, `bottle`). |
+| `buyback_count` | int | Number of buybacks (the length of `buyback_log`). |
+
+`wards[]`: `type` (`"observer"` / `"sentry"`), `x`, `y`, `time` (when it was placed; negative
+before the horn), `team` (`"radiant"` / `"dire"`, the owner's side) and `ehandle` (the entity
+handle, a diagnostic) are unchanged.
+
+`smokes[]` (one entry per Smoke of Deceit used):
+
+| field | type | meaning |
+|---|---|---|
+| `time`, `end_time` | int | When the smoke was used, and when the first member of the group lost it (revealed, or it ran out); 45 s after `time`, capped at the end of the data, when no end was seen. |
+| `team` | str | `"radiant"` / `"dire"`. |
+| `x`, `y` | float | Where it was used (position of the user). |
+| `path` | list[[x, y]] | The user's positions from `time` to `end_time` (one about every 2 s) and the position at `end_time` as the last point. |
+| `kills_gained`, `deaths_suffered` | int | Hero deaths from 5 s before to 30 s after `end_time` near the path or a member of the group: enemies that died (denies excluded) and heroes of the smoking side that died. |
+| `objective_taken` | str or null | `"tower"`, `"barracks"`, `"ancient"` or `"roshan"` when the smoking side took one near the path from 5 s before to 60 s after `end_time`; else null. |
+| `result` | str | `"traded"` (kills on both sides), `"kill"`, `"objective"` (no kill, an objective), `"caught"` (only own deaths) or `"no_contact"`, decided in that order. |
+| `player_slots` | list[int] | player_slots of every hero that was under this smoke. |
+
+`teamfights[]`: `radiant_deaths` / `dire_deaths` (int, real deaths of each side in the fight);
+per player `player_slot`, `hero_name`, `x` / `y` (float, the hero's first position in the
+window), `kills` and `deaths` (int, inside the window), `positions` (`{x, y, time_offset}`),
+`ability_casts` (`{name, key, time_offset, x, y}`: `key` repeats `name`, `x` / `y` are where the
+caster stood) and `abilities_used` (list[str], the distinct `name`s of `ability_casts` in order
+of first use).
+
+`objectives[]`: every entry has `time` and `type`. The types are the game's own chat events
+(`CHAT_MESSAGE_FIRSTBLOOD`, `CHAT_MESSAGE_AEGIS`, `CHAT_MESSAGE_COURIER_LOST`; `slot` is the
+acting player's index in `players` (0-9), `player_slot` his player_slot) and the kills taken
+from the combat log: `tower_kill`, `barracks_kill`, `ancient_kill` (`key`, `team` = the side that destroyed it,
+`building_team`, `denied` and, when a hero did it, `player_slot`) and `roshan_kill` (`team`,
+`player_slot`).
+
+`buildings[]`: `team`, `type` (`"tower"`, `"barracks"`, `"fort"`), `x`, `y` are unchanged; all 36
+buildings of the map are listed, `destroyed_time` null for one that stood at the end.
+
+`chat[]`: `type` is `"chat"` (typed in all chat) or `"chatwheel"`; `key` is the typed text, or
+`chatwheel_<id>` with the game's phrase id; `time`; `player_slot` (-1 for somebody who is not one
+of the ten players).
 
 ## Truncated replays (exit code 0 with `"partial": true`, or 65)
 `radiant_win: null`, `match_id_source: "game_rules"` (the full id; checked on cuts of both
@@ -272,7 +364,11 @@ Every field above is mapped into MatchData / PlayerData, with these deliberate e
 - not mapped: `players[].steam_id` (not needed, privacy), `total_gold` / `total_xp` (gold_t / xp_t and
   the per-minute rates are), `starting_items` for schema 3 (see players[]), `patch` (always "": the
   backend derives the version from `start_time`, see `data_manager.patch_for_time`).
+- diagnostics, not mapped (1.5.0): `wards[].killer_team` (`dewarded` / `denied` say what it means for
+  the ward; the compare tool reads it).
 - model fields that exist for raw data of schema 3: `MatchData.game_build`, `TeamfightEvent.xp_delta`,
   `WardEvent.killer_slot`, `SmokeEvent.player_slot`, `PlayerData.buyback_log`, `KillEvent.killer_team`
-  (None for output written before 1.4.0).
+  (None for output written before 1.4.0), `WardEvent.denied` (False before 1.5.0) and
+  `KillEvent.respawn_time` (None before 1.5.0: the analysis then reads the respawn off
+  `position_log`). `chat[]` entries are passed on as they are, `hero_id` included.
 

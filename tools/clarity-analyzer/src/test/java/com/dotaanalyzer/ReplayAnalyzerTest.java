@@ -305,19 +305,93 @@ class ReplayAnalyzerTest {
         // Without a life state the record only has the entity deletion, ~5 s after the death.
         ReplayAnalyzer.WardRecord deleted = ward(a, 5, "observer", ReplayAnalyzer.TEAM_RADIANT, 2, 6150, false);
         // Same tick, same type, same team: the owner tells the two radiant sentries apart.
-        a.wardDeaths.add(new ReplayAnalyzer.WardDeath(3000, 100f, "sentry", ReplayAnalyzer.TEAM_RADIANT, false, -1, 3));
-        a.wardDeaths.add(new ReplayAnalyzer.WardDeath(3000, 100f, "sentry", ReplayAnalyzer.TEAM_RADIANT, true, 6, 1));
-        a.wardDeaths.add(new ReplayAnalyzer.WardDeath(6000, 200f, "observer", ReplayAnalyzer.TEAM_RADIANT, true, 8, 2));
+        a.wardDeaths.add(new ReplayAnalyzer.WardDeath(3000, 100f, "sentry", ReplayAnalyzer.TEAM_RADIANT,
+                ReplayAnalyzer.WARD_EXPIRED, ReplayAnalyzer.TEAM_RADIANT, -1, 3));
+        a.wardDeaths.add(new ReplayAnalyzer.WardDeath(3000, 100f, "sentry", ReplayAnalyzer.TEAM_RADIANT,
+                ReplayAnalyzer.WARD_DEWARDED, ReplayAnalyzer.TEAM_DIRE, 6, 1));
+        a.wardDeaths.add(new ReplayAnalyzer.WardDeath(6000, 200f, "observer", ReplayAnalyzer.TEAM_RADIANT,
+                ReplayAnalyzer.WARD_DEWARDED, ReplayAnalyzer.TEAM_DIRE, 8, 2));
 
         a.matchWardDeaths();
 
-        assertTrue(dewarded.deathMatched && dewarded.dewarded);
+        assertTrue(dewarded.deathMatched && dewarded.dewarded && !dewarded.denied);
         assertEquals(6, dewarded.killerIdx);
-        assertTrue(expired.deathMatched && !expired.dewarded);
+        assertEquals(ReplayAnalyzer.TEAM_DIRE, dewarded.killerTeam);
+        assertTrue(expired.deathMatched && !expired.dewarded && !expired.denied);
+        assertEquals(-1, expired.killerIdx);
+        assertEquals(ReplayAnalyzer.TEAM_RADIANT, expired.killerTeam);
         assertFalse(enemySentry.deathMatched);
         assertFalse(unexplained.deathMatched);
         assertTrue(deleted.deathMatched && deleted.dewarded);
         assertEquals(200f, deleted.destroyedRaw);  // corrected to the death itself
+    }
+
+    @Test
+    void aWardDeniedByItsOwnSideIsNeitherDewardedNorExpired() {
+        ReplayAnalyzer a = analyzer();
+        ReplayAnalyzer.WardRecord denied = ward(a, 1, "sentry", ReplayAnalyzer.TEAM_DIRE, 6, 3000, true);
+        a.wardDeaths.add(new ReplayAnalyzer.WardDeath(3000, 100f, "sentry", ReplayAnalyzer.TEAM_DIRE,
+                ReplayAnalyzer.WARD_DENIED, ReplayAnalyzer.TEAM_DIRE, 7, 6));
+
+        a.matchWardDeaths();
+
+        assertTrue(denied.deathMatched && denied.denied && !denied.dewarded);
+        assertEquals(7, denied.killerIdx);  // the ally that attacked it, not its owner
+        assertEquals(ReplayAnalyzer.TEAM_DIRE, denied.killerTeam);
+    }
+
+    @Test
+    void respawnIsTheFirstSampleAliveAgainAfterADeath() {
+        List<float[]> samples = new ArrayList<>();
+        // one sample a second: alive until 100, dead from 101, alive again at 131
+        for (int t = 95; t <= 140; t++) {
+            samples.add(new float[]{t + 0.02f, 0f, 0f, t <= 100 || t >= 131 ? 80f : 0f});
+        }
+        List<Float> none = new ArrayList<>();
+        assertEquals(131.02f, ReplayAnalyzer.respawnRaw(samples, none, 100.4f));
+        // Around a pause the sample clock runs ahead: samples after the death can still carry
+        // the last health (replay 8762775364, death at 1705.7: 1707.3 = 11 %, 1708.0 = dead).
+        samples.set(6, new float[]{101.02f, 0f, 0f, 3f});
+        samples.set(7, new float[]{102.3f, 0f, 0f, 3f});
+        assertEquals(131.02f, ReplayAnalyzer.respawnRaw(samples, none, 100.4f));
+        // Unknown health is no sign of life, and a hero that never comes back has no respawn.
+        assertNull(ReplayAnalyzer.respawnRaw(samples.subList(0, 30), none, 100.4f));
+        List<float[]> unknown = new ArrayList<>(samples.subList(0, 30));
+        unknown.add(new float[]{125.02f, 0f, 0f, -1f});
+        assertNull(ReplayAnalyzer.respawnRaw(unknown, none, 100.4f));
+    }
+
+    @Test
+    void aBuybackIsTheExactRespawnAndBelongsToTheDeathBeforeIt() {
+        List<float[]> samples = new ArrayList<>();
+        // dead from 101, bought back at 110.6 (alive in the sample of 111), dead again from 121
+        for (int t = 95; t <= 140; t++) {
+            boolean alive = t <= 100 || (t >= 111 && t <= 120);
+            samples.add(new float[]{t + 0.02f, 0f, 0f, alive ? 80f : 0f});
+        }
+        List<Float> buybacks = Arrays.asList(110.6f);
+        assertEquals(110.6f, ReplayAnalyzer.respawnRaw(samples, buybacks, 100.4f));
+        assertNull(ReplayAnalyzer.respawnRaw(samples, buybacks, 120.5f));  // not the earlier buyback
+        // An instant buyback: no sample ever shows the hero dead.
+        List<float[]> never = new ArrayList<>();
+        for (int t = 95; t <= 110; t++) never.add(new float[]{t + 0.02f, 0f, 0f, 60f});
+        assertEquals(100.9f, ReplayAnalyzer.respawnRaw(never, Arrays.asList(100.9f), 100.4f));
+    }
+
+    @Test
+    void theAttackerOfAWardDeathTellsDewardDenyAndExpiryApart() {
+        int radiant = ReplayAnalyzer.TEAM_RADIANT, dire = ReplayAnalyzer.TEAM_DIRE;
+        assertEquals(ReplayAnalyzer.WARD_DEWARDED, ReplayAnalyzer.wardDeathCause("npc_dota_hero_lion", dire, radiant));
+        assertEquals(ReplayAnalyzer.WARD_DEWARDED,
+                ReplayAnalyzer.wardDeathCause("npc_dota_creep_badguys_ranged", dire, radiant));
+        assertEquals(ReplayAnalyzer.WARD_DENIED, ReplayAnalyzer.wardDeathCause("npc_dota_hero_snapfire", dire, dire));
+        // A ward that runs out is its own attacker, on its own side: never a deny.
+        assertEquals(ReplayAnalyzer.WARD_EXPIRED, ReplayAnalyzer.wardDeathCause("npc_dota_sentry_wards", dire, dire));
+        assertEquals(ReplayAnalyzer.WARD_EXPIRED,
+                ReplayAnalyzer.wardDeathCause("npc_dota_observer_wards", radiant, radiant));
+        assertEquals(ReplayAnalyzer.WARD_OTHER, ReplayAnalyzer.wardDeathCause("npc_dota_neutral_kobold", 4, radiant));
+        assertEquals(ReplayAnalyzer.WARD_OTHER, ReplayAnalyzer.wardDeathCause(null, 0, radiant));
+        assertEquals(ReplayAnalyzer.WARD_OTHER, ReplayAnalyzer.wardDeathCause("npc_dota_hero_lion", dire, 0));
     }
 
     @SuppressWarnings("unchecked")

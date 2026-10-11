@@ -59,7 +59,7 @@ def test_empty_match_does_not_crash():
     assert result["combat"]["kill_matrix"]["matrix"] == []
     assert result["wards"]["radiant"]["avg_obs_lifetime"] == 0
     assert result["smokes"]["radiant"]["success_rate"] == 0
-    assert result["laning"] == {"players": []}
+    assert result["laning"] == {"players": [], "lane_efficiency_applicable": True}
     json.dumps(result)  # JSON-serializable
 
 
@@ -690,6 +690,24 @@ def test_lane_efficiency_is_computed_when_the_source_has_none():
     assert (rows[2]["lane_efficiency"], rows[2]["lane_efficiency_pct"]) == (0.0, 0.0)
 
 
+def test_lane_efficiency_is_not_given_for_turbo():
+    """Turbo replay 9038388762: 189 %, 170 %, 165 % ... under a column defined as the share of the
+    ideal lane income at 10:00. The ideal is the standard game's; Turbo doubles the gold."""
+    gold_t = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9352, 10000]
+    players = [make_player(0, gold_t=gold_t),                                             # 189 % by the formula
+               make_player(1, gold_t=gold_t, lane_efficiency=1.7, lane_efficiency_pct=170)]   # the source's own
+    turbo = analyzer.analyze_laning(make_match(players, game_mode="turbo"))
+    assert turbo["lane_efficiency_applicable"] is False
+    assert [(r["lane_efficiency"], r["lane_efficiency_pct"]) for r in turbo["players"]] == [(None, None)] * 2
+    assert [r["gold_ten"] for r in turbo["players"]] == [9352, 9352]        # the gold itself is still shown
+    for mode in ("all_pick", "ranked_all_pick", "captains_mode", "ability_draft", "unknown", "All Pick", ""):
+        standard = analyzer.analyze_laning(make_match(players, game_mode=mode))
+        assert standard["lane_efficiency_applicable"] is True, mode
+        assert [r["lane_efficiency_pct"] for r in standard["players"]] == [189, 170], mode
+    # the match page says which mode it is, in the same payload
+    assert full_analysis(make_match(players, game_mode="turbo"))["match_overview"]["game_mode"] == "turbo"
+
+
 def test_dn_ten_comes_from_the_deny_timeline():
     dn_t = [0, 1, 1, 2, 4, 5, 6, 8, 9, 11, 12, 14]
     opendota_like = make_player(0, denies=14, dn_t=dn_t)            # per-minute timeline, no snapshots
@@ -872,6 +890,19 @@ def test_replay_cut_before_the_horn_is_reported_as_pre_game_only():
         assert coach.has_no_game(made) is (not analyzer._coach_available(made))
 
 
+def test_a_replay_cut_within_the_first_minute_has_no_per_minute_rates():
+    """cut_2mb.dem ends 4 s after the horn: the scoreboard read "621/0" under GPM/XPM for all ten
+    players, the gold of four seconds extrapolated to a minute."""
+    players = [make_player(0, gold_per_min=621, xp_per_min=0, net_worth=648), make_player(128, gold_per_min=621)]
+    for duration, partial, rates in ((0, True, False), (4, True, False), (59, True, False), (60, True, True),
+                                     (133, True, True), (1800, False, True), (0, False, True)):
+        match = make_match(players, duration=duration, partial=partial, winner_known=not partial)
+        rows = full_analysis(match)["match_overview"]["players"]
+        assert [(r["gpm"], r["xpm"]) for r in rows] == ([(621, 0), (621, 0)] if rates else [(None, None)] * 2), (
+            duration, partial)
+        assert rows[0]["net_worth"] == 648                         # what the players own is still shown
+
+
 def test_patch_label_comes_from_the_match_or_its_start_time(tmp_path, monkeypatch):
     from backend.app.ai import data_manager
 
@@ -1050,3 +1081,173 @@ def test_skill_build_says_which_ability_is_the_ultimate(monkeypatch):
     monkeypatch.setattr(game_data, "get_ability_by_key", broken)
     order = analyzer.analyze_skill_builds(make_match([make_player(0, skills=skills)]))[0]["skill_order"]
     assert [s["is_ultimate"] for s in order] == [None] * 5
+
+
+# ---------------------------------------------------------------------------
+# Polish pass: positions, ward denies, respawns in fights, chat-wheel phrases
+# ---------------------------------------------------------------------------
+
+def test_a_denied_ward_names_the_hero_of_its_own_side():
+    """A ward its own team attacked was "destroyed", like one nothing is known about."""
+    wards = [
+        WardEvent(ward_type="sentry", x=0, y=0, time=1002, player_slot=0, destroyed_time=1020,
+                  denied=True, killer_slot=1),                                        # an ally attacked it
+        WardEvent(ward_type="observer", x=0, y=0, time=100, player_slot=0, destroyed_time=150, denied=True),
+        WardEvent(ward_type="observer", x=0, y=0, time=100, player_slot=128, destroyed_time=150,
+                  dewarded=True, killer_slot=0),
+        WardEvent(ward_type="sentry", x=0, y=0, time=10, player_slot=128, destroyed_time=30),    # the source cannot tell
+        WardEvent(ward_type="sentry", x=0, y=0, time=10, player_slot=128, destroyed_time=430, killer_slot=129),
+    ]
+    result = analyzer.analyze_wards(make_match([make_player(0), make_player(1), make_player(128), make_player(129)],
+                                               wards=wards))
+    listed = result["all_wards"]
+    assert [w["state"] for w in listed] == ["denied", "denied", "dewarded", "destroyed", "expired"]
+    assert [(w["denied"], w["dewarded"]) for w in listed] == [
+        (True, False), (True, False), (False, True), (False, False), (False, False)]
+    # the hero that ended it: an ally for a deny, an enemy for a deward, nobody without either flag
+    assert [(w["killer_slot"], w["killer_hero_name"], w["killer_hero_slug"]) for w in listed] == [
+        (1, "Hero1", "hero1"), (None, "", ""), (0, "Hero0", "hero0"), (None, "", ""), (None, "", "")]
+    mine = result["radiant"]["sentries"][0]
+    assert (mine["state"], mine["denied"], mine["killer_hero_name"]) == ("denied", True, "Hero1")
+    # a deny is no deward: the counters stay the enemy's work
+    assert (result["radiant"]["dewarded_sent"], result["radiant"]["dewarded_obs"], result["dire"]["dewarded_obs"]) == (0, 0, 1)
+
+
+def _log(alive, start=560, end=700):
+    """A 5 s position log: health on the samples inside one of the ``alive`` spans."""
+    return [[t, 0, 0, 80 if any(a <= t < b for a, b in alive) else 0] for t in range(start, end + 1, 5)]
+
+
+def test_fight_players_carry_the_times_they_were_alive():
+    """Playback knew deaths and buybacks only: a hero that respawned inside a long fight
+    window stayed faded to its end, and one still dead from before it looked alive."""
+    players = [
+        # dies in the fight and is back before its end (analyzer 1.5.0 names the respawn)
+        make_player(0, deaths=1, position_log=_log([(560, 610), (640, 701)])),
+        # died before the fight, walks in late
+        make_player(1, deaths=1, position_log=_log([(560, 590), (615, 701)])),
+        # dies, buys back at once, dies again and stays down
+        make_player(2, deaths=2, buyback_log=[{"time": 625}], position_log=_log([(560, 620), (625, 650)])),
+        # no respawn time on the death (older analyzer): the first sample that shows health again
+        make_player(3, deaths=1, position_log=_log([(560, 612), (633, 701)])),
+        # never dies / dead the whole window / a reincarnation is no death
+        make_player(4, position_log=_log([(560, 701)])),
+        make_player(128, deaths=1, position_log=_log([(560, 595)])),
+        make_player(129, position_log=_log([(560, 630), (635, 701)])),
+        # the source cannot tell: no positions (OpenDota), no health in them, a death the log misses
+        make_player(130, deaths=1),
+        make_player(131, deaths=1, position_log=[[t, 0, 0, -1] for t in range(560, 701, 5)]),
+        make_player(132, deaths=2, position_log=_log([(560, 610), (640, 701)])),
+    ]
+    kills = [
+        KillEvent(time=590.0, victim_slot=1, killer_slot=128, respawn_time=615.0),
+        KillEvent(time=595.0, victim_slot=128, killer_slot=0),
+        KillEvent(time=610.4, victim_slot=0, killer_slot=128, respawn_time=640.0),
+        KillEvent(time=610.4, victim_slot=132, killer_slot=0, respawn_time=640.0),
+        KillEvent(time=612.3, victim_slot=3, killer_slot=128),
+        KillEvent(time=612.3, victim_slot=130, killer_slot=0, respawn_time=640.0),
+        KillEvent(time=612.3, victim_slot=131, killer_slot=0),
+        KillEvent(time=620.0, victim_slot=2, killer_slot=128, respawn_time=625.9),
+        KillEvent(time=650.0, victim_slot=2, killer_slot=128),
+    ]
+    fight = TeamfightEvent(start_time=600, end_time=660, radiant_deaths=4, dire_deaths=4, players=[
+        TeamfightPlayer(player_slot=p.player_slot, hero_name=p.hero_name, x=0, y=0, damage_dealt=0, damage_taken=0,
+                        kills=0, deaths=0, abilities_used=[]) for p in players])
+    result = analyzer.analyze_teamfights(make_match(players, kills_log=kills, teamfights=[fight]))
+    alive = {p["player_slot"]: p["alive_intervals"] for p in result[0]["players"]}
+    assert alive == {
+        0: [[0.0, 10.4], [40.0, 60.0]],
+        1: [[15.0, 60.0]],
+        2: [[0.0, 20.0], [25.0, 50.0]],         # the buyback (exact), not the sample a second later
+        3: [[0.0, 12.3], [35.0, 60.0]],         # 635: the 5 s log, up to that much late
+        4: [[0.0, 60.0]],
+        128: [],
+        129: [[0.0, 60.0]],
+        130: None, 131: None, 132: None,
+    }
+    json.dumps(result, allow_nan=False)
+    # the mock has respawns too; OpenDota-like data (no position log) says null for everyone
+    from backend.app.mock_data import generate_mock_match
+    mock = generate_mock_match()
+    fights = analyzer.analyze_teamfights(mock)
+    assert all(p["alive_intervals"] is not None for tf in fights for p in tf["players"])
+    assert any(len(p["alive_intervals"]) == 2 for tf in fights for p in tf["players"])
+    for tf in fights:
+        for p in tf["players"]:
+            flat = [edge for span in p["alive_intervals"] for edge in span]
+            assert flat == sorted(flat) and all(0 <= edge <= tf["duration"] for edge in flat), (tf["index"], p)
+            if p["death_time_offset"] is not None:      # a death in the fight ends a span
+                assert any(abs(span[1] - p["death_time_offset"]) < 0.11 for span in p["alive_intervals"]), p
+    for player in mock.players:
+        player.position_log = []
+    assert all(p["alive_intervals"] is None for tf in analyzer.analyze_teamfights(mock) for p in tf["players"])
+
+
+def test_overview_players_carry_the_position_the_coach_derives(monkeypatch):
+    from backend.app.ai import positions
+    from backend.app.mock_data import generate_mock_match
+
+    match = generate_mock_match()
+    rows = full_analysis(match)["match_overview"]["players"]
+    derived = positions.derive_match_positions(match.players)       # what a coach report is built on
+    assert len(rows) == 10
+    for row in rows:
+        mine = derived[row["player_slot"]]
+        assert row["position"] == {"number": mine.number, "confidence": mine.confidence, "method": mine.method}
+        assert row["position"]["confidence"] in ("high", "medium", "low")
+        assert row["position"]["method"] in ("lane_nw", "archetype_nw", "nw_only")
+    for team in ("radiant", "dire"):
+        assert sorted(row["position"]["number"] for row in rows if row["team"] == team) == [1, 2, 3, 4, 5]
+
+    # a replay that ends before the horn or in the first minutes has no lanes and no farm to
+    # derive a role from (7.41b replay cut 4 s after the horn: three of five dire roles were
+    # guessed wrong); the coach does not review it either
+    for duration, known in ((0, False), (4, False), (299, False), (300, True)):
+        cut = generate_mock_match()
+        cut.partial, cut.duration, cut.winner_known = True, duration, False
+        overview = full_analysis(cut)["match_overview"]
+        assert overview["coach_available"] is known
+        assert all((row["position"] is not None) is known for row in overview["players"]), duration
+
+    # the AI layer never breaks the analysis: missing, failing or answering nonsense
+    def broken(_match):
+        raise RuntimeError("knowledge base unavailable")
+
+    monkeypatch.setattr(positions, "match_positions_payload", broken)
+    assert [row["position"] for row in full_analysis(match)["match_overview"]["players"]] == [None] * 10
+    monkeypatch.setattr(positions, "match_positions_payload", lambda _match: {0: {"number": 7}, 1: "carry", 2: {
+        "number": 3, "confidence": "low", "method": "nw_only", "label_zh": "3号位 (offlaner)"}})
+    answered = {row["player_slot"]: row["position"] for row in full_analysis(match)["match_overview"]["players"]}
+    assert answered[0] is None and answered[1] is None and answered[128] is None
+    assert answered[2] == {"number": 3, "confidence": "low", "method": "nw_only"}
+    monkeypatch.setitem(__import__("sys").modules, "backend.app.ai.positions", None)   # the import itself fails
+    assert [row["position"] for row in full_analysis(match)["match_overview"]["players"]] == [None] * 10
+
+
+def test_chat_wheel_messages_carry_their_phrase_in_both_languages():
+    """A chat-wheel line was {type: "chatwheel", key: "chatwheel_<id>"} and the page showed "#71"."""
+    players = [make_player(0), make_player(128, hero_id=22, hero_name="Zeus", hero_slug="zuus")]
+    match = make_match(players, chat=[
+        {"time": 10, "type": "chat", "key": "gl hf", "player_slot": 0},
+        {"time": 20, "type": "chatwheel", "key": "chatwheel_2", "player_slot": 0},
+        # "<hero> is missing!": the replay parser says which hero; OpenDota does not
+        {"time": 30, "type": "chatwheel", "key": "chatwheel_71", "player_slot": 0, "hero_id": 22},
+        {"time": 40, "type": "chatwheel", "key": "chatwheel_71", "player_slot": 0},
+        {"time": 45, "type": "chatwheel", "key": "chatwheel_71", "player_slot": 0, "hero_id": 99999},
+        {"time": 50, "type": "chatwheel", "key": "chatwheel_12001", "player_slot": 128},        # a hero voice line
+        {"time": 60, "type": "chatwheel", "key": "chatwheel_805", "player_slot": 128},          # a spray
+        {"time": 70, "type": "chatwheel", "key": "chatwheel_99999999", "player_slot": 128},     # not in the catalog
+        {"time": 80, "type": "chatwheel", "key": "", "player_slot": 128},
+    ])
+    chat, okay, named, unnamed, stranger, voice, spray, unknown, empty = analyzer.analyze_chat(match)["messages"]
+    assert "phrase" not in chat and chat["key"] == "gl hf"
+    assert (okay["key"], okay["phrase"], okay["sound"], okay["spray"]) == (
+        "chatwheel_2", {"en": "Get Back!", "zh": "撤退！"}, False, False)
+    assert named["phrase"] == {"en": "Zeus is missing!", "zh": "宙斯不见了！"}
+    assert unnamed["phrase"] == stranger["phrase"] == {"en": "… is missing!", "zh": "…不见了！"}
+    assert voice["sound"] is True and voice["spray"] is False
+    assert voice["phrase"]["en"].startswith("Ha ha") and voice["phrase"]["zh"].startswith("哈哈")
+    assert (spray["phrase"], spray["sound"], spray["spray"]) == (None, False, True)
+    for message in (unknown, empty):
+        assert (message["phrase"], message["sound"], message["spray"]) == (None, False, False)
+    json.dumps(analyzer.analyze_chat(match), allow_nan=False)

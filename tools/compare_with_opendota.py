@@ -29,6 +29,8 @@ REPO = Path(__file__).resolve().parent.parent
 # OpenDota cell (64..192) -> world units, as backend/app/geo.py
 CELL = 128.0
 ORIGIN = 16384.0
+# Full lifetime of a ward in seconds (backend/app/game_constants.py).
+WARD_LIFETIME_S = {"observer": 360, "sentry": 420}
 
 LANES = ("top", "mid", "bot")
 STEAM_ID_BASE = 76561197960265728
@@ -363,8 +365,8 @@ def compare_wards(rep: Report, raw: dict, od: dict, rp: dict[int, dict], op: dic
         rep.check(f"{kind} count", sum(1 for w in ours.values() if w.get("type") == kind),
                   sum(1 for w in theirs.values() if w["kind"] == kind))
     duration = od.get("duration") or 0
-    owner_bad = pos_bad = time_bad = left_bad = deward_bad = 0
-    checked = deward_checked = unknown_deward = 0
+    owner_bad = pos_bad = time_bad = left_bad = deward_bad = deny_bad = 0
+    checked = deward_checked = deny_checked = denies = unknown_deward = 0
     for eh, w in ours.items():
         t = theirs.get(eh)
         if t is None:
@@ -418,6 +420,20 @@ def compare_wards(rep: Report, raw: dict, od: dict, rp: dict[int, dict], op: dic
                 elif by_enemy and w.get("killer_slot") not in (None, attacker):
                     deward_bad += 1
                     rep.diff(f"{label}: killer_slot {w.get('killer_slot')} vs OpenDota attacker slot {attacker}")
+                elif not by_enemy and "denied" in w:
+                    # Analyzer 1.5.0: an attack of the ward's own side. OpenDota names the
+                    # owner for a ward that ran out and the attacking ally for a deny, so
+                    # there only the lifetime tells the two apart.
+                    deny_checked += 1
+                    early = lf["time"] - t["time"] < WARD_LIFETIME_S[t["kind"]] - 5
+                    denies += bool(w["denied"])
+                    if bool(w["denied"]) != early:
+                        deny_bad += 1
+                        rep.diff(f"{label}: denied {w['denied']} but it stood {lf['time'] - t['time']} s and "
+                                 f"OpenDota's attacker is slot {attacker} of its own side")
+                    elif w["denied"] and w.get("killer_slot") != attacker:
+                        deny_bad += 1
+                        rep.diff(f"{label}: denied by slot {w.get('killer_slot')} vs OpenDota attacker slot {attacker}")
     for eh in theirs.keys() - ours.keys():
         rep.diff(f"OpenDota ward ehandle {eh} is missing from the analyzer output")
     if not (owner_bad or pos_bad or time_bad or left_bad):
@@ -427,6 +443,9 @@ def compare_wards(rep: Report, raw: dict, od: dict, rp: dict[int, dict], op: dic
             rep.ok(f"dewarded flag matches the OpenDota attacker for {deward_checked} destroyed wards")
         if unknown_deward:
             rep.note(f"{unknown_deward} destroyed wards have no dewarded flag (no combat-log death matched)")
+    if deny_checked and not deny_bad:
+        rep.ok(f"denied flag and denier match OpenDota for {deny_checked} wards ended by their own side "
+               f"({denies} denied)")
     for slot in sorted(rp):
         if slot not in op:
             continue
