@@ -470,9 +470,29 @@ def register_static_mime_types() -> None:
 
 register_static_mime_types()
 
+
+class PageFiles(StaticFiles):
+    """StaticFiles where a path Windows cannot name is a plain miss.
+
+    A request such as ``/api/fetch/https://...`` reaches the frontend mount
+    with a colon in its path. Windows refuses such a name (``os.stat`` raises
+    WinError 123, ERROR_INVALID_NAME) where Linux and macOS say the file does
+    not exist, and StaticFiles passes the error on as a 500. No file can have
+    that name, so it is answered like any missing file (404 ``not_found``).
+    """
+
+    def lookup_path(self, path: str):
+        try:
+            return super().lookup_path(path)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) != 123:
+                raise
+            return "", None
+
+
 # Serve frontend static files
-app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")
-app.mount("/", StaticFiles(directory=str(config.FRONTEND_DIR), html=True), name="frontend")
+app.mount("/static", PageFiles(directory=str(config.STATIC_DIR)), name="static")
+app.mount("/", PageFiles(directory=str(config.FRONTEND_DIR), html=True), name="frontend")
 
 
 if __name__ == "__main__":  # pragma: no cover - manual entry point
