@@ -46,6 +46,7 @@ from .base import (
     output_dir_for,
     request_stop,
     stop_requested,
+    video_learning_enabled,
     write_json_atomic,
     yt_dlp_path,
 )
@@ -186,7 +187,7 @@ def _prerequisites_met(level: int) -> bool:
     if level == 3:
         return llm_available()
     if level == 4:
-        return llm_available() and yt_dlp_path() is not None
+        return video_learning_enabled() and llm_available() and yt_dlp_path() is not None
     return True
 
 

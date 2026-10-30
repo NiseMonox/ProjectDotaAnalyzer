@@ -204,6 +204,8 @@ powershell -ExecutionPolicy Bypass -File tools\setup_parser.ps1
 - 第 3 层（一次大模型请求，约 30 秒）和第 4 层（每个视频一次请求）需要 `DEEPSEEK_API_KEY`，
   会产生大模型费用，填了密钥后自动运行时也一样；没有密钥时这两层自动跳过。第 4 层还需要 `PATH`
   上有 `yt-dlp`（`winget install --id yt-dlp.yt-dlp -e`）。
+- 第 4 层默认关闭：它会搜索 B 站和 YouTube、用 yt-dlp 下载字幕。确认这些网站的条款允许之后，在 `.env`
+  里写 `AI_COACH_VIDEO_LEARN=1` 才会运行；关着时结果里是 `video_learning_off`，不发任何请求。
 - `yt-dlp` 必须是 `yt-dlp.exe`。`PATH` 上排在前面的如果是 `yt-dlp.cmd` / `yt-dlp.bat` 这类包装脚本，
   程序不会运行它（批处理要经过 `cmd.exe`，后者会解释搜索词和网址里的字符），第 4 层按没有 yt-dlp
   跳过（结果里是 `no_yt_dlp`），日志里有一条说明。

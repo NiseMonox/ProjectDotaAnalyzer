@@ -431,6 +431,7 @@ def test_yt_dlp_runs_by_its_full_path_and_talks_utf8(learn_env, monkeypatch):
 def test_a_batch_file_shim_of_yt_dlp_does_not_count_on_windows(learn_env, monkeypatch, caplog):
     """Windows runs a .cmd / .bat through cmd.exe, which interprets characters of a query or URL."""
     shim = r"C:\Users\me\AppData\Roaming\npm\yt-dlp.CMD"
+    monkeypatch.setenv("AI_COACH_VIDEO_LEARN", "1")
     monkeypatch.setattr(base.shutil, "which", lambda name: shim)
     monkeypatch.setattr(pipeline, "llm_available", lambda: True)
     monkeypatch.setattr(osutil, "IS_WINDOWS", False)
@@ -446,6 +447,25 @@ def test_a_batch_file_shim_of_yt_dlp_does_not_count_on_windows(learn_env, monkey
     assert video_learner.learn_from_videos(output_dir=learn_env.learned)["skipped"] == "no_yt_dlp"
     monkeypatch.setattr(base.shutil, "which", lambda name: r"C:\Tools\yt-dlp.EXE")
     assert base.yt_dlp_path() == r"C:\Tools\yt-dlp.EXE" and pipeline._prerequisites_met(4) is True
+
+
+def test_video_level_is_off_unless_switched_on(learn_env, monkeypatch):
+    """Level 4 searches and downloads from third-party video sites: only with AI_COACH_VIDEO_LEARN=1."""
+    monkeypatch.delenv("AI_COACH_VIDEO_LEARN", raising=False)
+    monkeypatch.setattr(base.shutil, "which", lambda name: "/usr/bin/yt-dlp")
+    monkeypatch.setattr(pipeline, "llm_available", lambda: True)
+    monkeypatch.setattr(video_learner, "llm_available", lambda: True)
+
+    def discover(*args, **kwargs):
+        raise AssertionError("looked for videos while the level is off")
+
+    monkeypatch.setattr(video_learner, "_discover", discover)
+    assert pipeline._prerequisites_met(4) is False
+    level = pipeline.run_learning(levels=(4,))["levels"]["4"]
+    assert level["status"] == "skipped" and level["skipped"] == "video_learning_off"
+    assert 4 not in pipeline.due_levels()            # recorded as skipped, not retried while off
+    monkeypatch.setenv("AI_COACH_VIDEO_LEARN", "1")
+    assert pipeline._prerequisites_met(4) is True and 4 in pipeline.due_levels()   # due once switched on
 
 
 def test_video_sources_saved_with_a_byte_order_mark_are_read(learn_env, tmp_path, monkeypatch):
@@ -1660,6 +1680,7 @@ def test_refused_subtitle_download_is_not_a_video_without_subtitles(learn_env, m
     assert "--no-warnings" not in commands[0]            # the warning is the only sign of the refusal
 
     # Through the whole level: nothing is registered, and the level stays due
+    monkeypatch.setenv("AI_COACH_VIDEO_LEARN", "1")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
     monkeypatch.setattr(base.shutil, "which", lambda name: "/usr/bin/yt-dlp")
     monkeypatch.setattr(video_learner, "_load_sources", lambda: {"youtube": {"videos": [url]}})
@@ -1756,6 +1777,7 @@ def test_chinese_video_tips_name_the_position_not_fuzhu(learn_env):
 
 def _video_env(monkeypatch, candidates, subtitles, distill):
     """Stub discovery / download / LLM of learn_from_videos."""
+    monkeypatch.setenv("AI_COACH_VIDEO_LEARN", "1")
     monkeypatch.setattr(base.shutil, "which", lambda name: "/usr/bin/yt-dlp")
     monkeypatch.setattr(video_learner, "llm_available", lambda: True)
     monkeypatch.setattr(video_learner, "_load_sources", lambda: {})

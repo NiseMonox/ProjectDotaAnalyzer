@@ -203,8 +203,10 @@ backend/venv/bin/python -m backend.scripts.learn --status    # what was learned,
   are loaded, so `llm_distilled.json` of an earlier run needs no manual
   clean-up; it is replaced when level 3 runs again.
 - Learning level 3 is one LLM request (about 30 s); level 4 one per video.
-- Learning level 4 (video transcripts) needs `yt-dlp` on the `PATH`. It is
-  optional and not in `requirements.txt`: without it (or without
+- Learning level 4 (video transcripts) is off unless `AI_COACH_VIDEO_LEARN=1`:
+  it searches Bilibili and YouTube and downloads subtitles, so switch it on
+  only where the sites' terms allow it. It also needs `yt-dlp` on the `PATH`,
+  which is optional and not in `requirements.txt`: without it (or without
   `DEEPSEEK_API_KEY`) the level is skipped and the other levels still run.
   Bilibili subtitles additionally need a cookies file (`BILIBILI_COOKIES_FILE`).
   Search results are only used when their title names a Dota lesson (guide,

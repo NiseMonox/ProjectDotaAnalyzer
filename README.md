@@ -22,7 +22,7 @@ A short Chinese summary is at [the end](#中文简介).
 | AI coach | Finds decision points (deaths, bad trades, missed farm, overextensions, fight entries, good plays), builds the context of each (state of the ten heroes, a 60 s event timeline, a vision / fog reconstruction, a causal chain for deaths), evaluates it and writes the report. | `backend/app/ai/` (`coach.py`, `decision_detector.py`, `context_builder.py`, `vision.py`, `causal_chain.py`, `evaluator.py`) |
 | Agent | The evaluation of a decision is an LLM tool-calling loop: nine evidence tools (player state, nearby heroes, recent events, match situation, vision and fog, death cause, coaching knowledge, hero matchup, benchmarks) and a terminal `submit_evaluation`. A verdict is checked before it is accepted; a failed run falls back to rules and the report is marked as degraded. | `backend/app/ai/agent.py` |
 | Knowledge retrieval (RAG) | Reference entries are ranked for each decision by tags, BM25 and, for the general entries, embedding similarity. The vectors of the built-in corpus are committed, so serving needs numpy only and no model. Every evaluation lists its entries (`sources`, with `cited` for the ones the model named), and the page can open each entry's text. | `backend/app/ai/knowledge_base.py`, `knowledge_store.py`, `knowledge_chunks.py`, `rag/`, `backend/data/rag/` |
-| Self-learning | Four levels that add knowledge without hand-writing it: (1) OpenDota aggregate statistics, (2) statistics mined from professional matches, (3) an LLM summary of level 2, (4) tips distilled from coaching-video transcripts. Levels 1 and 2 cost nothing; every learned entry is labelled with its source. | `backend/app/ai/learning/`, `backend/scripts/learn.py` |
+| Self-learning | Four levels that add knowledge without hand-writing it: (1) OpenDota aggregate statistics, (2) statistics mined from professional matches, (3) an LLM summary of level 2, (4) tips distilled from coaching-video transcripts, off unless `AI_COACH_VIDEO_LEARN=1` (it searches Bilibili and YouTube and downloads subtitles). Levels 1 and 2 cost nothing; every learned entry is labelled with its source. | `backend/app/ai/learning/`, `backend/scripts/learn.py` |
 | Frontend | A single page without a build step: Vue 3, ECharts and Tailwind as pinned copies served by the app, seven plain script files. | `frontend/index.html`, `frontend/static/js/`, `frontend/static/vendor/` |
 
 Data flow:
@@ -218,7 +218,8 @@ ID 从 OpenDota 获取公开比赛，即可在 15 个分析页中查看整场比
 - **知识检索（RAG）**：按标签、BM25 和向量相似度为每个决策点检索参考知识。在 78 条按书面评分细则标注的查询上，
   nDCG@10 从 0.801（原有排序）提高到 0.891（混合检索）。每条评价都列出所依据的知识条目，点开即可阅读原文。
 - **自学习**：四个层级自动补充知识，分别是 OpenDota 统计、职业比赛数据挖掘、大模型归纳和教学视频字幕提炼，
-  每条学到的内容都标明来源。
+  每条学到的内容都标明来源。第 4 层会搜索 B 站和 YouTube 并下载字幕，默认关闭，
+  设 `AI_COACH_VIDEO_LEARN=1` 才运行。
 - **运行**：`./run.sh`（Windows 上是 `.\run.ps1`，详见 [`docs/WINDOWS.md`](docs/WINDOWS.md)），需要
   Python 3.10 至 3.13；上传录像还需要 Java 17。配置项见 `.env.example`，服务器部署见
   `deploy/README.md`。仓库不包含录像文件，因此刚克隆下来时“演示比赛”是生成的模拟数据。

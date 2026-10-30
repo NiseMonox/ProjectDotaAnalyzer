@@ -17,6 +17,12 @@ explicit "untrusted data" delimiters, and every distilled tip is sanitised
 it is stored; the knowledge loader sanitises again and the coaching prompt
 labels everything as reference material.
 
+Off unless ``AI_COACH_VIDEO_LEARN=1`` (:func:`base.video_learning_enabled`):
+the level searches and downloads from third-party sites, so an operator
+switches it on after checking that their terms allow it. While it is off the
+entry point returns at once with ``"skipped": "video_learning_off"`` and
+makes no request.
+
 Entry point::
 
     learn_from_videos(langs=("zh", "en"), max_videos=3, output_dir=None)
@@ -74,6 +80,7 @@ from .base import (
     save_learned_file,
     scoped_canonical_tags,
     stop_requested,
+    video_learning_enabled,
     write_json_atomic,
     yt_dlp_path,
 )
@@ -909,7 +916,8 @@ def learn_from_videos(
     """Learn coaching tips from up to *max_videos* new videos.
 
     Returns ``{"chunks_written", "videos_processed", "videos_skipped",
-    "download_failed", "llm_failed"}`` plus ``"skipped"`` (configuration) or
+    "download_failed", "llm_failed"}`` plus ``"skipped"`` (configuration:
+    ``video_learning_off``, ``no_yt_dlp``, ``no_api_key``) or
     ``"error"`` codes: ``discovery_failed``, ``no_candidates``,
     ``write_failed``, ``cancelled``, and — when no video could be processed —
     ``llm_failed`` (every LLM call failed) or ``all_videos_failed`` (subtitle
@@ -923,6 +931,9 @@ def learn_from_videos(
     summary: dict = {"chunks_written": 0, "videos_processed": 0, "videos_skipped": 0,
                      "download_failed": 0, "llm_failed": 0}
 
+    if not video_learning_enabled():
+        logger.info("video learner: off (AI_COACH_VIDEO_LEARN is not 1), skipping")
+        return {**summary, "skipped": "video_learning_off"}
     if yt_dlp_path() is None:
         logger.warning("video learner: yt-dlp CLI not found, skipping")
         return {**summary, "skipped": "no_yt_dlp"}

@@ -20,14 +20,16 @@ alongside the builtin / editorial layers:
     coaching tips.
 - Level 4  video_learner.learn_from_videos(langs, max_videos, output_dir=None)
     Subtitle transcripts of coaching videos (YouTube / Bilibili via yt-dlp),
-    distilled by the LLM into sourced, sanitised tips.
+    distilled by the LLM into sourced, sanitised tips. Off unless
+    ``AI_COACH_VIDEO_LEARN=1`` (:func:`video_learning_enabled`).
 
 Every learner returns ``{"chunks_written": int, ...}`` and never raises. A
 summary carries ``"error": <code>`` when the level failed (network, missing
 prerequisite — the pipeline retries it next time) or ``"skipped": <code>``
-when it was skipped by configuration (no API key, no yt-dlp). A level that
-learned only part of its data reports ``"error": "partial"`` together with
-the chunks it did write: the data is kept and the level stays due.
+when it was skipped by configuration (no API key, no yt-dlp, level 4 not
+switched on). A level that learned only part of its data reports
+``"error": "partial"`` together with the chunks it did write: the data is
+kept and the level stays due.
 
 Long loops check :func:`stop_requested` so a shutting-down server can end a
 run early (:func:`request_stop`); the level then reports ``"cancelled"``.
@@ -76,7 +78,7 @@ logger = logging.getLogger(__name__)
 # backend/data/learned — sibling of gamedata/ and editorial/.
 # config.py owns the path (single source of truth); it also mkdirs it.
 from ... import osutil  # noqa: E402
-from ...config import DATA_DIR, LEARNED_DATA_DIR as LEARNED_DIR  # noqa: E402
+from ...config import DATA_DIR, LEARNED_DATA_DIR as LEARNED_DIR, env_bool  # noqa: E402
 
 # Quick / smoke-run outputs (ignored by load_learned_chunks: not top-level).
 SMOKE_DIR = LEARNED_DIR / "_smoke"
@@ -947,6 +949,16 @@ def yt_dlp_path() -> str | None:
 
 
 _refused_shims: set[str] = set()
+
+
+def video_learning_enabled() -> bool:
+    """Whether level 4 may run: ``AI_COACH_VIDEO_LEARN=1`` (off by default).
+
+    The level searches third-party video sites (Bilibili's search API,
+    YouTube through yt-dlp) and downloads subtitles from them, so it runs
+    only for an operator who has checked that the sites' terms allow it.
+    """
+    return env_bool("AI_COACH_VIDEO_LEARN", False)
 
 
 # ---------------------------------------------------------------------------
