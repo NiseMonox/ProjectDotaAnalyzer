@@ -987,7 +987,7 @@ def _stream(encoding: str, errors: str = "strict") -> io.TextIOWrapper:
 def test_harden_stdio_makes_a_code_page_stream_unable_to_fail(monkeypatch):
     out, err = _stream("cp932"), _stream("cp1252", errors="backslashreplace")
     with pytest.raises(UnicodeEncodeError):
-        _stream("cp932").write("张三 picked 斧王\n")          # what a Japanese Windows does to redirected output
+        _stream("cp932").write("张三 picked 斧王\n")          # PYTHONIOENCODING=cp932 gives strict
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(sys, "stderr", err)
     osutil.harden_stdio()
@@ -997,6 +997,20 @@ def test_harden_stdio_makes_a_code_page_stream_unable_to_fail(monkeypatch):
     assert written == "\\u5f20三 picked 斧王\n".encode("cp932")   # what the code page has stays readable
     assert out.encoding == "cp932"                               # the encoding itself is not changed
     assert err.errors == "backslashreplace"
+
+
+def test_harden_stdio_covers_what_windows_gives_redirected_output(monkeypatch):
+    """Python on Windows opens a pipe or file with the code page and surrogateescape."""
+    out = _stream("cp932", errors="surrogateescape")
+    with pytest.raises(UnicodeEncodeError):
+        _stream("cp932", errors="surrogateescape").write("张三\n")   # surrogateescape fails here too
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+    osutil.harden_stdio()
+    print("张三")
+    out.flush()
+    assert out.buffer.getvalue() == "\\u5f20三\n".encode("cp932")
+    assert out.errors == "backslashreplace"
 
 
 def test_harden_stdio_leaves_utf8_and_replaced_streams_alone(monkeypatch):

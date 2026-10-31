@@ -624,15 +624,19 @@ def harden_stdio() -> None:
     file or a pipe is encoded with the system's ANSI code page (cp936,
     cp932, cp1252 ...), and ``print()`` raises ``UnicodeEncodeError`` on
     the first character that code page lacks. A stream that is not UTF-8
-    and still has the strict error handler gets ``backslashreplace`` (what
-    Python gives ``sys.stderr`` from the start), so such a character is
-    written as ``\\uXXXX`` instead. UTF-8 streams, which is every stream on
-    the Linux server and on macOS, are left alone, and so is the encoding
-    itself: the output stays readable in the console it was made for.
+    and has an error handler that fails there gets ``backslashreplace``
+    (what Python gives ``sys.stderr`` from the start), so such a character
+    is written as ``\\uXXXX`` instead. Those handlers are ``strict`` and
+    ``surrogateescape``: Python on Windows opens redirected output with the
+    latter, which only passes lone surrogates through. UTF-8 streams, which
+    is every stream on the Linux server and on macOS, are left alone, and
+    so is the encoding itself: the output stays readable in the console it
+    was made for.
     """
     for stream in (sys.stdout, sys.stderr):
         encoding = str(getattr(stream, "encoding", "") or "").lower().replace("-", "").replace("_", "")
-        if encoding in ("utf8", "utf8sig") or getattr(stream, "errors", None) != "strict":
+        errors = getattr(stream, "errors", None)
+        if encoding in ("utf8", "utf8sig") or errors not in ("strict", "surrogateescape"):
             continue
         reconfigure = getattr(stream, "reconfigure", None)  # not there on a replaced stream
         if reconfigure is None:
